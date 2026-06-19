@@ -44,22 +44,29 @@ type LeaderboardEntry = {
   local?: boolean;
 };
 
-const FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
+type PlayUsage = {
+  day: string;
+  count: number;
+};
+
+const DAILY_PLAY_LIMIT = 6;
+const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
+const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
 
 const tones: Record<TileTone, string> = {
-  ink: '#171717',
-  blue: '#315d8c',
-  green: '#168466',
-  rose: '#b84a6d',
-  amber: '#b27821',
+  ink: '#f4f7f8',
+  blue: '#94a9ba',
+  green: '#9db1aa',
+  rose: '#b79ca7',
+  amber: '#b9aa88',
 };
 
 const modes: Record<ModeKey, { label: string; title: string; body: string; cta: string }> = {
   world: {
     label: 'World IQ',
     title: 'Get your global reasoning rank.',
-    body: 'A 12-question visual reasoning test. Everyone gets one free play per day.',
+    body: 'A 12-question visual reasoning test. Everyone gets six free games per day.',
     cta: 'Start World IQ',
   },
   agi: {
@@ -279,14 +286,59 @@ function formatRank(percentile: number) {
   return `#${rank.toLocaleString()}`;
 }
 
-function readFreePlayDate() {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(FREE_PLAY_STORAGE_KEY);
+function blankPlayUsage(): PlayUsage {
+  return { day: localDayKey(), count: 0 };
 }
 
-function writeFreePlayDate(dayKey: string) {
+function normalizePlayUsage(value: unknown): PlayUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const usage = value as Partial<PlayUsage>;
+  if (typeof usage.day !== 'string' || typeof usage.count !== 'number') return null;
+  return {
+    day: usage.day,
+    count: Math.max(0, Math.min(DAILY_PLAY_LIMIT, Math.floor(usage.count))),
+  };
+}
+
+function readPlayUsage(): PlayUsage {
+  if (typeof window === 'undefined') return blankPlayUsage();
+  try {
+    const raw = window.localStorage.getItem(PLAY_USAGE_STORAGE_KEY);
+    const parsed = raw ? normalizePlayUsage(JSON.parse(raw)) : null;
+    if (parsed) return parsed.day === localDayKey() ? parsed : blankPlayUsage();
+  } catch {
+    // Fall through to the legacy one-play date migration.
+  }
+
+  const legacyDay = window.localStorage.getItem(LEGACY_FREE_PLAY_STORAGE_KEY);
+  if (legacyDay) {
+    const migrated = legacyDay === localDayKey() ? { day: legacyDay, count: 1 } : blankPlayUsage();
+    writePlayUsage(migrated);
+    return migrated;
+  }
+
+  return blankPlayUsage();
+}
+
+function writePlayUsage(usage: PlayUsage) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(FREE_PLAY_STORAGE_KEY, dayKey);
+  window.localStorage.setItem(PLAY_USAGE_STORAGE_KEY, JSON.stringify(usage));
+  window.localStorage.removeItem(LEGACY_FREE_PLAY_STORAGE_KEY);
+}
+
+function playsRemaining(usage: PlayUsage) {
+  const count = usage.day === localDayKey() ? usage.count : 0;
+  return Math.max(0, DAILY_PLAY_LIMIT - count);
+}
+
+function consumePlay() {
+  const current = readPlayUsage();
+  const next = {
+    day: localDayKey(),
+    count: Math.min(DAILY_PLAY_LIMIT, (current.day === localDayKey() ? current.count : 0) + 1),
+  };
+  writePlayUsage(next);
+  return next;
 }
 
 function readSavedEntries(): LeaderboardEntry[] {
@@ -471,36 +523,40 @@ function Runner({
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
-  const [freePlayDate, setFreePlayDate] = React.useState<string | null>(null);
+  const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => blankPlayUsage());
+  const [chargedAttempt, setChargedAttempt] = React.useState(false);
   const questions = React.useMemo(() => getQuestions(mode), [mode]);
   const complete = started && step >= questions.length;
   const current = complete ? questions[questions.length - 1] : questions[step];
-  const freePlayUsed = freePlayDate === localDayKey();
+  const remainingToday = playsRemaining(playUsage);
 
   React.useEffect(() => {
-    const storedDate = readFreePlayDate();
-    setFreePlayDate(storedDate);
-    setStarted(storedDate !== localDayKey());
+    const usage = readPlayUsage();
+    setPlayUsage(usage);
+    setStarted(playsRemaining(usage) > 0);
   }, []);
   React.useEffect(() => {
-    setStarted(readFreePlayDate() !== localDayKey());
+    const usage = readPlayUsage();
+    setPlayUsage(usage);
+    setStarted(playsRemaining(usage) > 0);
     setStep(0);
     setSelected(null);
     setAnswers([]);
+    setChargedAttempt(false);
   }, [mode]);
 
   function begin() {
-    if (freePlayUsed) {
+    const usage = readPlayUsage();
+    setPlayUsage(usage);
+    if (playsRemaining(usage) <= 0) {
       onUnlock();
       return;
     }
-    const today = localDayKey();
-    writeFreePlayDate(today);
-    setFreePlayDate(today);
     setStarted(true);
     setStep(0);
     setSelected(null);
     setAnswers([]);
+    setChargedAttempt(false);
   }
 
   React.useEffect(() => {
@@ -510,10 +566,9 @@ function Runner({
 
   function lockAnswer() {
     if (selected === null || complete || !current) return;
-    if (!freePlayUsed) {
-      const today = localDayKey();
-      writeFreePlayDate(today);
-      setFreePlayDate(today);
+    if (!chargedAttempt) {
+      setPlayUsage(consumePlay());
+      setChargedAttempt(true);
     }
     setAnswers((existing) => [...existing, {
       id: current.id,
@@ -529,9 +584,9 @@ function Runner({
     return (
       <div className="runner-panel gate">
         <p className="kicker">{modes[mode].label}</p>
-        <h2>Free play used today.</h2>
+        <h2>6 games used today.</h2>
         <p className="free-note">Unlock a paid profile for unlimited attempts, or come back tomorrow.</p>
-        <button className="primary full" onClick={begin}>Unlock unlimited plays</button>
+        <button className="primary full" onClick={onUnlock}>Unlock unlimited plays</button>
       </div>
     );
   }
@@ -542,7 +597,7 @@ function Runner({
     <div className="runner-panel">
       <div className="progress-row">
         <p className="kicker">{modes[mode].label}</p>
-        <span>{step + 1}/{questions.length}</span>
+        <span>{step + 1}/{questions.length} · {remainingToday}/{DAILY_PLAY_LIMIT} left</span>
       </div>
       <div className="track"><div style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
       <div className="question-head">
@@ -630,10 +685,10 @@ export default function Home() {
           <div className="feature-grid">
             <article><strong>World IQ</strong><p>A fast reasoning score, estimated global rank, and clean share card.</p></article>
             <article><strong>Human vs AGI</strong><p>Puzzles selected because they expose abstraction gaps that current AI systems still struggle with.</p></article>
-            <article><strong>Daily Genius</strong><p>A daily free-play reset for streaks, group challenges, and repeat traffic.</p></article>
+            <article><strong>Daily Genius</strong><p>A daily reset for streaks, group challenges, and repeat traffic.</p></article>
           </div>
           <div className="monetization">
-            <div><strong>Recursiv Stripe ready</strong><p>Everyone gets one free play per day. Paid profiles unlock unlimited attempts, deep reports, verified badges, pro training, and team leaderboards.</p></div>
+            <div><strong>Recursiv Stripe ready</strong><p>Everyone gets six games per day. Paid profiles unlock unlimited attempts, deep reports, verified badges, pro training, and team leaderboards.</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
           </div>
         </section>
@@ -645,9 +700,9 @@ export default function Home() {
             <button className="close" onClick={() => setUnlockOpen(false)} aria-label="Close">×</button>
             <p className="kicker">World IQ account</p>
             <h2>Unlock unlimited attempts.</h2>
-            <p>Free visitors get one play per day. Paid World IQ profiles unlock unlimited attempts, saved ranks, AI-stumper history, and daily streaks.</p>
+            <p>Free visitors get six games per day. Paid World IQ profiles unlock unlimited attempts, saved ranks, AI-stumper history, and daily streaks.</p>
             <div className="plans">
-              <div><strong>Free</strong><span>one play per day</span></div>
+              <div><strong>Free</strong><span>6 games per day</span></div>
               <div><strong>$4.99</strong><span>unlimited attempts + deep report</span></div>
             </div>
             {checkoutHref ? (
@@ -666,55 +721,112 @@ export default function Home() {
 
       <style jsx global>{`
         :root {
-          color-scheme: light;
-          --bg: #f7f5f0;
-          --ink: #171717;
-          --muted: #6f6a61;
-          --faint: #989187;
-          --line: rgba(23,23,23,.12);
-          --line-strong: rgba(23,23,23,.22);
-          --panel: #fffdfa;
-          --soft: #f1eee7;
-          --rose: #b84a6d;
-          --green: #168466;
-          --amber: #b27821;
+          color-scheme: dark;
+          --bg: #030303;
+          --ink: #f5f7f8;
+          --muted: #9ca3a8;
+          --faint: #687077;
+          --line: rgba(245,247,248,.14);
+          --line-strong: rgba(245,247,248,.28);
+          --panel: #050607;
+          --soft: #0b0d0f;
+          --rose: #d7dce0;
+          --green: #b9c3c0;
+          --amber: #c9c0a9;
         }
         * { box-sizing: border-box; }
-        body { margin: 0; background: var(--bg); color: var(--ink); font-family: Georgia, "Times New Roman", ui-serif, serif; }
+        body {
+          margin: 0;
+          background: var(--bg);
+          color: var(--ink);
+          font-family: "DIN Condensed", "Arial Narrow", "Helvetica Neue Condensed", "Helvetica Neue", Arial, ui-sans-serif, sans-serif;
+          font-stretch: condensed;
+        }
         button, a { font: inherit; }
         button { cursor: pointer; }
         button:disabled { cursor: not-allowed; opacity: .38; }
         main { min-height: 100vh; padding: 0 20px 56px; }
-        nav { max-width: 980px; margin: 0 auto; padding: 22px 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        nav {
+          max-width: 980px;
+          margin: 0 auto;
+          padding: 22px 0 18px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
+          border-bottom: 1px solid var(--line);
+        }
         .brand { border: 0; background: transparent; color: var(--ink); display: grid; gap: 1px; padding: 0; text-align: left; }
-        nav strong { font-size: 19px; letter-spacing: 0; }
-        nav span { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; }
+        nav strong { font-size: 19px; line-height: 1; letter-spacing: .04em; text-transform: uppercase; }
+        nav span { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .16em; }
         nav > div:last-child { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-        nav button { border: 0; background: transparent; color: var(--muted); padding: 8px 9px; font-size: 14px; font-weight: 700; border-radius: 6px; }
+        nav button {
+          border: 0;
+          background: transparent;
+          color: var(--muted);
+          padding: 8px 9px;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: .12em;
+          text-transform: uppercase;
+          border-radius: 0;
+        }
         nav .brand { padding: 0; color: var(--ink); border-radius: 0; }
         nav .nav-cta { min-height: 36px; padding: 7px 12px; }
-        nav button.active { color: var(--ink); background: var(--soft); }
-        .nav-cta, .secondary { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); border-radius: 7px; min-height: 44px; padding: 10px 15px; font-weight: 850; }
-        .primary { border: 0; background: var(--ink); color: var(--panel); border-radius: 7px; min-height: 44px; padding: 11px 17px; font-weight: 850; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+        nav button.active { color: var(--ink); background: transparent; box-shadow: inset 0 -1px 0 var(--ink); }
+        .nav-cta, .secondary {
+          border: 1px solid var(--line-strong);
+          background: transparent;
+          color: var(--ink);
+          border-radius: 0;
+          min-height: 44px;
+          padding: 10px 15px;
+          font-weight: 800;
+          letter-spacing: .08em;
+          text-transform: uppercase;
+        }
+        .primary {
+          border: 1px solid var(--ink);
+          background: var(--ink);
+          color: var(--bg);
+          border-radius: 0;
+          min-height: 44px;
+          padding: 11px 17px;
+          font-weight: 800;
+          letter-spacing: .08em;
+          text-transform: uppercase;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
         .full { width: 100%; }
-        .test-surface { max-width: 520px; margin: 34px auto 0; }
+        .test-surface { max-width: 500px; margin: 42px auto 0; }
         .test-surface .runner-panel { border: 0; background: transparent; padding: 0; }
-        .test-surface .result, .test-surface .gate { border: 1px solid var(--line-strong); background: var(--panel); padding: 18px; }
+        .test-surface .result, .test-surface .gate { border: 1px solid var(--line-strong); background: var(--panel); padding: 20px; }
         .hero { max-width: 1180px; min-height: 660px; margin: 0 auto; padding: 26px 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 490px); align-items: center; gap: 34px; }
-        .kicker { color: var(--rose); font-size: 12px; text-transform: uppercase; letter-spacing: 1.6px; font-weight: 900; margin: 0; }
-        h1 { font-size: clamp(56px, 7vw, 82px); line-height: .98; margin: 16px 0 0; max-width: 760px; letter-spacing: 0; }
-        h2 { font-size: clamp(25px, 4vw, 38px); line-height: 1.14; margin: 10px 0 0; letter-spacing: 0; }
+        .kicker {
+          color: var(--ink);
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .16em;
+          font-weight: 800;
+          margin: 0;
+        }
+        h1 { font-size: clamp(56px, 7vw, 82px); line-height: .98; margin: 16px 0 0; max-width: 760px; letter-spacing: .02em; text-transform: uppercase; }
+        h2 { font-size: clamp(25px, 4vw, 38px); line-height: 1.06; margin: 10px 0 0; letter-spacing: .03em; text-transform: uppercase; font-weight: 800; }
         .lede { max-width: 610px; color: var(--muted); font-size: 18px; line-height: 30px; margin: 22px 0 0; }
         .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
         .founding-stats, .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 34px; }
-        .founding-stats div, .stats div { border: 1px solid var(--line); background: rgba(255,253,250,.68); border-radius: 8px; padding: 12px 14px; min-width: 0; }
-        .founding-stats strong, .stats strong { display: block; font-size: 23px; line-height: 1.1; }
-        .founding-stats span, .stats span { display: block; color: var(--muted); font-size: 12px; font-weight: 700; margin-top: 3px; }
-        .runner-panel, .leaderboard, .features { border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); padding: 18px; }
+        .founding-stats div, .stats div { border: 1px solid var(--line); background: transparent; border-radius: 0; padding: 12px 14px; min-width: 0; }
+        .founding-stats strong, .stats strong { display: block; font-size: 23px; line-height: 1.1; letter-spacing: .04em; }
+        .founding-stats span, .stats span { display: block; color: var(--muted); font-size: 10px; font-weight: 700; margin-top: 4px; letter-spacing: .12em; text-transform: uppercase; }
+        .runner-panel, .leaderboard, .features { border: 1px solid var(--line-strong); border-radius: 0; background: var(--panel); padding: 20px; }
         .mode-row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .mode-button { flex: 1; min-width: 124px; border: 1px solid var(--line); background: var(--soft); border-radius: 7px; padding: 10px 11px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; font-weight: 800; }
-        .mode-button.active { background: var(--panel); color: var(--ink); border-color: var(--ink); }
-        .mode-glyph { width: 22px; height: 22px; flex: 0 0 22px; border: 1px solid currentColor; border-radius: 6px; position: relative; display: inline-block; opacity: .76; }
+        .mode-button { flex: 1; min-width: 124px; border: 1px solid var(--line); background: transparent; border-radius: 0; padding: 10px 11px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .mode-button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+        .mode-glyph { width: 22px; height: 22px; flex: 0 0 22px; border: 1px solid currentColor; border-radius: 0; position: relative; display: inline-block; opacity: .76; }
         .mode-glyph::before, .mode-glyph::after { content: ""; position: absolute; display: block; }
         .mode-glyph.world::before { inset: 5px; border: 2px solid currentColor; border-radius: 999px; }
         .mode-glyph.world::after { left: 7px; right: 7px; bottom: 4px; height: 3px; border-top: 2px solid currentColor; }
@@ -723,61 +835,61 @@ export default function Home() {
         .mode-glyph.daily::before { left: 4px; right: 4px; top: 6px; height: 2px; border-radius: 999px; background: currentColor; box-shadow: 0 6px 0 currentColor; }
         .mode-glyph.daily::after { width: 3px; height: 3px; left: 5px; top: 3px; border-radius: 1px; background: currentColor; box-shadow: 8px 0 0 currentColor, 0 12px 0 currentColor, 8px 12px 0 currentColor; }
         .runner-intro { text-align: center; padding: 30px 0 22px; }
-        .runner-icon { width: 48px; height: 48px; border-radius: 8px; display: grid; place-items: center; margin: 0 auto 16px; border: 1px solid var(--line-strong); background: var(--soft); }
+        .runner-icon { width: 48px; height: 48px; border-radius: 0; display: grid; place-items: center; margin: 0 auto 16px; border: 1px solid var(--line-strong); background: transparent; }
         .runner-intro p:not(.kicker), .free-note, .prompt, .answer-footer p { color: var(--muted); font-size: 14px; line-height: 22px; }
         .free-note { text-align: center; font-weight: 750; margin: 12px 0 0; }
         .progress-row, .question-head, .answer-footer, .section-head, .leaderboard-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-        .progress-row span { color: var(--muted); font-size: 12px; font-weight: 800; }
-        .track { height: 5px; background: var(--soft); border-radius: 5px; overflow: hidden; margin-top: 10px; }
-        .track div { height: 100%; background: var(--ink); border-radius: 5px; }
-        .question-head { margin-top: 18px; }
-        .question-head h2 { font-size: 24px; margin: 0; font-weight: 850; }
-        .question-head span { color: var(--rose); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 900; }
+        .progress-row span { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+        .track { height: 2px; background: var(--soft); border-radius: 0; overflow: hidden; margin-top: 12px; }
+        .track div { height: 100%; background: var(--ink); border-radius: 0; }
+        .question-head { margin-top: 24px; }
+        .question-head h2 { font-size: 26px; line-height: 1; margin: 0; font-weight: 800; }
+        .question-head span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; }
         .matrix { width: 100%; max-width: 260px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
-        .tile { width: 78px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); position: relative; overflow: hidden; display: grid; place-items: center; }
-        .tile.selected { background: #fff; }
-        .missing { background: var(--soft); color: var(--faint); font-size: 26px; font-weight: 900; }
+        .tile { width: 78px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 0; background: #030303; position: relative; overflow: hidden; display: grid; place-items: center; }
+        .tile.selected { background: #0f1214; }
+        .missing { background: #080a0c; color: var(--faint); font-size: 26px; font-weight: 900; }
         .ring { position: absolute; width: 44%; aspect-ratio: 1; border: 2px solid; border-radius: 999px; opacity: .22; }
         .bars { position: absolute; display: flex; align-items: center; gap: 4px; }
-        .bars span { width: 4px; height: 34px; border-radius: 3px; opacity: .74; }
+        .bars span { width: 3px; height: 34px; border-radius: 0; opacity: .78; }
         .dots { width: 50%; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
         .dots span { width: 9px; aspect-ratio: 1; border-radius: 999px; }
         .options { margin-top: 16px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-        .option { border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 4px; display: grid; justify-items: center; gap: 6px; color: var(--faint); font-size: 11px; font-weight: 900; }
+        .option { border: 1px solid transparent; border-radius: 0; background: transparent; padding: 4px; display: grid; justify-items: center; gap: 6px; color: var(--faint); font-size: 11px; font-weight: 900; letter-spacing: .12em; }
         .option.active { border-color: var(--ink); background: var(--soft); color: var(--ink); }
         .answer-footer { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 16px; }
         .answer-footer p { flex: 1; min-width: 180px; margin: 0; font-size: 12px; line-height: 18px; font-weight: 700; }
         .result-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
-        .result-top .score { display: block; font-size: 58px; line-height: 64px; }
-        .result-top span, .rank-card span, .leader-score span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 900; }
-        .rank-card { border: 1px solid var(--line-strong); background: var(--soft); border-radius: 8px; min-width: 126px; padding: 12px 14px; text-align: center; }
+        .result-top .score { display: block; font-size: 62px; line-height: 64px; letter-spacing: .03em; }
+        .result-top span, .rank-card span, .leader-score span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; }
+        .rank-card { border: 1px solid var(--line-strong); background: transparent; border-radius: 0; min-width: 126px; padding: 12px 14px; text-align: center; }
         .rank-card strong { font-size: 21px; }
         .three { margin-top: 16px; }
-        .share-card { margin-top: 14px; background: var(--ink); color: var(--panel); border-radius: 8px; padding: 14px; }
+        .share-card { margin-top: 14px; background: var(--ink); color: var(--bg); border-radius: 0; padding: 14px; }
         .share-card p { margin: 8px 0 0; line-height: 23px; }
-        .qualification { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--soft); display: grid; gap: 3px; }
-        .qualification.qualified { border-color: rgba(178,120,33,.42); background: rgba(178,120,33,.08); }
+        .qualification { margin-top: 14px; border: 1px solid var(--line); border-radius: 0; padding: 12px; background: transparent; display: grid; gap: 3px; }
+        .qualification.qualified { border-color: var(--line-strong); background: #080a0c; }
         .qualification span { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 700; }
         .leaderboard, .features { max-width: 1180px; margin: 16px auto 0; }
         .section-head p { color: var(--muted); max-width: 720px; line-height: 24px; }
         .leaderboard-rows { display: grid; gap: 8px; margin-top: 18px; }
-        .leaderboard-row { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 70px; align-items: center; gap: 12px; background: rgba(255,253,250,.68); }
-        .leaderboard-row.local { border-color: var(--ink); background: #fff; }
-        .rank { width: 42px; height: 42px; display: grid; place-items: center; background: var(--soft); border: 1px solid var(--line-strong); border-radius: 7px; font-weight: 900; }
+        .leaderboard-row { border: 1px solid var(--line); border-radius: 0; padding: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 70px; align-items: center; gap: 12px; background: transparent; }
+        .leaderboard-row.local { border-color: var(--ink); background: #080a0c; }
+        .rank { width: 42px; height: 42px; display: grid; place-items: center; background: transparent; border: 1px solid var(--line-strong); border-radius: 0; font-weight: 900; }
         .leader-copy { display: grid; min-width: 0; }
         .leader-copy span { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 700; }
         .leader-score { text-align: right; }
         .leader-score strong { display: block; font-size: 24px; line-height: 28px; }
         .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
-        .feature-grid article { border: 1px solid var(--line); border-radius: 8px; padding: 18px; background: rgba(255,253,250,.72); }
+        .feature-grid article { border: 1px solid var(--line); border-radius: 0; padding: 18px; background: transparent; }
         .feature-grid p, .monetization p { color: var(--muted); line-height: 22px; }
-        .monetization { margin-top: 16px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
-        .modal-backdrop { position: fixed; inset: 0; background: rgba(23,23,23,.28); display: grid; place-items: center; padding: 18px; z-index: 10; }
-        .modal { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; padding: 18px; position: relative; box-shadow: 0 20px 60px rgba(23,23,23,.18); }
-        .close { position: absolute; top: 10px; right: 10px; border: 1px solid var(--line); background: var(--soft); border-radius: 6px; width: 32px; height: 32px; font-size: 20px; }
+        .monetization { margin-top: 16px; border: 1px solid var(--line-strong); border-radius: 0; padding: 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.74); display: grid; place-items: center; padding: 18px; z-index: 10; }
+        .modal { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 0; padding: 20px; position: relative; box-shadow: 0 20px 70px rgba(0,0,0,.5); }
+        .close { position: absolute; top: 10px; right: 10px; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 0; width: 32px; height: 32px; font-size: 20px; }
         .modal p:not(.kicker), .fine-print { color: var(--muted); line-height: 22px; }
         .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
-        .plans div { border: 1px solid var(--line); border-radius: 7px; background: var(--soft); padding: 10px; display: grid; gap: 2px; }
+        .plans div { border: 1px solid var(--line); border-radius: 0; background: transparent; padding: 10px; display: grid; gap: 2px; }
         .plans span, .fine-print { font-size: 11px; font-weight: 750; }
         .fine-print { display: block; margin-top: 10px; text-align: center; }
         @media (max-width: 940px) {
@@ -789,12 +901,12 @@ export default function Home() {
           nav { align-items: flex-start; padding-top: 18px; }
           nav > div:last-child { gap: 4px; }
           nav strong { font-size: 18px; }
-          nav span { font-size: 9px; letter-spacing: 1.2px; }
-          nav button { padding: 6px 6px; font-size: 12px; }
+          nav span { font-size: 9px; letter-spacing: .12em; }
+          nav button { padding: 6px 6px; font-size: 10px; letter-spacing: .1em; }
           nav .nav-cta { min-height: 32px; padding: 5px 10px; }
           h1 { font-size: 58px; }
           .lede { font-size: 17px; line-height: 29px; }
-          .test-surface { margin-top: 28px; }
+          .test-surface { margin-top: 34px; }
           .founding-stats { grid-template-columns: 1fr 1fr; }
           .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .tile { width: min(76px, 22vw); }
