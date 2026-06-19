@@ -56,6 +56,17 @@ type PaidAccessRecord = {
   updatedAt: number;
 };
 
+type OfficialRankRecord = {
+  day: string;
+  score: number;
+  rank: string;
+  percentile: number;
+  correct: number;
+  total: number;
+  beatAi: number;
+  timestamp: number;
+};
+
 const DAILY_PLAY_LIMIT = 6;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const RECURSIV_SIGNUP_URL = 'https://recursiv.io/register';
@@ -63,6 +74,7 @@ const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
 const PAID_ACCESS_STORAGE_KEY = 'world-iq-paid-access';
+const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
 
 const tones: Record<TileTone, string> = {
   ink: '#111111',
@@ -74,32 +86,26 @@ const tones: Record<TileTone, string> = {
 
 const modes: Record<ModeKey, { label: string; title: string; body: string; cta: string }> = {
   world: {
-    label: 'World IQ',
-    title: 'Get your global reasoning rank.',
-    body: 'A 12-question visual reasoning test. Everyone gets six free games per day.',
-    cta: 'Start World IQ',
+    label: 'Today\'s World IQ',
+    title: 'Lock today\'s reasoning rank.',
+    body: 'A daily 12-question visual reasoning game. Your first completed World run is the official rank.',
+    cta: 'Start today',
   },
   agi: {
-    label: 'Human vs AGI',
+    label: 'AI Blind Spots',
     title: 'See where humans still beat AI.',
-    body: 'Abstraction puzzles selected around model blind spots and human pattern discovery.',
-    cta: 'Challenge AGI',
+    body: 'A lab mode of abstraction puzzles selected around model blind spots and human pattern discovery.',
+    cta: 'Challenge AI',
   },
   daily: {
-    label: 'Daily Genius',
-    title: 'One puzzle. One daily rank.',
-    body: 'A short daily puzzle for streaks, group chats, and shareable results.',
-    cta: 'Play today',
+    label: 'Daily Sprint',
+    title: 'One puzzle. One warmup.',
+    body: 'A fast puzzle for streaks and group chats. World IQ is the official ranked mode.',
+    cta: 'Warm up',
   },
 };
 
-const seededLeaderboard: LeaderboardEntry[] = [
-  { id: 'seed-aether', name: 'Aether-01', score: 152, mode: 'Human vs AGI', accuracy: '6/6', qualifier: 'AI-stumper perfect', timestamp: 1 },
-  { id: 'seed-lina', name: 'Lina Park', score: 149, mode: 'World IQ', accuracy: '12/12', qualifier: 'elite matrix reasoning', timestamp: 2 },
-  { id: 'seed-orion', name: 'Orion Lab', score: 147, mode: 'Human vs AGI', accuracy: '5/6', qualifier: 'model baseline', timestamp: 3 },
-  { id: 'seed-mateo', name: 'Mateo Chen', score: 143, mode: 'World IQ', accuracy: '11/12', qualifier: 'top 0.8%', timestamp: 4 },
-  { id: 'seed-nova', name: 'Nova Team', score: 138, mode: 'Daily Genius', accuracy: '1/1', qualifier: 'daily leader', timestamp: 5 },
-];
+const seededLeaderboard: LeaderboardEntry[] = [];
 
 function tile(dots: number, bars: number, ring: boolean, tilt: number, tone: TileTone): PatternTile {
   return { dots, bars, ring, tilt, tone };
@@ -248,8 +254,8 @@ const agiPuzzles: Puzzle[] = ['world-07', 'world-09', 'world-10', 'world-11', 'w
       id: `agi-${index + 1}`,
       mode: 'agi' as const,
       title: ['Counterexample', 'Abstraction', 'Inversion', 'Program shift', 'Few-shot synthesis', 'Mirror trap'][index],
-      difficulty: index < 2 ? 'AGI baseline' : index < 4 ? 'AGI hard' : 'AGI frontier',
-      prompt: 'Solve the abstraction before the model does.',
+      difficulty: index < 2 ? 'AI baseline' : index < 4 ? 'AI hard' : 'AI frontier',
+      prompt: 'Solve the abstraction before the model baseline does.',
     };
   });
 
@@ -376,6 +382,24 @@ function saveLeaderboardEntry(entry: LeaderboardEntry) {
   window.localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(sortEntries([entry, ...saved]).slice(0, 6)));
 }
 
+function readOfficialRank(): OfficialRankRecord | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(OFFICIAL_RANK_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Partial<OfficialRankRecord> : null;
+    if (!parsed || parsed.day !== localDayKey()) return null;
+    if (typeof parsed.score !== 'number' || typeof parsed.rank !== 'string') return null;
+    return parsed as OfficialRankRecord;
+  } catch {
+    return null;
+  }
+}
+
+function writeOfficialRank(record: OfficialRankRecord) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(OFFICIAL_RANK_STORAGE_KEY, JSON.stringify(record));
+}
+
 function readPaidAccess() {
   if (typeof window === 'undefined') return false;
   try {
@@ -410,6 +434,42 @@ function getStripeCheckoutHref(href: string) {
     return '';
   }
   return '';
+}
+
+function sharePattern(answers: AnswerRecord[]) {
+  return answers.map((answer) => (answer.correct ? '1' : '0')).join('');
+}
+
+function buildShareText({
+  mode,
+  score,
+  rank,
+  percentile,
+  correct,
+  total,
+  beatAi,
+  answers,
+  status,
+}: {
+  mode: ModeKey;
+  score: number;
+  rank: string;
+  percentile: number;
+  correct: number;
+  total: number;
+  beatAi: number;
+  answers: AnswerRecord[];
+  status: 'official' | 'practice' | 'daily' | 'lab' | 'pending';
+}) {
+  const topLabel = percentile >= 99.9 ? 'top 0.1%' : `top ${(100 - percentile).toFixed(percentile >= 99 ? 1 : 0)}%`;
+  if (mode === 'world') {
+    const label = status === 'practice' ? 'World IQ practice' : `World IQ ${localDayKey()}`;
+    return `${label}: ${score} reasoning | ${rank} | ${topLabel} | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}\niq.on.recursiv.io`;
+  }
+  if (mode === 'agi') {
+    return `AI Blind Spots: ${score} reasoning | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}\niq.on.recursiv.io`;
+  }
+  return `Daily Sprint: ${score} reasoning | ${rank} | ${correct}/${total}\n${sharePattern(answers)}\niq.on.recursiv.io`;
 }
 
 function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTile | null; selected?: boolean }) {
@@ -461,27 +521,35 @@ function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnl
     <section className="leaderboard" id="rankings">
       <div className="section-head">
         <div>
-          <p className="kicker">Global intelligence rankings</p>
-          <h2>The founding leaderboard for human and AI reasoning.</h2>
-          <p>Complete enough questions in World IQ or Human vs AGI to earn a qualified score and enter the global board.</p>
+          <p className="kicker">Founding rank board</p>
+          <h2>The daily reasoning board opens with verified first attempts.</h2>
+          <p>Only the first completed World IQ run each day is submitted. Practice runs and lab modes stay private.</p>
         </div>
         <button className="secondary" onClick={onUnlock}>Verify rank</button>
       </div>
       <div className="leaderboard-rows">
-        {entries.map((entry, index) => (
-          <div key={entry.id} className={`leaderboard-row ${entry.local ? 'local' : ''}`}>
-            <div className="rank">#{index + 1}</div>
-            <div className="leader-copy">
-              <strong>{entry.name}</strong>
-              <span>{entry.mode} - {entry.qualifier}</span>
+        {entries.length > 0 ? (
+          entries.map((entry, index) => (
+            <div key={entry.id} className={`leaderboard-row ${entry.local ? 'local' : ''}`}>
+              <div className="rank">#{index + 1}</div>
+              <div className="leader-copy">
+                <strong>{entry.name}</strong>
+                <span>{entry.mode} - {entry.qualifier}</span>
+              </div>
+              <div className="leader-score">
+                <strong>{entry.score}</strong>
+                <span>{entry.accuracy}</span>
+              </div>
             </div>
-            <div className="leader-score">
-              <strong>{entry.score}</strong>
-              <span>{entry.accuracy}</span>
-            </div>
+          ))
+        ) : (
+          <div className="empty-board">
+            <strong>No official ranks yet.</strong>
+            <span>Finish Today&apos;s World IQ to create the first local verified entry.</span>
           </div>
-        ))}
+        )}
       </div>
+      <p className="trust-note">Ranks are entertainment and competition signals. They are not clinical IQ scores or eligibility for any high-IQ society.</p>
     </section>
   );
 }
@@ -498,6 +566,7 @@ function Result({
   onLeaderboard: (entry: LeaderboardEntry) => void;
 }) {
   const [shareState, setShareState] = React.useState('Share result');
+  const [resultStatus, setResultStatus] = React.useState<'pending' | 'official' | 'practice' | 'daily' | 'lab'>('pending');
   const submittedRef = React.useRef(false);
   const correct = answers.filter((answer) => answer.correct).length;
   const total = answers.length;
@@ -505,42 +574,91 @@ function Result({
   const score = worldIqScore(correct, total);
   const rank = formatRank(percentile);
   const beatAi = answers.filter((answer) => answer.correct && !answer.aiSolved).length;
-  const qualifies = total >= 6;
+  const officialWorldRun = mode === 'world' && total >= 6;
+  const shareText = buildShareText({ mode, score, rank, percentile, correct, total, beatAi, answers, status: resultStatus });
 
   React.useEffect(() => {
-    if (!qualifies || submittedRef.current) return;
+    if (submittedRef.current) return;
     submittedRef.current = true;
+
+    if (!officialWorldRun) {
+      setResultStatus(mode === 'daily' ? 'daily' : 'lab');
+      return;
+    }
+
+    const existingOfficialRank = readOfficialRank();
+    if (existingOfficialRank) {
+      setResultStatus('practice');
+      return;
+    }
+
+    const officialRank: OfficialRankRecord = {
+      day: localDayKey(),
+      score,
+      rank,
+      percentile,
+      correct,
+      total,
+      beatAi,
+      timestamp: Date.now(),
+    };
+    writeOfficialRank(officialRank);
+    setResultStatus('official');
+
     const entry: LeaderboardEntry = {
-      id: `local-${mode}-${Date.now()}`,
+      id: `official-${localDayKey()}`,
       name: 'You',
       score,
-      mode: modes[mode].label,
+      mode: 'Today\'s World IQ',
       accuracy: `${correct}/${total}`,
-      qualifier: beatAi > 0 ? `${beatAi} AI misses beaten` : 'qualified score',
+      qualifier: beatAi > 0 ? `${beatAi} AI misses beaten` : 'official daily rank',
       timestamp: Date.now(),
       local: true,
     };
     saveLeaderboardEntry(entry);
     onLeaderboard(entry);
-  }, [beatAi, correct, mode, onLeaderboard, qualifies, score, total]);
+  }, [beatAi, correct, mode, officialWorldRun, onLeaderboard, percentile, rank, score, total]);
 
   async function share() {
-    const text = `I scored ${score} on World IQ (${rank}, ${percentile} percentile) and qualified for the intelligence leaderboard.`;
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(shareText);
       setShareState('Copied');
     } catch {
       setShareState('Ready');
     }
   }
 
+  const statusCopy = resultStatus === 'official'
+    ? {
+      kicker: 'Official rank locked',
+      title: 'Your first World IQ result today is on the founding board.',
+      body: `${score} reasoning score. ${rank} estimated daily rank. ${beatAi} AI blind-spot answers.`,
+    }
+    : resultStatus === 'practice'
+      ? {
+        kicker: 'Practice result',
+        title: 'Today\'s official rank is already locked.',
+        body: 'Retakes are useful for training, but they do not replace the first completed World IQ result.',
+      }
+      : resultStatus === 'daily'
+        ? {
+          kicker: 'Daily sprint logged',
+          title: 'Warmup complete.',
+          body: 'Daily Sprint builds the habit. Complete Today\'s World IQ to lock an official rank.',
+        }
+        : {
+          kicker: 'AI lab complete',
+          title: 'Blind-spot run complete.',
+          body: `${beatAi} answers landed on puzzles current model baselines often miss.`,
+        };
+
   return (
     <div className="runner-panel result">
-      <p className="kicker">{mode === 'daily' ? 'Daily result locked' : `${modes[mode].label} complete`}</p>
+      <p className="kicker">{statusCopy.kicker}</p>
       <div className="result-top">
         <div>
           <strong className="score">{score}</strong>
-          <span>World IQ Score</span>
+          <span>Reasoning score</span>
         </div>
         <div className="rank-card">
           <strong>{rank}</strong>
@@ -553,19 +671,26 @@ function Result({
         <div><strong>{beatAi}</strong><span>AI misses beaten</span></div>
       </div>
       <div className="share-card">
-        <strong>Share card</strong>
-        <p>{mode === 'daily'
-          ? `Daily Genius: ${score} IQ score. ${rank} founding rank.`
-          : `World IQ: ${score} IQ score. ${rank} founding rank. ${beatAi} AI-stumper answers.`}</p>
+        <div>
+          <strong>{mode === 'world' ? `World IQ ${localDayKey()}` : modes[mode].label}</strong>
+          <span>{correct}/{total} correct · {beatAi} AI misses</span>
+        </div>
+        <div className="share-pattern" aria-label="Result pattern" style={{ gridTemplateColumns: `repeat(${answers.length}, 1fr)` }}>
+          {answers.map((answer) => (
+            <span key={answer.id} className={answer.correct ? 'hit' : 'miss'} />
+          ))}
+        </div>
+        <p>{shareText}</p>
       </div>
-      <div className={`qualification ${qualifies ? 'qualified' : ''}`}>
-        <strong>{qualifies ? 'Qualified for the global intelligence leaderboard' : 'Daily score logged'}</strong>
-        <span>{qualifies ? `Your ${score} World IQ score is now on the founding rankings.` : 'Daily Genius builds streaks; complete World IQ or Human vs AGI for the global board.'}</span>
+      <div className={`qualification ${resultStatus === 'official' ? 'qualified' : ''}`}>
+        <strong>{statusCopy.title}</strong>
+        <span>{statusCopy.body}</span>
       </div>
+      <p className="trust-note">World IQ is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.</p>
       <div className="actions">
         <button className="primary" onClick={share}>{shareState}</button>
         <button className="secondary" onClick={onUnlock}>Save rank</button>
-        <button className="secondary" onClick={onUnlock}>Unlock unlimited</button>
+        <button className="secondary" onClick={onUnlock}>Unlock archive</button>
       </div>
     </div>
   );
@@ -650,8 +775,8 @@ function Runner({
       <div className="runner-panel gate">
         <p className="kicker">{modes[mode].label}</p>
         <h2>6 games used today.</h2>
-        <p className="free-note">Unlock a paid profile for unlimited attempts, or come back tomorrow.</p>
-        <button className="primary full" onClick={onUnlock}>Unlock unlimited plays</button>
+        <p className="free-note">Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.</p>
+        <button className="primary full" onClick={onUnlock}>Unlock archive</button>
       </div>
     );
   }
@@ -816,9 +941,9 @@ export default function Home() {
           <span>iq.on.recursiv.io</span>
         </button>
         <div>
-          <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>World</button>
-          <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>AGI</button>
-          <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>Daily</button>
+          <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>Today</button>
+          <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>AI</button>
+          <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>Sprint</button>
           <button className={view === 'rankings' ? 'active' : ''} onClick={() => setView('rankings')}>Rankings</button>
           <button className={view === 'about' ? 'active' : ''} onClick={() => setView('about')}>About</button>
           <button className="nav-cta" onClick={() => setUnlockOpen(true)}>Account</button>
@@ -834,7 +959,7 @@ export default function Home() {
               <span className="edition">( A )</span>
               <span className="sequence">[ 001 / 012 ]</span>
             </div>
-            <p>6 free games each day. Unlimited attempts, saved ranks, deep reports.</p>
+            <p>One official daily rank. Six free plays. Paid profiles unlock archive, history, and private reports.</p>
             <button className="secondary micro" onClick={() => setUnlockOpen(true)}>Unlock {UNLIMITED_PRICE_LABEL}</button>
           </aside>
         </section>
@@ -849,33 +974,35 @@ export default function Home() {
           <div className="section-head">
             <div>
               <p className="kicker">World IQ by Recursiv</p>
-              <h2>The global reasoning test for humans and AI.</h2>
+              <h2>The daily reasoning rank for humans and AI.</h2>
+              <p>A competitive visual reasoning game. Your first completed World IQ run each day creates the official rank and share card.</p>
             </div>
           </div>
           <div className="feature-grid">
-            <article><strong>World IQ</strong><p>A fast reasoning score, estimated global rank, and clean share card.</p></article>
-            <article><strong>Human vs AGI</strong><p>Puzzles selected because they expose abstraction gaps that current AI systems still struggle with.</p></article>
-            <article><strong>Daily Genius</strong><p>A daily reset for streaks, group challenges, and repeat traffic.</p></article>
+            <article><strong>Today&apos;s World IQ</strong><p>A 12-question reasoning run with one official daily submission and a clean share card.</p></article>
+            <article><strong>AI Blind Spots</strong><p>Lab puzzles selected because current model baselines often miss the abstraction.</p></article>
+            <article><strong>Daily Sprint</strong><p>A one-puzzle warmup for streaks and group chats before the ranked run.</p></article>
           </div>
           <div className="monetization">
-            <div><strong>Recursiv Stripe ready</strong><p>Everyone gets six games per day. Paid profiles unlock unlimited attempts, deep reports, verified badges, pro training, and team leaderboards.</p></div>
+            <div><strong>World IQ Unlimited</strong><p>Free players get six plays per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra practice.</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
           </div>
+          <p className="trust-note">World IQ is not a clinical IQ test, admission test, or supervised psychometric assessment.</p>
         </section>
       ) : null}
 
       {unlockOpen ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Unlock unlimited World IQ attempts">
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Unlock World IQ archive access">
           <div className="modal">
             <button className="close" onClick={() => setUnlockOpen(false)} aria-label="Close">×</button>
             <p className="kicker">World IQ account</p>
-            <h2>{paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock unlimited.'}</h2>
+            <h2>{paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.'}</h2>
             <p>{paidAccess
-              ? 'Your paid World IQ access is active on this device. Keep playing, saving rank cards, and building a daily reasoning record.'
-              : 'Free visitors get six games per day. Create a Recursiv account for the platform profile, or continue to Stripe for World IQ Unlimited.'}</p>
+              ? 'Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.'
+              : 'Free visitors get six plays per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access and private reports.'}</p>
             <div className="plans">
               <div><strong>Free</strong><span>6 games per day</span></div>
-              <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>unlimited attempts + deep report</span></div>
+              <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>archive + reports + extra practice</span></div>
             </div>
             {paidAccess ? (
               <button className="primary full" onClick={() => setUnlockOpen(false)}>Continue playing</button>
@@ -889,8 +1016,8 @@ export default function Home() {
             )}
             <span className="fine-print">
               {paidAccess
-                ? 'Unlimited attempts are enabled.'
-                : `Games-style pricing at ${UNLIMITED_PRICE_LABEL}. Checkout is created securely by IQ using Recursiv Stripe.`}
+                ? 'Archive access and extra practice are enabled.'
+                : `Games-style pricing at ${UNLIMITED_PRICE_LABEL}. Checkout is created securely with Stripe.`}
             </span>
             {checkoutError ? <span className="fine-print error">{checkoutError}</span> : null}
             {checkoutState === 'active' ? <span className="fine-print success">Payment verified. Unlimited is active.</span> : null}
@@ -1222,16 +1349,25 @@ export default function Home() {
         .rank-card { border: 1px solid var(--line-strong); background: rgba(255,255,250,.24); border-radius: 18px; min-width: 126px; padding: 12px 14px; text-align: center; }
         .rank-card strong { font-size: 21px; }
         .three { margin-top: 16px; }
-        .share-card { margin-top: 14px; background: var(--ink); color: #f5f5ee; border-radius: 22px; padding: 14px; }
-        .share-card p { margin: 8px 0 0; line-height: 23px; }
+        .share-card { margin-top: 14px; background: var(--ink); color: #f5f5ee; border-radius: 22px; padding: 14px; display: grid; gap: 10px; }
+        .share-card > div:first-child { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+        .share-card span { color: rgba(245,245,238,.66); font-family: "Courier New", ui-monospace, monospace; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .share-card p { margin: 0; line-height: 21px; font-family: "Courier New", ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; color: rgba(245,245,238,.86); }
+        .share-pattern { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+        .share-pattern span { display: block; height: 10px; border-radius: 2px; background: rgba(245,245,238,.18); border: 1px solid rgba(245,245,238,.16); }
+        .share-pattern .hit { background: #f5f5ee; border-color: #f5f5ee; }
+        .share-pattern .miss { background: transparent; }
         .qualification { margin-top: 14px; border: 1px solid var(--line); border-radius: 18px; padding: 12px; background: rgba(255,255,250,.22); display: grid; gap: 3px; }
         .qualification.qualified { border-color: rgba(90,90,86,.34); background: rgba(255,255,250,.28); }
         .qualification span { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 700; }
+        .trust-note { margin: 12px 0 0; color: #676b6d; font-size: 11px; line-height: 18px; font-weight: 700; }
         .leaderboard, .features { max-width: 1180px; margin: 16px auto 0; }
         .section-head p { color: var(--muted); max-width: 720px; line-height: 24px; }
         .leaderboard-rows { display: grid; gap: 8px; margin-top: 18px; }
         .leaderboard-row { border: 1px solid var(--line); border-radius: 18px; padding: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 70px; align-items: center; gap: 12px; background: rgba(255,255,250,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); }
         .leaderboard-row.local { border-color: var(--ink); background: rgba(255,255,250,.38); }
+        .empty-board { border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; gap: 6px; background: rgba(255,255,250,.2); }
+        .empty-board span { color: var(--muted); font-size: 13px; line-height: 20px; font-weight: 700; }
         .rank { width: 42px; height: 42px; display: grid; place-items: center; background: rgba(255,255,250,.28); border: 1px solid var(--line-strong); border-radius: 14px; font-weight: 900; }
         .leader-copy { display: grid; min-width: 0; }
         .leader-copy span { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 700; }
