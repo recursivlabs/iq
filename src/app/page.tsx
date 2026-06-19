@@ -672,7 +672,11 @@ export default function Home() {
             ) : (
               <button className="primary full" disabled>Stripe checkout pending</button>
             )}
-            <span className="fine-print">Set NEXT_PUBLIC_STRIPE_PAYMENT_LINK to enable Recursiv Stripe checkout in production.</span>
+            <span className="fine-print">
+              {checkoutHref
+                ? 'Recursiv billing opens in a new tab. Your World IQ profile stays saved on this device.'
+                : 'Set NEXT_PUBLIC_STRIPE_PAYMENT_LINK to enable Recursiv Stripe checkout in production.'}
+            </span>
           </div>
         </div>
       ) : null}
