@@ -1389,6 +1389,7 @@ function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTil
   }
 
   const tone = tones[pattern.tone];
+  const dotCount = Math.max(0, Math.min(pattern.dots, 6));
   return (
     <div className={`tile ${selected ? 'selected' : ''}`} style={{ borderColor: selected ? tone : undefined }}>
       {pattern.ring ? <div className="ring" style={{ borderColor: tone }} /> : null}
@@ -1397,8 +1398,8 @@ function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTil
           <span key={index} style={{ background: tone }} />
         ))}
       </div>
-      <div className="dots">
-        {Array.from({ length: Math.max(0, Math.min(pattern.dots, 6)) }).map((_, index) => (
+      <div className={`dots dots-${dotCount}`}>
+        {Array.from({ length: dotCount }).map((_, index) => (
           <span key={index} style={{ background: tone }} />
         ))}
       </div>
@@ -4498,7 +4499,14 @@ export default function Home({
         .ring { position: absolute; width: 44%; aspect-ratio: 1; border: 2px solid; border-radius: 999px; opacity: .22; }
         .bars { position: absolute; display: flex; align-items: center; gap: 4px; }
         .bars span { width: 4px; height: 42px; border-radius: 999px; opacity: .78; box-shadow: 0 0 12px rgba(0,0,0,.08); }
-        .dots { width: 50%; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+        .dots { width: 78%; display: grid; align-items: center; justify-content: center; justify-items: center; gap: 4px; }
+        .dots-0 { display: none; }
+        .dots-1 { grid-template-columns: repeat(1, auto); }
+        .dots-2 { grid-template-columns: repeat(2, auto); }
+        .dots-3 { grid-template-columns: repeat(3, auto); }
+        .dots-4 { grid-template-columns: repeat(4, auto); }
+        .dots-5 { grid-template-columns: repeat(5, auto); }
+        .dots-6 { grid-template-columns: repeat(6, auto); }
         .dots span { width: 11px; aspect-ratio: 1; border-radius: 999px; box-shadow: 0 0 10px rgba(0,0,0,.08); }
         .options { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
         .option { border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 5px; display: grid; justify-items: center; gap: 6px; color: #6c7376; font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 900; letter-spacing: .06em; }
@@ -4927,8 +4935,37 @@ export default function Home({
           box-shadow: none;
         }
         .dots {
-          width: 54%;
+          width: 78%;
+          display: grid;
+          align-items: center;
+          justify-content: center;
+          justify-items: center;
           gap: 4px;
+        }
+        .option .dots {
+          width: 84%;
+          gap: 3px;
+        }
+        .dots-0 {
+          display: none;
+        }
+        .dots-1 {
+          grid-template-columns: repeat(1, auto);
+        }
+        .dots-2 {
+          grid-template-columns: repeat(2, auto);
+        }
+        .dots-3 {
+          grid-template-columns: repeat(3, auto);
+        }
+        .dots-4 {
+          grid-template-columns: repeat(4, auto);
+        }
+        .dots-5 {
+          grid-template-columns: repeat(5, auto);
+        }
+        .dots-6 {
+          grid-template-columns: repeat(6, auto);
         }
         .dots span {
           width: 5px;
@@ -6567,6 +6604,10 @@ export default function Home({
           }
           .ring {
             border-width: 1px;
+          }
+          .option .dots {
+            width: 88%;
+            gap: 2px;
           }
           .dots span {
             width: 4px;
