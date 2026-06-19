@@ -48,14 +48,55 @@ type LeaderboardStore = {
   entries: SocialEntry[];
 };
 
+type SeededAgentProfile = Omit<SocialEntry, 'id' | 'day' | 'playerId' | 'groupCode' | 'groupName' | 'total' | 'speedBonus' | 'timestamp'> & {
+  id: string;
+  geo: GeoSnapshot;
+};
+
 const STORE_KEY = 'world-iq:leaderboards:v2';
 const STORE_FILE = 'world-iq-leaderboards.json';
 const MAX_ENTRIES = 5000;
 const MAX_BOARD_ROWS = 50;
 const MAX_GEO_ROWS = 20;
 
+const SEEDED_AGENT_PROFILES = [
+  { id: 'agent-euclid', displayName: 'Agent Euclid', username: 'agent_euclid', score: 142, rank: '#8,210', percentile: 99.2, correct: 11, elapsedMs: 424_000, beatAi: 4, geo: { country: 'United States', countryCode: 'US', region: 'New York', city: 'New York', town: 'New York', timeZone: 'America/New_York', source: 'agent_seed' } },
+  { id: 'agent-noether', displayName: 'Agent Noether', username: 'agent_noether', score: 139, rank: '#12,480', percentile: 98.8, correct: 10, elapsedMs: 382_000, beatAi: 3, geo: { country: 'Germany', countryCode: 'DE', region: 'Berlin', city: 'Berlin', town: 'Berlin', timeZone: 'Europe/Berlin', source: 'agent_seed' } },
+  { id: 'agent-turing', displayName: 'Agent Turing', username: 'agent_turing', score: 136, rank: '#19,300', percentile: 98.1, correct: 10, elapsedMs: 441_000, beatAi: 3, geo: { country: 'United Kingdom', countryCode: 'GB', region: 'England', city: 'London', town: 'London', timeZone: 'Europe/London', source: 'agent_seed' } },
+  { id: 'agent-ramanujan', displayName: 'Agent Ramanujan', username: 'agent_ramanujan', score: 134, rank: '#25,900', percentile: 97.4, correct: 10, elapsedMs: 506_000, beatAi: 2, geo: { country: 'India', countryCode: 'IN', region: 'Tamil Nadu', city: 'Chennai', town: 'Chennai', timeZone: 'Asia/Kolkata', source: 'agent_seed' } },
+  { id: 'agent-hypatia', displayName: 'Agent Hypatia', username: 'agent_hypatia', score: 131, rank: '#38,400', percentile: 96.2, correct: 9, elapsedMs: 365_000, beatAi: 3, geo: { country: 'Egypt', countryCode: 'EG', region: 'Alexandria', city: 'Alexandria', town: 'Alexandria', timeZone: 'Africa/Cairo', source: 'agent_seed' } },
+  { id: 'agent-curie', displayName: 'Agent Curie', username: 'agent_curie', score: 128, rank: '#54,100', percentile: 94.6, correct: 9, elapsedMs: 458_000, beatAi: 2, geo: { country: 'France', countryCode: 'FR', region: 'Ile-de-France', city: 'Paris', town: 'Paris', timeZone: 'Europe/Paris', source: 'agent_seed' } },
+  { id: 'agent-lovelace', displayName: 'Agent Lovelace', username: 'agent_lovelace', score: 126, rank: '#71,600', percentile: 92.8, correct: 9, elapsedMs: 533_000, beatAi: 2, geo: { country: 'United States', countryCode: 'US', region: 'California', city: 'San Francisco', town: 'San Francisco', timeZone: 'America/Los_Angeles', source: 'agent_seed' } },
+  { id: 'agent-gauss', displayName: 'Agent Gauss', username: 'agent_gauss', score: 123, rank: '#93,200', percentile: 90.7, correct: 8, elapsedMs: 401_000, beatAi: 2, geo: { country: 'Canada', countryCode: 'CA', region: 'Ontario', city: 'Toronto', town: 'Toronto', timeZone: 'America/Toronto', source: 'agent_seed' } },
+  { id: 'agent-wu', displayName: 'Agent Wu', username: 'agent_wu', score: 121, rank: '#111,900', percentile: 88.8, correct: 8, elapsedMs: 489_000, beatAi: 1, geo: { country: 'Singapore', countryCode: 'SG', region: null, city: 'Singapore', town: 'Singapore', timeZone: 'Asia/Singapore', source: 'agent_seed' } },
+  { id: 'agent-feynman', displayName: 'Agent Feynman', username: 'agent_feynman', score: 118, rank: '#142,000', percentile: 85.8, correct: 8, elapsedMs: 557_000, beatAi: 1, geo: { country: 'Australia', countryCode: 'AU', region: 'New South Wales', city: 'Sydney', town: 'Sydney', timeZone: 'Australia/Sydney', source: 'agent_seed' } },
+] satisfies SeededAgentProfile[];
+
 function emptyStore(): LeaderboardStore {
   return { entries: [] };
+}
+
+function seededAgentEntries(day: string): SocialEntry[] {
+  const base = Date.parse(`${day}T12:00:00.000Z`);
+  return SEEDED_AGENT_PROFILES.map((agent, index) => ({
+    id: `${day}:${agent.id}:seed`,
+    day,
+    playerId: agent.id,
+    displayName: agent.displayName,
+    username: agent.username,
+    groupCode: null,
+    groupName: null,
+    score: agent.score,
+    rank: agent.rank,
+    percentile: agent.percentile,
+    correct: agent.correct,
+    total: 12,
+    beatAi: agent.beatAi,
+    elapsedMs: agent.elapsedMs,
+    speedBonus: Math.max(0, Math.round((12 * 45_000 - agent.elapsedMs) / 70_000)),
+    timestamp: base + index * 71_000,
+    geo: agent.geo,
+  }));
 }
 
 function sanitizeGroupCode(value: unknown) {
@@ -219,12 +260,13 @@ export async function GET(request: NextRequest) {
   const day = sanitizeText(request.nextUrl.searchParams.get('day'), new Date().toISOString().slice(0, 10), 10);
   const groupCode = sanitizeGroupCode(request.nextUrl.searchParams.get('group'));
   const store = await readStore();
+  const entries = [...seededAgentEntries(day), ...store.entries];
 
   return NextResponse.json({
     day,
-    global: globalRows(store.entries, day),
-    group: groupCode ? groupRows(store.entries, day, groupCode) : [],
-    geography: geographyRows(store.entries, day),
+    global: globalRows(entries, day),
+    group: groupCode ? groupRows(entries, day, groupCode) : [],
+    geography: geographyRows(entries, day),
   }, {
     headers: { 'cache-control': 'no-store' },
   });
@@ -288,9 +330,9 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     accepted: existingIndex < 0,
     entry: existingIndex >= 0 ? store.entries[existingIndex] : entry,
-    global: globalRows(store.entries, day),
-    group: groupCode ? groupRows(store.entries, day, groupCode) : [],
-    geography: geographyRows(store.entries, day),
+    global: globalRows([...seededAgentEntries(day), ...store.entries], day),
+    group: groupCode ? groupRows([...seededAgentEntries(day), ...store.entries], day, groupCode) : [],
+    geography: geographyRows([...seededAgentEntries(day), ...store.entries], day),
   }, {
     headers: { 'cache-control': 'no-store' },
   });
