@@ -71,6 +71,7 @@ nav {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+  z-index: 20;
 }
 
 .brand {
@@ -93,7 +94,6 @@ nav strong {
 }
 
 nav span,
-.language-pill,
 .kicker,
 .progress-row span,
 .question-head span,
@@ -109,16 +109,16 @@ nav span {
   text-transform: uppercase;
 }
 
-nav > div:last-child {
+.nav-command-strip {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  margin-left: auto;
   gap: clamp(10px, 1.6vw, 20px);
   flex-wrap: wrap;
 }
 
-nav button,
-.language-pill {
+nav button {
   min-height: 28px;
   color: #9fa4a8;
   background: transparent;
@@ -129,6 +129,10 @@ nav button,
   font-weight: 500;
   letter-spacing: .18em;
   text-transform: uppercase;
+}
+
+nav button:not(.brand)::after {
+  content: none;
 }
 
 nav .nav-cta,
@@ -156,6 +160,181 @@ nav .nav-cta,
   color: #0a0b0c;
   background: #f4f5f6;
   border: 0;
+}
+
+.presence-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .025);
+  color: #c9ccce;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.presence-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f4f5f6;
+  box-shadow: 0 0 16px rgba(244, 245, 246, .68);
+}
+
+.command-toggle {
+  display: inline-grid;
+  grid-template-columns: 22px minmax(0, auto);
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  min-width: 138px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 16px 44px rgba(0, 0, 0, .24);
+}
+
+.command-toggle.logged-in {
+  border-color: rgba(255, 255, 255, .28);
+}
+
+.menu-mark {
+  display: grid;
+  gap: 4px;
+  width: 18px;
+}
+
+.menu-mark i {
+  display: block;
+  height: 1px;
+  background: #f4f5f6;
+}
+
+.command-id {
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+  line-height: 1;
+}
+
+.command-id strong {
+  max-width: 112px;
+  overflow: hidden;
+  color: #f4f5f6;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-id em {
+  margin-top: 5px;
+  color: #8c9297;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.command-panel {
+  display: block;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 12px);
+  z-index: 9;
+  width: min(380px, calc(100vw - 32px));
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 8px;
+  background: rgba(8, 9, 10, .96);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255, 255, 255, .06);
+  backdrop-filter: blur(18px);
+  padding: 12px;
+}
+
+.command-profile {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 6px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+
+.account-light {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #4b5054;
+}
+
+.account-light.on {
+  background: #f4f5f6;
+  box-shadow: 0 0 20px rgba(244, 245, 246, .64);
+}
+
+.command-profile strong {
+  display: block;
+  overflow: hidden;
+  color: #f4f5f6;
+  font-size: 13px;
+  letter-spacing: .12em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-profile span {
+  display: block;
+  margin-top: 5px;
+  color: #777d82;
+  font-size: 10px;
+  letter-spacing: .13em;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.command-grid button,
+.command-actions button {
+  min-height: 46px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .025);
+  padding: 0 12px;
+  text-align: left;
+}
+
+.command-grid button.active {
+  border-color: rgba(255, 255, 255, .36);
+  background: rgba(255, 255, 255, .08);
+  color: #f4f5f6;
+}
+
+.command-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.command-actions .nav-cta,
+.command-actions .logout-action {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
 }
 
 .full {
@@ -700,7 +879,7 @@ nav .nav-cta,
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, .08);
-  align-items: center;
+  align-items: stretch;
 }
 
 .answer-footer p {
@@ -713,12 +892,15 @@ nav .nav-cta,
 }
 
 .answer-footer .primary {
-  min-height: 42px;
+  min-height: 66px;
+  min-width: 236px;
+  font-size: 13px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .24);
 }
 
 .runner-panel.feedback-correct .answer-footer .primary,
 .runner-panel.feedback-wrong .answer-footer .primary {
-  min-height: 38px;
+  min-height: 58px;
 }
 
 .modal-backdrop {
@@ -827,27 +1009,55 @@ nav .nav-cta,
 
   nav {
     display: grid;
-    grid-template-columns: 1fr;
-    padding-bottom: 7px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding-bottom: 10px;
+    gap: 10px;
+  }
+
+  .nav-command-strip {
+    width: auto;
+    min-width: 0;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    overflow: visible;
     gap: 6px;
   }
 
-  nav > div:last-child {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+  .presence-pill {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 8px;
+    letter-spacing: .12em;
+  }
+
+  .command-toggle {
+    min-width: 92px;
+    min-height: 42px;
     gap: 8px;
+    padding: 7px 8px;
   }
 
-  nav > div:last-child::-webkit-scrollbar {
-    display: none;
+  .command-id strong {
+    max-width: 58px;
+    font-size: 9px;
   }
 
-  .language-pill,
+  .command-id em {
+    font-size: 8px;
+  }
+
+  .command-panel {
+    top: calc(100% + 8px);
+    width: calc(100vw - 20px);
+  }
+
+  .command-grid button,
+  .command-actions button {
+    min-height: 44px;
+  }
+
   nav button {
-    flex: 0 0 auto;
     white-space: nowrap;
   }
 
@@ -1000,7 +1210,7 @@ nav .nav-cta,
 
   .answer-footer .primary {
     width: 100%;
-    min-height: 40px;
+    min-height: 60px;
   }
 }
 
@@ -1059,6 +1269,6 @@ nav .nav-cta,
   }
 
   .answer-footer .primary {
-    min-height: 38px;
+    min-height: 54px;
   }
 }

@@ -147,6 +147,12 @@ type RecursivAccountRecord = {
   updatedAt: number;
 };
 
+type LivePresence = {
+  active: number;
+  updatedAt: number;
+  source: string;
+};
+
 type PlayerSettings = {
   profilePublic: boolean;
   showLocation: boolean;
@@ -232,6 +238,7 @@ const PLAYER_BIO_STORAGE_KEY = 'world-iq-player-bio';
 const PLAYER_CITY_STORAGE_KEY = 'world-iq-player-city';
 const PLAYER_COUNTRY_STORAGE_KEY = 'world-iq-player-country';
 const PROFILE_SYNC_STATE_STORAGE_KEY = 'world-iq-profile-sync-state';
+const PRESENCE_SESSION_STORAGE_KEY = 'world-iq-presence-session';
 const LAUNCH_APP_DOCS_URL = 'https://docs.recursiv.io/guides/ai-tools/connect-claude-desktop';
 const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT || '';
 const ADSENSE_SLOT = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_SLOT || '';
@@ -239,7 +246,7 @@ const EMPTY_GEOGRAPHY_BOARDS: SocialBoards['geography'] = { countries: [], citie
 const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   profilePublic: true,
   showLocation: false,
-  showXBadge: true,
+  showXBadge: false,
   showScoreHistory: true,
   showAgentActivity: true,
   labModesEnabled: false,
@@ -939,6 +946,20 @@ function readPlayerId() {
   return next;
 }
 
+function randomClientId(prefix: string) {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${prefix}-${crypto.randomUUID()}`;
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readPresenceSessionId() {
+  if (typeof window === 'undefined') return 'server-session';
+  const existing = window.sessionStorage.getItem(PRESENCE_SESSION_STORAGE_KEY);
+  if (existing) return existing;
+  const next = randomClientId('tab');
+  window.sessionStorage.setItem(PRESENCE_SESSION_STORAGE_KEY, next);
+  return next;
+}
+
 function defaultPlayerName(playerId: string) {
   return `Player ${playerId.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase() || 'IQ'}`;
 }
@@ -1320,6 +1341,11 @@ function writeRecursivAccount(record: Omit<RecursivAccountRecord, 'updatedAt'>) 
   window.localStorage.setItem(RECURSIV_ACCOUNT_STORAGE_KEY, JSON.stringify({ ...record, updatedAt: Date.now() }));
 }
 
+function clearRecursivAccount() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(RECURSIV_ACCOUNT_STORAGE_KEY);
+}
+
 function clearCheckoutQuery() {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
@@ -1448,7 +1474,7 @@ function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRe
         <div><strong>{profile.answers}</strong><span>{copy('answers completed')}</span></div>
         <div><strong>{profile.attempts}</strong><span>{copy('official days')}</span></div>
         <div><strong>{profile.best ?? '---'}</strong><span>{copy('best score')}</span></div>
-        <div><strong>{copy(formatTrend(profile.trend))}</strong><span>{copy('trajectory')}</span></div>
+        <div><strong>{copy(formatTrend(profile.trend))}</strong><span>{copy('trend')}</span></div>
       </div>
 
       <div className="history-strip" aria-label={copy('Recent official score history')}>
@@ -1779,77 +1805,6 @@ function GeoGlobePanel({
   );
 }
 
-function XVerificationPanel({
-  locale,
-  handle,
-  verification,
-  state,
-  canPostScorecard,
-  onHandleChange,
-  onPostScorecard,
-  onVerifyPost,
-}: {
-  locale: LocaleKey;
-  handle: string;
-  verification: XVerificationRecord | null;
-  state: string;
-  canPostScorecard: boolean;
-  onHandleChange: (handle: string) => void;
-  onPostScorecard: () => void;
-  onVerifyPost: () => void;
-}) {
-  const copy = (text: string) => translate(locale, text);
-  const verified = verification?.status === 'verified';
-  const authUrl = '/api/x/connect';
-
-  return (
-    <section className="rail-panel x-panel">
-      <p className="rail-label">{copy('X badge')}</p>
-      <strong>{verified ? `@${verification.handle}` : copy('Verify public proof')}</strong>
-      <span>{verified
-        ? `${copy('Verified')} ${verification.name ? `· ${verification.name}` : ''}${verification.location ? ` · ${verification.location}` : ''}`
-        : copy('Connect X or post a scorecard to prove the account behind a leaderboard name.')}</span>
-      <label className="name-field">
-        <span>{copy('X handle')}</span>
-        <input value={handle ? `@${handle}` : ''} onChange={(event) => onHandleChange(event.target.value)} maxLength={16} placeholder="@handle" />
-      </label>
-      <div className="auth-row">
-        <a className="secondary full center-link" href={authUrl}>{copy('Auth X')}</a>
-        <button className="secondary full" disabled={!canPostScorecard} onClick={onPostScorecard}>{copy('Post score')}</button>
-      </div>
-      <button className="secondary full" disabled={!handle || !verification?.proofToken || verified} onClick={onVerifyPost}>
-        {copy(verified ? 'Badge active' : 'Check post')}
-      </button>
-      {state ? <span className={`fine-print ${verified ? 'success' : state.toLowerCase().includes('fail') || state.toLowerCase().includes('not') ? 'error' : ''}`}>{copy(state)}</span> : null}
-    </section>
-  );
-}
-
-function ActivityTicker({ locale, boards }: { locale: LocaleKey; boards: SocialBoards }) {
-  const copy = (text: string) => translate(locale, text);
-  const entries = boards.global.slice(0, 10);
-  const activeUsers = Math.max(17, entries.length * 6 + boards.group.length + boards.geography.countries.reduce((total, row) => total + row.entries, 0));
-  const items = entries.length ? entries : [
-    { id: 'seed-1', displayName: 'Agent Euclid', username: 'agent_euclid', score: 142, rank: '#8,210' },
-    { id: 'seed-2', displayName: 'Agent Noether', username: 'agent_noether', score: 139, rank: '#12,480' },
-    { id: 'seed-3', displayName: 'Agent Turing', username: 'agent_turing', score: 136, rank: '#19,300' },
-  ] as Pick<SocialEntry, 'id' | 'displayName' | 'username' | 'score' | 'rank'>[];
-  const tickerItems = [
-    `${activeUsers.toLocaleString()} ${copy('active users')}`,
-    ...items.map((entry) => `${entry.username ? `@${entry.username}` : entry.displayName} ${entry.score} ${entry.rank}`),
-  ];
-
-  return (
-    <div className="activity-ticker" aria-label={copy('Live IQ WARS activity')}>
-      <div className="ticker-track">
-        {[...tickerItems, ...tickerItems].map((item, index) => (
-          <span key={`${item}-${index}`}>{item}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function RankingsGlobeHero({ locale, geography, global }: { locale: LocaleKey; geography: SocialBoards['geography']; global: SocialEntry[] }) {
   const copy = (text: string) => translate(locale, text);
   const regions = React.useMemo(() => buildGlobeRegions(geography, null), [geography]);
@@ -2054,7 +2009,6 @@ function SettingsView({
           <p className="rail-label">{copy('Profile')}</p>
           <SettingToggle label={copy('Public profile')} description={copy('Allow your share link to show username, score, and selected optional fields.')} checked={settings.profilePublic} onChange={(value) => onSetting('profilePublic', value)} />
           <SettingToggle label={copy('Show location')} description={copy('Show optional/inferred city and country on your public profile.')} checked={settings.showLocation} onChange={(value) => onSetting('showLocation', value)} />
-          <SettingToggle label={copy('Show X badge')} description={copy('Show verified X account after auth or scorecard proof.')} checked={settings.showXBadge} onChange={(value) => onSetting('showXBadge', value)} />
           <SettingToggle label={copy('Show score history')} description={copy('Include daily profile history when that view is available.')} checked={settings.showScoreHistory} onChange={(value) => onSetting('showScoreHistory', value)} />
           <span className="fine-print">{profileUrlText}</span>
         </div>
@@ -2071,7 +2025,7 @@ function SettingsView({
           <SettingToggle label={copy('Daily reminders')} description={copy('Use the reminder email field for one daily prompt.')} checked={settings.dailyReminder} onChange={(value) => onSetting('dailyReminder', value)} />
           <SettingToggle label={copy('Email updates')} description={copy('Receive occasional product and ranking updates.')} checked={settings.emailUpdates} onChange={(value) => onSetting('emailUpdates', value)} />
           <SettingToggle label={copy('Analytics')} description={copy('Allow aggregate product analytics to improve IQ WARS.')} checked={settings.analyticsEnabled} onChange={(value) => onSetting('analyticsEnabled', value)} />
-          <SettingToggle label={copy('Show agent activity')} description={copy('Include seeded test agents in rankings and ticker while the network grows.')} checked={settings.showAgentActivity} onChange={(value) => onSetting('showAgentActivity', value)} />
+          <SettingToggle label={copy('Show agent activity')} description={copy('Include seeded test agents in rankings while the network grows.')} checked={settings.showAgentActivity} onChange={(value) => onSetting('showAgentActivity', value)} />
         </div>
       </div>
     </section>
@@ -2085,7 +2039,7 @@ const LEGAL_DOCS: Record<'privacy' | 'terms', { title: string; lede: string; sec
     sections: [
       { heading: 'Scope', body: 'This policy applies to IQWORLD and IQ WARS at iqwars.app and related Recursiv-operated domains. Recursiv Labs, Inc. operates the service and can be contacted at bill@recursiv.io.' },
       { heading: 'What we collect', body: 'We collect account email if you sign up, username and profile fields you choose to provide, daily test scores, timing, leaderboard entries, group-room membership, browser language, timezone, coarse inferred geography, device/browser metadata, payment status, and optional X public profile information when you connect X or verify by posting a scorecard.' },
-      { heading: 'Optional demographic and social data', body: 'No demographic field is required to play. Location, X handle, bio, and similar profile fields are optional and controlled in Settings. We may infer coarse geography from browser, edge, timezone, language, and public X profile signals only to operate rankings and geography boards.' },
+      { heading: 'Optional demographic and social data', body: 'No demographic field is required to play. Location, bio, and similar profile fields are optional and controlled in Settings. We may infer coarse geography from browser, edge, timezone, and language signals only to operate rankings and geography boards.' },
       { heading: 'How we use data', body: 'We use data to operate the game, calculate scores, maintain leaderboards and friend rooms, generate profile links, prevent abuse, process subscriptions through Recursiv and Stripe, provide support, improve product quality, and comply with legal obligations.' },
       { heading: 'Sharing', body: 'Public profile links and leaderboard entries show the fields you choose to make public. Payment data is processed by Stripe. Infrastructure, email, analytics, and AI providers may process data as subprocessors under contract. We do not sell personal data.' },
       { heading: 'AI and inference', body: 'IQWORLD may use AI or automated systems to infer coarse geography, detect abuse, classify aggregate activity, and improve puzzle and profile quality. These inferences are not required to play and can be limited through settings where available.' },
@@ -2103,7 +2057,7 @@ const LEGAL_DOCS: Record<'privacy' | 'terms', { title: string; lede: string; sec
       { heading: 'Eligibility and accounts', body: 'You must be able to form a binding contract and comply with applicable law. You are responsible for account security and for all activity under your account or public profile.' },
       { heading: 'Scores and rankings', body: 'Scores are entertainment and competitive signals generated from IQWORLD puzzle performance and timing. They are not medical, psychological, school-admissions, hiring, immigration, or high-IQ society eligibility determinations.' },
       { heading: 'Fair play', body: 'You may not automate official attempts, evade daily attempt limits, manipulate leaderboards, impersonate others, abuse group links, scrape the service at scale, or interfere with service availability. We may remove entries or suspend access for suspected abuse.' },
-      { heading: 'User content and profiles', body: 'You are responsible for profile text, usernames, X handles, group names, and any content you submit or share. Do not post unlawful, infringing, harassing, deceptive, or privacy-invasive content.' },
+      { heading: 'User content and profiles', body: 'You are responsible for profile text, usernames, group names, and any content you submit or share. Do not post unlawful, infringing, harassing, deceptive, or privacy-invasive content.' },
       { heading: 'Billing', body: `Free players get one full official IQWORLD run per day. Paid features, currently listed at ${UNLIMITED_PRICE_LABEL} unless changed in product, are billed through Recursiv and Stripe. Fees are non-refundable except where required by law or expressly stated.` },
       { heading: 'Third-party services', body: 'Optional X verification and payment processing depend on third-party services. Their availability and terms may apply. Recursiv is not responsible for third-party outages or decisions.' },
       { heading: 'Disclaimer', body: 'IQWORLD is provided as-is and as-available. We disclaim implied warranties to the maximum extent permitted by law. We do not guarantee uninterrupted service, permanent rankings, or that any score reflects innate intelligence.' },
@@ -2247,7 +2201,7 @@ const BLOG_ARTICLES: BlogArticle[] = [
     regionIntent: 'Supports trust and compliance search around online IQ tests.',
     sections: [
       { heading: 'Play first', body: 'A reasoning game should not block play behind demographic forms. Optional profile fields can improve rankings, but they should not be required.' },
-      { heading: 'Control public identity', body: 'Public profiles should let users choose username, location visibility, X badge visibility, and score history visibility.' },
+      { heading: 'Control public identity', body: 'Public profiles should let users choose username, location visibility, score history visibility, and any verified social fields only after those connectors are live.' },
       { heading: 'Aggregate carefully', body: 'Country and city boards are more useful when they show sample sizes and active players. They should be read as game rankings, not scientific claims about populations.' },
     ],
   },
@@ -2461,9 +2415,6 @@ function StatusRail({
   reminderEmail,
   reminderState,
   inviteState,
-  xHandle,
-  xVerification,
-  xState,
   onCreateGroup,
   onCopyInvite,
   onPlayerNameChange,
@@ -2471,9 +2422,6 @@ function StatusRail({
   onClaimUsername,
   onReminderEmailChange,
   onReminderSubmit,
-  onXHandleChange,
-  onXPostScorecard,
-  onXVerifyPost,
   onUnlock,
 }: {
   locale: LocaleKey;
@@ -2491,9 +2439,6 @@ function StatusRail({
   reminderEmail: string;
   reminderState: string;
   inviteState: string;
-  xHandle: string;
-  xVerification: XVerificationRecord | null;
-  xState: string;
   onCreateGroup: () => void | Promise<void>;
   onCopyInvite: () => void | Promise<void>;
   onPlayerNameChange: (name: string) => void;
@@ -2501,9 +2446,6 @@ function StatusRail({
   onClaimUsername: () => void;
   onReminderEmailChange: (email: string) => void;
   onReminderSubmit: () => void;
-  onXHandleChange: (handle: string) => void;
-  onXPostScorecard: () => void;
-  onXVerifyPost: () => void;
   onUnlock: () => void;
 }) {
   const copy = (text: string) => translate(locale, text);
@@ -2560,17 +2502,6 @@ function StatusRail({
         </button>
         {inviteCopied ? <span className="copy-confirmation" role="status" aria-live="polite">{copy('Group link copied')}</span> : null}
       </section>
-
-      <XVerificationPanel
-        locale={locale}
-        handle={xHandle}
-        verification={xVerification}
-        state={xState}
-        canPostScorecard={Boolean(officialRank && xHandle)}
-        onHandleChange={onXHandleChange}
-        onPostScorecard={onXPostScorecard}
-        onVerifyPost={onXVerifyPost}
-      />
 
       <section className="rail-panel unlock-panel">
         <div className="rail-price">
@@ -2912,7 +2843,7 @@ function Runner({
           <strong>{answeredCount}/{questions.length}</strong>
         </div>
         <div>
-          <span>{copy('Trajectory')}</span>
+          <span>{copy('Trend')}</span>
           <strong>{liveDelta > 0 ? `+${liveDelta}` : liveDelta}</strong>
         </div>
       </div>
@@ -3030,6 +2961,8 @@ export default function Home({
   const [copiedProfile, setCopiedProfile] = React.useState(false);
   const [publicProfile, setPublicProfile] = React.useState<PublicProfileRecord | null>(null);
   const [publicProfileState, setPublicProfileState] = React.useState(initialProfileSlug ? 'Loading profile' : '');
+  const [navOpen, setNavOpen] = React.useState(false);
+  const [livePresence, setLivePresence] = React.useState<LivePresence>({ active: 1, updatedAt: 0, source: 'local' });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
 
   React.useEffect(() => {
@@ -3299,7 +3232,52 @@ export default function Home({
     }
   }, [groupCode, mode, settings.labModesEnabled]);
 
+  React.useEffect(() => {
+    if (!playerId) return undefined;
+    let cancelled = false;
+    const sessionId = readPresenceSessionId();
+
+    async function heartbeat() {
+      try {
+        const response = await fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            playerId,
+            username: claimedUsername || null,
+            path: typeof window !== 'undefined' ? window.location.pathname : '/',
+          }),
+          cache: 'no-store',
+        });
+        const data = await response.json().catch(() => null);
+        if (!cancelled && response.ok && typeof data?.active === 'number') {
+          setLivePresence({
+            active: Math.max(1, Math.round(data.active)),
+            updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : Date.now(),
+            source: typeof data.source === 'string' ? data.source : 'heartbeat',
+          });
+        }
+      } catch {
+        if (!cancelled) setLivePresence((current) => current.active > 0 ? current : { active: 1, updatedAt: Date.now(), source: 'local' });
+      }
+    }
+
+    void heartbeat();
+    const interval = window.setInterval(heartbeat, 20_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void heartbeat();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [claimedUsername, playerId, view]);
+
   function navigateView(nextView: ViewKey) {
+    setNavOpen(false);
     setView(nextView);
     setActiveBlogSlug('');
     if (typeof window === 'undefined') return;
@@ -3746,6 +3724,20 @@ export default function Home({
     }
   }
 
+  function logoutAccount() {
+    clearRecursivAccount();
+    setRecursivAccount(null);
+    setPaidAccess(false);
+    setCheckoutState('idle');
+    setCheckoutError('');
+    setAuthState('idle');
+    setAuthCode('');
+    setAuthMessage('Logged out.');
+    setUnlockOpen(false);
+    setNavOpen(false);
+    if (view === 'profile' || view === 'settings') navigateView('test');
+  }
+
   function updateSetting<K extends keyof PlayerSettings>(key: K, value: PlayerSettings[K]) {
     const next = { ...settings, [key]: value };
     setSettings(next);
@@ -3767,8 +3759,8 @@ export default function Home({
       bio: profileBio || null,
       city: settings.showLocation ? inferredCity || null : null,
       country: settings.showLocation ? inferredCountry || null : null,
-      xHandle: settings.showXBadge && xVerification?.status === 'verified' ? xVerification.handle : null,
-      xVerified: settings.showXBadge && xVerification?.status === 'verified',
+      xHandle: null,
+      xVerified: false,
       score: iqProfile.score,
       best: iqProfile.best,
       rank: officialSnapshot?.rank || null,
@@ -3846,29 +3838,70 @@ export default function Home({
   const localProfilePath = `/u/${localProfile.slug}`;
   const activeArticle = BLOG_ARTICLES.find((article) => article.slug === activeBlogSlug) || null;
   const labModesVisible = Boolean(recursivAccount && settings.labModesEnabled && !groupCode);
+  const navIdentity = claimedUsername
+    ? `@${claimedUsername}`
+    : recursivAccount?.name || recursivAccount?.email.split('@')[0] || playerName || 'Guest';
+  const navScore = localProfile.score === null ? copy('Unrated') : String(localProfile.score);
+  const navStatus = recursivAccount ? copy('Logged in') : copy('Logged out');
+  const liveCountLabel = `${livePresence.active.toLocaleString()} ${copy('live')}`;
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
-      <nav>
+      <nav className={navOpen ? 'nav-open' : ''}>
         <button className="brand" onClick={() => {
           setMode('world');
           navigateView('test');
         }}>
           <strong>IQ WARS</strong>
         </button>
-        <div>
-          <span className="language-pill" aria-label={`${copy('Auto')} ${localeLabel(locale)}`}>{copy('Auto')} · {localeLabel(locale)}</span>
-          <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
-          {labModesVisible ? <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button> : null}
-          {labModesVisible ? <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button> : null}
-          <button className={view === 'rankings' ? 'active' : ''} onClick={() => navigateView('rankings')}>{copy('Rankings')}</button>
-          {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
-          <button className={view === 'about' ? 'active' : ''} onClick={() => navigateView('about')}>{copy('About')}</button>
-          {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
-          <button className="nav-cta" onClick={() => setUnlockOpen(true)}>{copy('Account')}</button>
+        <div className="nav-command-strip">
+          <span className="presence-pill" aria-label={copy('Live users')}>
+            <i aria-hidden="true" />
+            {liveCountLabel}
+          </span>
+          <button
+            className={`command-toggle ${recursivAccount ? 'logged-in' : 'logged-out'}`}
+            aria-expanded={navOpen}
+            aria-label={copy('Open command center')}
+            onClick={() => setNavOpen((open) => !open)}
+          >
+            <span className="menu-mark" aria-hidden="true"><i /><i /><i /></span>
+            <span className="command-id">
+              <strong>{navIdentity}</strong>
+              <em>{navScore}</em>
+            </span>
+          </button>
         </div>
+        {navOpen ? (
+          <div className="command-panel" role="menu" aria-label={copy('IQ WARS command center')}>
+            <div className="command-profile">
+              <span className={`account-light ${recursivAccount ? 'on' : ''}`} aria-hidden="true" />
+              <div>
+                <strong>{navIdentity}</strong>
+                <span>{navStatus} · {copy('Score')} {navScore} · {copy('Auto')} {localeLabel(locale)}</span>
+              </div>
+            </div>
+            <div className="command-grid">
+              <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
+              {labModesVisible ? <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button> : null}
+              {labModesVisible ? <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button> : null}
+              <button className={view === 'rankings' ? 'active' : ''} onClick={() => navigateView('rankings')}>{copy('Rankings')}</button>
+              <button className={view === 'about' ? 'active' : ''} onClick={() => navigateView('about')}>{copy('About')}</button>
+              <button className={view === 'research' ? 'active' : ''} onClick={() => navigateView('research')}>{copy('Research')}</button>
+              <button className={view === 'blog' ? 'active' : ''} onClick={() => navigateView('blog')}>{copy('Blog')}</button>
+              {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
+              {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
+            </div>
+            <div className="command-actions">
+              <button className="nav-cta" onClick={() => {
+                setNavOpen(false);
+                setUnlockOpen(true);
+              }}>{copy(recursivAccount ? 'Account' : 'Connect account')}</button>
+              {recursivAccount ? <button className="secondary logout-action" onClick={logoutAccount}>{copy('Logout')}</button> : null}
+            </div>
+          </div>
+        ) : null}
       </nav>
-      <ActivityTicker locale={locale} boards={displayBoards} />
 
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${copy(modes[mode].label)} test`}>
@@ -3890,9 +3923,6 @@ export default function Home({
             reminderEmail={reminderEmail}
             reminderState={reminderState}
             inviteState={inviteState}
-            xHandle={xHandle}
-            xVerification={xVerification}
-            xState={xState}
             onCreateGroup={createGroup}
             onCopyInvite={copyInvite}
             onPlayerNameChange={handlePlayerNameChange}
@@ -3900,9 +3930,6 @@ export default function Home({
             onClaimUsername={claimUsername}
             onReminderEmailChange={handleReminderEmailChange}
             onReminderSubmit={submitReminder}
-            onXHandleChange={handleXHandleChange}
-            onXPostScorecard={postXScorecard}
-            onXVerifyPost={verifyXPost}
             onUnlock={() => setUnlockOpen(true)}
           />
         </section>
@@ -4041,7 +4068,7 @@ export default function Home({
           </div>
           {recursivAccount ? (
             <div className="social-architecture">
-              <article><strong>{copy('Profiles')}</strong><p>{copy('Send a public profile with username, score, optional X badge, and optional location fields controlled in Settings.')}</p></article>
+              <article><strong>{copy('Profiles')}</strong><p>{copy('Send a public profile with username, score, and optional location fields controlled in Settings.')}</p></article>
               <article><strong>{copy('Feed')}</strong><p>{copy('A logged-in score feed can surface friend results, recent country moves, and daily rank changes without interrupting the test flow.')}</p></article>
               <article><strong>{copy('Chat')}</strong><p>{copy('Friend-room chat belongs behind auth so groups can compete daily without exposing public visitors to extra friction.')}</p></article>
             </div>
@@ -4511,8 +4538,23 @@ export default function Home({
         .options { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
         .option { border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 5px; display: grid; justify-items: center; gap: 6px; color: #6c7376; font-family: "Courier New", ui-monospace, monospace; font-size: 12px; font-weight: 900; letter-spacing: .06em; }
         .option.active { border-color: var(--ink); background: rgba(255,255,250,.32); color: var(--ink); }
-        .answer-footer { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 24px; }
+        .answer-footer { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 24px; align-items: stretch; }
         .answer-footer p { flex: 1; min-width: 180px; margin: 0; font-size: 12px; line-height: 18px; font-weight: 700; }
+        .answer-footer .primary {
+          min-width: 230px;
+          min-height: 64px;
+          border-radius: 5px;
+          font-size: 13px;
+          box-shadow: 0 18px 46px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.36);
+        }
+        .answer-footer .primary:not(:disabled) {
+          transform: translateY(-1px);
+        }
+        .answer-footer .primary:disabled {
+          opacity: .38;
+          transform: none;
+          box-shadow: none;
+        }
         .result-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
         .result-top .score { display: block; font-family: "Arial Narrow", "Helvetica Neue Condensed", Arial, sans-serif; font-size: 70px; line-height: 64px; letter-spacing: .01em; }
         .result-top span, .rank-card span, .leader-score span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
@@ -4649,7 +4691,6 @@ export default function Home({
         .profile-panel,
         .social-hub,
         .account-gate,
-        .activity-ticker,
         .rankings-globe-hero,
         .profile-page,
         .settings-page,
@@ -4665,6 +4706,7 @@ export default function Home({
           padding: 0 0 18px;
           border-bottom: 1px solid rgba(255,255,255,.08);
           align-items: center;
+          z-index: 20;
         }
         .brand {
           color: #f4f5f6;
@@ -4723,6 +4765,172 @@ export default function Home({
           font-weight: 500;
           letter-spacing: .18em;
           text-transform: uppercase;
+        }
+        nav button:not(.brand)::after {
+          content: none;
+        }
+        .nav-command-strip {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-left: auto;
+        }
+        .presence-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-height: 38px;
+          padding: 0 12px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 999px;
+          background: rgba(255,255,255,.025);
+          color: #c9ccce;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: .16em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+        .presence-pill i {
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: #f4f5f6;
+          box-shadow: 0 0 16px rgba(244,245,246,.68);
+        }
+        .command-toggle {
+          display: inline-grid;
+          grid-template-columns: 22px minmax(0, auto);
+          align-items: center;
+          gap: 12px;
+          min-height: 48px;
+          min-width: 138px;
+          padding: 8px 12px;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 4px;
+          background: rgba(255,255,255,.035);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 16px 44px rgba(0,0,0,.24);
+        }
+        .command-toggle.logged-in {
+          border-color: rgba(255,255,255,.28);
+        }
+        .menu-mark {
+          display: grid;
+          gap: 4px;
+          width: 18px;
+        }
+        .menu-mark i {
+          display: block;
+          height: 1px;
+          background: #f4f5f6;
+          box-shadow: 0 0 10px rgba(244,245,246,.38);
+        }
+        .command-id {
+          display: grid;
+          justify-items: start;
+          min-width: 0;
+          line-height: 1;
+        }
+        .command-id strong {
+          max-width: 112px;
+          overflow: hidden;
+          color: #f4f5f6;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: .12em;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .command-id em {
+          margin-top: 5px;
+          color: #8c9297;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-style: normal;
+          letter-spacing: .16em;
+          text-transform: uppercase;
+        }
+        .command-panel {
+          display: block;
+          position: absolute;
+          right: 0;
+          top: calc(100% + 12px);
+          z-index: 9;
+          width: min(380px, calc(100vw - 32px));
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 8px;
+          background: rgba(8,9,10,.96);
+          box-shadow: 0 32px 90px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.06);
+          backdrop-filter: blur(18px);
+          padding: 12px;
+        }
+        .command-profile {
+          display: grid;
+          grid-template-columns: 10px minmax(0, 1fr);
+          gap: 12px;
+          align-items: center;
+          padding: 8px 6px 14px;
+          border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        .account-light {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #4b5054;
+        }
+        .account-light.on {
+          background: #f4f5f6;
+          box-shadow: 0 0 20px rgba(244,245,246,.64);
+        }
+        .command-profile strong {
+          display: block;
+          overflow: hidden;
+          color: #f4f5f6;
+          font-size: 13px;
+          letter-spacing: .12em;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .command-profile span {
+          display: block;
+          margin-top: 5px;
+          color: #777d82;
+          font-size: 10px;
+          letter-spacing: .13em;
+        }
+        .command-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+          padding-top: 12px;
+        }
+        .command-grid button,
+        .command-actions button {
+          min-height: 46px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 4px;
+          background: rgba(255,255,255,.025);
+          padding: 0 12px;
+          text-align: left;
+        }
+        .command-grid button.active {
+          border-color: rgba(255,255,255,.36);
+          background: rgba(255,255,255,.08);
+          color: #f4f5f6;
+        }
+        .command-actions {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 8px;
+          padding-top: 10px;
+        }
+        .command-actions .nav-cta,
+        .command-actions .logout-action {
+          width: 100%;
+          justify-content: center;
+          text-align: center;
         }
         .test-surface {
           display: grid;
@@ -5141,7 +5349,7 @@ export default function Home({
           margin-top: 10px;
           padding-top: 10px;
           border-top: 1px solid rgba(255,255,255,.08);
-          align-items: center;
+          align-items: stretch;
         }
         .answer-footer p {
           color: #5c6166;
@@ -5152,11 +5360,14 @@ export default function Home({
           text-transform: uppercase;
         }
         .answer-footer .primary {
-          min-height: 42px;
+          min-height: 66px;
+          min-width: 236px;
+          font-size: 13px;
+          box-shadow: 0 18px 48px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.24);
         }
         .runner-panel.feedback-correct .answer-footer .primary,
         .runner-panel.feedback-wrong .answer-footer .primary {
-          min-height: 38px;
+          min-height: 58px;
         }
         .primary,
         .secondary {
@@ -6036,46 +6247,6 @@ export default function Home({
         .fine-print.success {
           color: #baf5cf;
         }
-        .activity-ticker {
-          overflow: hidden;
-          border: 1px solid rgba(255,255,255,.08);
-          border-radius: 4px;
-          background: rgba(255,255,255,.025);
-          margin-top: 14px;
-          height: 34px;
-          display: flex;
-          align-items: center;
-        }
-        .ticker-track {
-          display: flex;
-          align-items: center;
-          gap: 28px;
-          min-width: max-content;
-          animation: tickerMove 34s linear infinite;
-        }
-        .ticker-track span {
-          color: #9fa4a8;
-          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-          font-size: 10px;
-          font-weight: 500;
-          letter-spacing: .18em;
-          text-transform: uppercase;
-          white-space: nowrap;
-        }
-        .ticker-track span::before {
-          content: "";
-          display: inline-block;
-          width: 5px;
-          height: 5px;
-          margin-right: 10px;
-          background: #d8b85f;
-          box-shadow: 0 0 18px rgba(216,184,95,.52);
-          vertical-align: 1px;
-        }
-        @keyframes tickerMove {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
         .rankings-globe-hero {
           min-height: 560px;
           margin-top: clamp(28px, 5vh, 56px);
@@ -6447,8 +6618,7 @@ export default function Home({
           .symbol,
           .globe-sphere::before,
           .globe-grid.longitude,
-          .globe-region,
-          .ticker-track {
+          .globe-region {
             animation: none;
           }
         }
@@ -6488,25 +6658,48 @@ export default function Home({
           }
           nav {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
             padding-top: 0;
-            padding-bottom: 7px;
+            padding-bottom: 10px;
+            gap: 10px;
+          }
+          .nav-command-strip {
+            width: auto;
+            min-width: 0;
+            justify-content: flex-end;
+            flex-wrap: nowrap;
+            overflow: visible;
             gap: 6px;
           }
-          nav > div:last-child {
-            width: 100%;
-            justify-content: flex-start;
-            flex-wrap: nowrap;
-            overflow-x: auto;
-            scrollbar-width: none;
+          .presence-pill {
+            min-height: 34px;
+            padding: 0 8px;
+            font-size: 8px;
+            letter-spacing: .12em;
+          }
+          .command-toggle {
+            min-width: 92px;
+            min-height: 42px;
             gap: 8px;
+            padding: 7px 8px;
           }
-          nav > div:last-child::-webkit-scrollbar {
-            display: none;
+          .command-id strong {
+            max-width: 58px;
+            font-size: 9px;
           }
-          .language-pill,
+          .command-id em {
+            font-size: 8px;
+          }
+          .command-panel {
+            top: calc(100% + 8px);
+            width: calc(100vw - 20px);
+          }
+          .command-grid button,
+          .command-actions button {
+            min-height: 44px;
+          }
           nav button {
-            flex: 0 0 auto;
             white-space: nowrap;
           }
           nav strong {
@@ -6520,11 +6713,6 @@ export default function Home({
           nav .nav-cta {
             padding: 7px 9px;
             min-height: 32px;
-          }
-          .activity-ticker {
-            margin-top: 6px;
-            height: 26px;
-            min-height: 26px;
           }
           .test-surface {
             margin-top: 6px;
@@ -6671,7 +6859,7 @@ export default function Home({
           }
           .answer-footer .primary {
             width: 100%;
-            min-height: 40px;
+            min-height: 60px;
           }
           .live-score-row div {
             padding: 5px 6px;
@@ -6726,7 +6914,7 @@ export default function Home({
               font-size: 10px;
             }
             .answer-footer .primary {
-              min-height: 38px;
+              min-height: 54px;
             }
           }
           .geo-globe-panel {
@@ -6754,9 +6942,6 @@ export default function Home({
           }
           .auth-row {
             grid-template-columns: 1fr;
-          }
-          .activity-ticker {
-            margin-top: 10px;
           }
           .rankings-globe-hero {
             min-height: 0;
