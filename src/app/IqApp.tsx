@@ -131,7 +131,7 @@ const tones: Record<TileTone, string> = {
 
 const modes: Record<ModeKey, { label: string; title: string; body: string; cta: string }> = {
   world: {
-    label: 'Today\'s World IQ',
+    label: 'Today\'s IQ WARS',
     title: 'Lock today\'s reasoning rank.',
     body: 'One official attempt per day. Each completed day updates a developing IQ profile instead of resetting the player.',
     cta: 'Start today',
@@ -145,7 +145,7 @@ const modes: Record<ModeKey, { label: string; title: string; body: string; cta: 
   daily: {
     label: 'Daily Sprint',
     title: 'One hard puzzle. No ramp.',
-    body: 'A pressure puzzle for streaks and group chats. World IQ is the official ranked mode.',
+    body: 'A pressure puzzle for streaks and group chats. IQ WARS is the official ranked mode.',
     cta: 'Sprint',
   },
 };
@@ -353,12 +353,19 @@ function randomRoomCode() {
 }
 
 function currentOrigin() {
-  if (typeof window === 'undefined') return 'https://iq.on.recursiv.io';
+  if (typeof window === 'undefined') return 'https://iqwars.app';
   return window.location.origin;
 }
 
 function groupShareUrl(groupCode: string | null) {
   return groupCode ? `${currentOrigin()}/g/${groupCode}` : currentOrigin();
+}
+
+async function copyTextToClipboard(text: string) {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+    throw new Error('Clipboard is unavailable.');
+  }
+  await navigator.clipboard.writeText(text);
 }
 
 function readStoredGroupCode(initialGroupCode?: string) {
@@ -754,10 +761,10 @@ function buildShareText({
 }) {
   const copy = (text: string) => translate(locale, text);
   const topLabel = percentile >= 99.9 ? 'top 0.1%' : `top ${(100 - percentile).toFixed(percentile >= 99 ? 1 : 0)}%`;
-  const roomLine = groupCode ? `\n${copy('Room')}: ${groupName}\n${groupShareUrl(groupCode)}` : '\niq.on.recursiv.io';
+  const roomLine = groupCode ? `\n${copy('Room')}: ${groupName}\n${groupShareUrl(groupCode)}` : `\n${currentOrigin().replace(/^https?:\/\//, '')}`;
   const timeLine = `${formatElapsedTime(elapsedMs)} · +${speedBonus} ${copy('speed')}`;
   if (mode === 'world') {
-    const label = status === 'practice' ? copy('World IQ practice') : `World IQ ${localDayKey()}`;
+    const label = status === 'practice' ? copy('IQ WARS practice') : `IQ WARS ${localDayKey()}`;
     return `${label}: ${score} ${copy('reasoning')} | ${rank} | ${topLabel} | ${correct}/${total} | ${timeLine} | ${copy('AI misses')} ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
   if (mode === 'agi') {
@@ -816,7 +823,7 @@ function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRe
   const recent = sortOfficialHistory(history).slice(0, 14).reverse();
 
   return (
-    <section className="profile-panel" aria-label={copy('Developing World IQ profile')}>
+    <section className="profile-panel" aria-label={copy('Developing IQ WARS profile')}>
       <div className="section-head">
         <div>
           <p className="kicker">{copy('Developing IQ')}</p>
@@ -862,7 +869,7 @@ function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnl
         <div>
           <p className="kicker">Founding rank board</p>
           <h2>The daily reasoning board opens with verified first attempts.</h2>
-          <p>Only the first completed World IQ run each day is submitted. Practice runs and lab modes stay private.</p>
+          <p>Only the first completed IQ WARS run each day is submitted. Practice runs and lab modes stay private.</p>
         </div>
         <button className="secondary" onClick={onUnlock}>Verify rank</button>
       </div>
@@ -884,7 +891,7 @@ function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnl
         ) : (
           <div className="empty-board">
             <strong>No official ranks yet.</strong>
-            <span>Finish Today&apos;s World IQ to create the first local verified entry.</span>
+            <span>Finish Today&apos;s IQ WARS to create the first local verified entry.</span>
           </div>
         )}
       </div>
@@ -910,9 +917,10 @@ function SocialLeaderboard({
   entries: SocialEntry[];
   empty: string;
   cta: string;
-  onCta: () => void;
+  onCta: () => void | Promise<void>;
 }) {
   const copy = (text: string) => translate(locale, text);
+  const ctaCopied = cta === copy('Link copied');
   return (
     <section className="leaderboard social-board">
       <div className="section-head">
@@ -921,7 +929,7 @@ function SocialLeaderboard({
           <h2>{title}</h2>
           <p>{description}</p>
         </div>
-        <button className="secondary" onClick={onCta}>{cta}</button>
+        <button className={`secondary ${ctaCopied ? 'copied' : ''}`} onClick={onCta}>{cta}</button>
       </div>
       <div className="leaderboard-rows">
         {entries.length > 0 ? (
@@ -941,7 +949,7 @@ function SocialLeaderboard({
         ) : (
           <div className="empty-board">
             <strong>{empty}</strong>
-            <span>{copy('Finish Today\'s World IQ to put the first verified score on this board.')}</span>
+            <span>{copy('Finish Today\'s IQ WARS to put the first verified score on this board.')}</span>
           </div>
         )}
       </div>
@@ -985,8 +993,8 @@ function StatusRail({
   reminderEmail: string;
   reminderState: string;
   inviteState: string;
-  onCreateGroup: () => void;
-  onCopyInvite: () => void;
+  onCreateGroup: () => void | Promise<void>;
+  onCopyInvite: () => void | Promise<void>;
   onPlayerNameChange: (name: string) => void;
   onUsernameChange: (name: string) => void;
   onClaimUsername: () => void;
@@ -999,13 +1007,14 @@ function StatusRail({
   const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
   const remaining = Math.max(0, DAILY_PLAY_LIMIT - usedToday);
   const iqProfile = getIqProfile(officialHistory);
+  const inviteCopied = inviteState === 'Link copied';
 
   return (
-    <aside className="status-rail" aria-label="World IQ session and subscription">
+    <aside className="status-rail" aria-label="IQ WARS session and subscription">
       <section className="rail-panel">
         <p className="rail-label">{copy('Session')}</p>
         <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 / 1 attempt left' : '0 / 1 · used')}</strong>
-        <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One official Today\'s World IQ attempt today.' : 'Your official attempt is locked for today.')}</span>
+        <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One official Today\'s IQ WARS attempt today.' : 'Your official attempt is locked for today.')}</span>
         <div className="rail-rule" />
         <p className="rail-label">{copy('Official rank')}</p>
         <span className="rail-mono">{officialRank ? `${copy('Locked')} · ${officialRank.score} · ${officialRank.rank}` : copy('Not yet locked today.')}</span>
@@ -1039,9 +1048,10 @@ function StatusRail({
             <button className="secondary full" onClick={onReminderSubmit}>{stateCopy(reminderState)}</button>
           </>
         ) : null}
-        <button className="secondary full" onClick={groupCode ? onCopyInvite : onCreateGroup}>
-          {copy(groupCode ? inviteState : 'Create room')}
+        <button className={`secondary full copy-link ${inviteCopied ? 'copied' : ''}`} onClick={groupCode ? onCopyInvite : onCreateGroup}>
+          {copy(groupCode ? inviteState : 'Create & copy link')}
         </button>
+        {inviteCopied ? <span className="copy-confirmation" role="status" aria-live="polite">{copy('Group link copied')}</span> : null}
       </section>
 
       <section className="rail-panel unlock-panel">
@@ -1129,7 +1139,7 @@ function Result({
       id: `official-${localDayKey()}`,
       name: 'You',
       score,
-      mode: copy('Today\'s World IQ'),
+      mode: copy('Today\'s IQ WARS'),
       accuracy: `${correct}/${total}`,
       qualifier: beatAi > 0 ? `${beatAi} ${copy('AI misses')}` : copy('official daily rank'),
       timestamp: Date.now(),
@@ -1143,7 +1153,7 @@ function Result({
     try {
       if (navigator.share) {
         await navigator.share({
-          title: groupCode ? `${groupName} on World IQ` : 'World IQ',
+          title: groupCode ? `${groupName} on IQ WARS` : 'IQ WARS',
           text: shareText,
           url: groupShareUrl(groupCode),
         });
@@ -1160,20 +1170,20 @@ function Result({
   const statusCopy = resultStatus === 'official'
     ? {
       kicker: 'Official rank locked',
-      title: 'Today updated your developing World IQ profile.',
+      title: 'Today updated your developing IQ WARS profile.',
       body: `${score} ${copy('Reasoning score')}. ${formatElapsedTime(elapsedMs)} ${copy('official time')}. ${rank} ${copy('estimated rank')}. ${beatAi} ${copy('AI misses')}.`,
     }
     : resultStatus === 'practice'
       ? {
         kicker: 'Practice result',
         title: 'Today\'s official rank is already locked.',
-        body: 'Retakes are useful for training, but they do not replace the first completed World IQ result.',
+        body: 'Retakes are useful for training, but they do not replace the first completed IQ WARS result.',
       }
       : resultStatus === 'daily'
         ? {
           kicker: 'Daily sprint logged',
           title: 'Sprint complete.',
-          body: 'Daily Sprint builds the habit. Complete Today\'s World IQ to update the official profile.',
+          body: 'Daily Sprint builds the habit. Complete Today\'s IQ WARS to update the official profile.',
         }
         : {
         kicker: 'AI lab complete',
@@ -1201,7 +1211,7 @@ function Result({
       </div>
       <div className="share-card">
         <div>
-          <strong>{mode === 'world' ? `World IQ ${localDayKey()}` : copy(modes[mode].label)}</strong>
+          <strong>{mode === 'world' ? `IQ WARS ${localDayKey()}` : copy(modes[mode].label)}</strong>
           <span>{correct}/{total} {copy('correct')} · {beatAi} {copy('AI misses')}</span>
         </div>
         <div className="share-pattern" aria-label="Result pattern" style={{ gridTemplateColumns: `repeat(${answers.length}, 1fr)` }}>
@@ -1215,7 +1225,7 @@ function Result({
         <strong>{copy(statusCopy.title)}</strong>
         <span>{copy(statusCopy.body)}</span>
       </div>
-      <p className="trust-note">{copy('World IQ is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
+      <p className="trust-note">{copy('IQ WARS is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
       <div className="actions">
         <button className="primary" onClick={share}>{copy(shareState)}</button>
         <button className="secondary" onClick={onUnlock}>{copy('Save rank')}</button>
@@ -1339,7 +1349,7 @@ function Runner({
       <div className="runner-panel gate">
         <p className="kicker">{copy(modes[mode].label)}</p>
         <h2>{copy('Your one official attempt today is locked.')}</h2>
-        <p className="free-note">{copy('Free players get 1 official Today\'s World IQ attempt per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.')}</p>
+        <p className="free-note">{copy('Free players get 1 official Today\'s IQ WARS attempt per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.')}</p>
         <button className="primary full" onClick={onUnlock}>{copy('Unlock profile')}</button>
       </div>
     );
@@ -1400,7 +1410,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [usernameState, setUsernameState] = React.useState('Claim handle');
   const [reminderEmail, setReminderEmail] = React.useState('');
   const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
-  const [inviteState, setInviteState] = React.useState('Copy invite');
+  const [inviteState, setInviteState] = React.useState('Copy link');
   const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [] });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
 
@@ -1646,36 +1656,46 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     }
   }
 
-  function createGroup() {
+  const resetInviteStateSoon = React.useCallback((state: string) => {
+    if (typeof window === 'undefined') return;
+    window.setTimeout(() => {
+      setInviteState((current) => current === state ? 'Copy link' : current);
+    }, 1800);
+  }, []);
+
+  const copyGroupLink = React.useCallback(async (code: string) => {
+    const url = groupShareUrl(code);
+    setInviteState('Copying link');
+    try {
+      await copyTextToClipboard(url);
+      setInviteState('Link copied');
+      resetInviteStateSoon('Link copied');
+    } catch {
+      setInviteState('Copy failed');
+      resetInviteStateSoon('Copy failed');
+    }
+  }, [resetInviteStateSoon]);
+
+  async function createGroup() {
     const code = randomRoomCode();
     const name = groupNameFromCode(code);
     setGroupCode(code);
     setGroupName(name);
-    setInviteState('Copy invite');
+    setInviteState('Copying link');
     writeStoredGroup(code, name);
     if (typeof window !== 'undefined') {
       window.history.replaceState({}, '', `/g/${code}`);
     }
     void refreshSocialBoards(code);
+    await copyGroupLink(code);
   }
 
   async function copyInvite() {
     if (!groupCode) {
-      createGroup();
+      await createGroup();
       return;
     }
-    const inviteText = `${copy('Join')} ${groupName} ${copy('on World IQ. One official attempt today:')} ${groupShareUrl(groupCode)}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: `${groupName} on World IQ`, text: inviteText, url: groupShareUrl(groupCode) });
-        setInviteState('Shared');
-        return;
-      }
-      await navigator.clipboard.writeText(inviteText);
-      setInviteState('Copied');
-    } catch {
-      setInviteState('Copy invite');
-    }
+    await copyGroupLink(groupCode);
   }
 
   const checkoutHref = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '';
@@ -1715,7 +1735,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           setMode('world');
           setView('test');
         }}>
-          <strong>World IQ</strong>
+          <strong>IQ WARS</strong>
         </button>
         <div>
           <span className="language-pill" aria-label={`${copy('Auto')} ${localeLabel(locale)}`}>{copy('Auto')} · {localeLabel(locale)}</span>
@@ -1768,17 +1788,17 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             description={groupCode ? copy('One invite link. One official attempt each. The room resets daily and keeps the pressure local.') : copy('Friend rooms are the fastest loop: create a link, send it to a group chat, and compare official scores today.')}
             entries={socialBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
-            cta={copy(groupCode ? 'Invite friends' : 'Create room')}
+            cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
           />
           <SocialLeaderboard
             locale={locale}
             kicker={copy('Global board')}
-            title={copy('The daily global World IQ board.')}
+            title={copy('The daily global IQ WARS board.')}
             description={copy('The highest official first attempts today, deduped by player. Friend-room results also qualify globally.')}
             entries={socialBoards.global}
             empty={copy('No global results yet today.')}
-            cta={copy(groupCode ? 'Invite friends' : 'Create room')}
+            cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
           />
         </>
@@ -1788,32 +1808,32 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         <section className="features">
           <div className="section-head">
             <div>
-              <p className="kicker">{copy('World IQ by Recursiv')}</p>
+              <p className="kicker">{copy('IQ WARS by Recursiv')}</p>
               <h2>{copy('The daily reasoning rank for humans and AI.')}</h2>
               <p>{copy('A competitive visual reasoning game. One official attempt per day updates a score profile that develops over time.')}</p>
             </div>
           </div>
           <div className="feature-grid">
-            <article><strong>{copy('Today\'s World IQ')}</strong><p>{copy('A 12-question reasoning run that starts hard and allows one official daily submission.')}</p></article>
+            <article><strong>{copy('Today\'s IQ WARS')}</strong><p>{copy('A 12-question reasoning run that starts hard and allows one official daily submission.')}</p></article>
             <article><strong>{copy('AI Blind Spots')}</strong><p>{copy('Lab puzzles selected because current model baselines often miss the abstraction.')}</p></article>
             <article><strong>{copy('Developing score')}</strong><p>{copy('Your rolling IQ score gets more confident as official daily results accumulate.')}</p></article>
           </div>
           <div className="monetization">
-            <div><strong>{copy('World IQ Unlimited')}</strong><p>{copy('Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.')}</p></div>
+            <div><strong>{copy('IQ WARS Unlimited')}</strong><p>{copy('Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.')}</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>{copy('Save profile')}</button>
           </div>
-          <p className="trust-note">{copy('World IQ is not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
+          <p className="trust-note">{copy('IQ WARS is not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
         </section>
       ) : null}
 
       {unlockOpen ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={copy('Unlock World IQ archive access')}>
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={copy('Unlock IQ WARS archive access')}>
           <div className="modal">
             <button className="close" onClick={() => setUnlockOpen(false)} aria-label={copy('Close')}>×</button>
-            <p className="kicker">{copy('World IQ account')}</p>
+            <p className="kicker">{copy('IQ WARS account')}</p>
             <h2>{copy(paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.')}</h2>
             <p>{paidAccess
-              ? copy('Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.')
+              ? copy('Your paid IQ WARS access is active on this device. Keep building history, practicing, and saving rank cards.')
               : copy('Free visitors get 1 official attempt per day. Create a Recursiv account with Google or email for the platform profile, or continue to Stripe for archive access, score history, and private reports.')}</p>
             <div className="plans">
               <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
@@ -1954,6 +1974,22 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           letter-spacing: .02em;
           text-transform: uppercase;
           box-shadow: inset 0 1px 0 rgba(255,255,255,.36);
+        }
+        .secondary.copied {
+          border-color: rgba(36,79,55,.42);
+          color: #244f37;
+          background: rgba(36,79,55,.08);
+        }
+        .copy-confirmation {
+          display: block;
+          margin-top: -4px;
+          color: #244f37;
+          font-family: "Courier New", ui-monospace, monospace;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: .1em;
+          text-transform: uppercase;
+          text-align: center;
         }
         .primary {
           border: 1px solid var(--ink);
@@ -2603,6 +2639,23 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           color: #e9ebec;
           background: transparent;
           border: 1px solid rgba(255,255,255,.18);
+        }
+        .secondary.copied {
+          color: #baf5cf;
+          border-color: rgba(186,245,207,.46);
+          background: rgba(186,245,207,.06);
+        }
+        .copy-confirmation {
+          display: block;
+          margin-top: -4px;
+          color: #baf5cf;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .16em;
+          line-height: 1.3;
+          text-align: center;
+          text-transform: uppercase;
         }
         .auth-options {
           display: grid;

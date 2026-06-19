@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const DEFAULT_PRICE_CENTS = 499;
-const DEFAULT_PRODUCT_NAME = 'World IQ Unlimited';
+const DEFAULT_PRODUCT_NAME = 'IQ WARS Unlimited';
 const STRIPE_CHECKOUT_SESSIONS_URL = 'https://api.stripe.com/v1/checkout/sessions';
 
 function jsonError(message: string, status = 400) {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   params.set('line_items[0][price_data][unit_amount]', String(configuredPriceCents()));
   params.set('line_items[0][price_data][recurring][interval]', 'month');
   params.set('line_items[0][price_data][product_data][name]', productName);
-  params.set('line_items[0][price_data][product_data][description]', 'Unlimited World IQ attempts, saved rank, and deep report access.');
+  params.set('line_items[0][price_data][product_data][description]', 'Unlimited IQ WARS attempts, saved rank, and deep report access.');
   params.set('metadata[app]', 'world-iq');
   params.set('subscription_data[metadata][app]', 'world-iq');
 

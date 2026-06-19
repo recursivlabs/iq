@@ -2,20 +2,20 @@ import type { Metadata } from 'next';
 import './critical.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://iq.on.recursiv.io'),
-  title: 'World IQ',
+  metadataBase: new URL('https://iqwars.app'),
+  title: 'IQ WARS',
   description: 'The global intelligence ranking hub for humans and AI.',
   openGraph: {
-    title: 'World IQ',
-    description: 'One official daily attempt. Earn a World IQ score and qualify for the global intelligence leaderboard.',
-    url: 'https://iq.on.recursiv.io',
-    siteName: 'World IQ',
+    title: 'IQ WARS',
+    description: 'One official daily attempt. Earn an IQ WARS score and qualify for the global intelligence leaderboard.',
+    url: 'https://iqwars.app',
+    siteName: 'IQ WARS',
     type: 'website',
   },
   twitter: {
     card: 'summary',
-    title: 'World IQ',
-    description: 'One official daily attempt. Earn a World IQ score and qualify for the global intelligence leaderboard.',
+    title: 'IQ WARS',
+    description: 'One official daily attempt. Earn an IQ WARS score and qualify for the global intelligence leaderboard.',
   },
 };
 

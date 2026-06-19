@@ -4,6 +4,8 @@ import { readReminderStore, writeReminderStore, type ReminderRecord } from '../_
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+const PUBLIC_APP_URL = (process.env.IQ_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://iq.on.recursiv.io').replace(/\/$/, '');
+
 function cleanEmail(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase().slice(0, 120);
@@ -27,8 +29,8 @@ async function sendConfirmation(email: string, groupCode: string | null, groupNa
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return false;
 
-  const url = groupCode ? `https://iq.on.recursiv.io/g/${groupCode}` : 'https://iq.on.recursiv.io';
-  const room = groupName || 'World IQ';
+  const url = groupCode ? `${PUBLIC_APP_URL}/g/${groupCode}` : PUBLIC_APP_URL;
+  const room = groupName || 'IQ WARS';
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -36,7 +38,7 @@ async function sendConfirmation(email: string, groupCode: string | null, groupNa
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: process.env.IQ_EMAIL_FROM || 'World IQ <onboarding@resend.dev>',
+      from: process.env.IQ_EMAIL_FROM || 'IQ WARS <onboarding@resend.dev>',
       to: email,
       subject: `${room} is ready for tomorrow`,
       text: `You are on the daily reminder list for ${room}.\n\nYour room: ${url}\n\nOne official attempt opens each day.`,

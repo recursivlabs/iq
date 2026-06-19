@@ -4,6 +4,8 @@ import { readReminderStore, writeReminderStore } from '../../_lib/reminders';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+const PUBLIC_APP_URL = (process.env.IQ_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://iq.on.recursiv.io').replace(/\/$/, '');
+
 function sameUtcDay(a: number | null, b: number) {
   if (!a) return false;
   return new Date(a).toISOString().slice(0, 10) === new Date(b).toISOString().slice(0, 10);
@@ -13,8 +15,8 @@ async function sendReminder(email: string, groupCode: string | null, groupName: 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return false;
 
-  const url = groupCode ? `https://iq.on.recursiv.io/g/${groupCode}` : 'https://iq.on.recursiv.io';
-  const room = groupName || 'World IQ';
+  const url = groupCode ? `${PUBLIC_APP_URL}/g/${groupCode}` : PUBLIC_APP_URL;
+  const room = groupName || 'IQ WARS';
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -22,10 +24,10 @@ async function sendReminder(email: string, groupCode: string | null, groupName: 
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: process.env.IQ_EMAIL_FROM || 'World IQ <onboarding@resend.dev>',
+      from: process.env.IQ_EMAIL_FROM || 'IQ WARS <onboarding@resend.dev>',
       to: email,
-      subject: `${room}: today's World IQ is live`,
-      text: `Today's World IQ is live for ${room}.\n\nPlay here: ${url}\n\nOne official attempt. New board every day.`,
+      subject: `${room}: today's IQ WARS is live`,
+      text: `Today's IQ WARS is live for ${room}.\n\nPlay here: ${url}\n\nOne official attempt. New board every day.`,
     }),
   });
   return response.ok;
