@@ -67,7 +67,7 @@ type OfficialRankRecord = {
   timestamp: number;
 };
 
-const DAILY_PLAY_LIMIT = 6;
+const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const RECURSIV_SIGNUP_URL = 'https://recursiv.io/register';
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
@@ -77,11 +77,11 @@ const PAID_ACCESS_STORAGE_KEY = 'world-iq-paid-access';
 const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
 
 const tones: Record<TileTone, string> = {
-  ink: '#111111',
-  blue: '#202326',
-  green: '#252827',
-  rose: '#2a272a',
-  amber: '#2c2a25',
+  ink: '#f4f5f6',
+  blue: '#c9cdd1',
+  green: '#a9afb4',
+  rose: '#858b91',
+  amber: '#dfe2e4',
 };
 
 const modes: Record<ModeKey, { label: string; title: string; body: string; cta: string }> = {
@@ -554,6 +554,48 @@ function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnl
   );
 }
 
+function StatusRail({
+  isPaid,
+  usage,
+  officialRank,
+  onUnlock,
+}: {
+  isPaid: boolean;
+  usage: PlayUsage;
+  officialRank: OfficialRankRecord | null;
+  onUnlock: () => void;
+}) {
+  const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
+  const remaining = Math.max(0, DAILY_PLAY_LIMIT - usedToday);
+
+  return (
+    <aside className="status-rail" aria-label="World IQ session and subscription">
+      <section className="rail-panel">
+        <p className="rail-label">Session</p>
+        <strong>{isPaid ? 'Paid profile' : remaining > 0 ? '1 / 1 attempt left' : '0 / 1 · used'}</strong>
+        <span>{isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One official Today\'s World IQ attempt today.' : 'Your official attempt is locked for today.'}</span>
+        <div className="rail-rule" />
+        <p className="rail-label">Official rank</p>
+        <span className="rail-mono">{officialRank ? `Locked · ${officialRank.score} · ${officialRank.rank}` : 'Not yet locked today.'}</span>
+      </section>
+
+      <section className="rail-panel unlock-panel">
+        <div className="rail-price">
+          <p className="rail-label">Unlock</p>
+          <strong>{UNLIMITED_PRICE_LABEL}</strong>
+        </div>
+        <ul>
+          <li>Full archive access</li>
+          <li>Saved history</li>
+          <li>Private reasoning reports</li>
+          <li>Extra practice</li>
+        </ul>
+        <button className="secondary full" onClick={onUnlock}>Unlock profile</button>
+      </section>
+    </aside>
+  );
+}
+
 function Result({
   mode,
   answers,
@@ -702,18 +744,20 @@ function Runner({
   isPaid,
   onUnlock,
   onLeaderboard,
+  onUsageChange,
 }: {
   mode: ModeKey;
   startRequest: number;
   isPaid: boolean;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry) => void;
+  onUsageChange: (usage: PlayUsage) => void;
 }) {
-  const [started, setStarted] = React.useState(true);
+  const [started, setStarted] = React.useState(() => isPaid || playsRemaining(readPlayUsage()) > 0);
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
-  const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => blankPlayUsage());
+  const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => readPlayUsage());
   const [chargedAttempt, setChargedAttempt] = React.useState(false);
   const questions = React.useMemo(() => getQuestions(mode), [mode]);
   const complete = started && step >= questions.length;
@@ -723,17 +767,19 @@ function Runner({
   React.useEffect(() => {
     const usage = readPlayUsage();
     setPlayUsage(usage);
+    onUsageChange(usage);
     setStarted(isPaid || playsRemaining(usage) > 0);
-  }, [isPaid]);
+  }, [isPaid, onUsageChange]);
   React.useEffect(() => {
     const usage = readPlayUsage();
     setPlayUsage(usage);
+    onUsageChange(usage);
     setStarted(isPaid || playsRemaining(usage) > 0);
     setStep(0);
     setSelected(null);
     setAnswers([]);
     setChargedAttempt(false);
-  }, [isPaid, mode]);
+  }, [isPaid, mode, onUsageChange]);
 
   function begin() {
     const usage = readPlayUsage();
@@ -757,7 +803,9 @@ function Runner({
   function lockAnswer() {
     if (selected === null || complete || !current) return;
     if (!isPaid && !chargedAttempt) {
-      setPlayUsage(consumePlay());
+      const nextUsage = consumePlay();
+      setPlayUsage(nextUsage);
+      onUsageChange(nextUsage);
       setChargedAttempt(true);
     }
     setAnswers((existing) => [...existing, {
@@ -774,9 +822,9 @@ function Runner({
     return (
       <div className="runner-panel gate">
         <p className="kicker">{modes[mode].label}</p>
-        <h2>6 games used today.</h2>
-        <p className="free-note">Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.</p>
-        <button className="primary full" onClick={onUnlock}>Unlock archive</button>
+        <h2>Your one official attempt today is locked.</h2>
+        <p className="free-note">Free players get 1 official Today&apos;s World IQ attempt per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.</p>
+        <button className="primary full" onClick={onUnlock}>Unlock profile</button>
       </div>
     );
   }
@@ -787,7 +835,7 @@ function Runner({
     <div className="runner-panel">
       <div className="progress-row">
         <p className="kicker">{modes[mode].label}</p>
-        <span>{step + 1}/{questions.length} · {isPaid ? 'Unlimited' : `${remainingToday}/${DAILY_PLAY_LIMIT} left`}</span>
+        <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used'}</span>
       </div>
       <div className="track"><div style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
       <div className="question-head">
@@ -823,10 +871,14 @@ export default function Home() {
   const [paidAccess, setPaidAccess] = React.useState(false);
   const [checkoutState, setCheckoutState] = React.useState<'idle' | 'opening' | 'verifying' | 'active' | 'error'>('idle');
   const [checkoutError, setCheckoutError] = React.useState('');
+  const [usageSnapshot, setUsageSnapshot] = React.useState<PlayUsage>(() => blankPlayUsage());
+  const [officialSnapshot, setOfficialSnapshot] = React.useState<OfficialRankRecord | null>(null);
 
   React.useEffect(() => {
     setLeaderboard(getLeaderboardEntries());
     setPaidAccess(readPaidAccess());
+    setUsageSnapshot(readPlayUsage());
+    setOfficialSnapshot(readOfficialRank());
   }, []);
 
   React.useEffect(() => {
@@ -898,7 +950,12 @@ export default function Home() {
 
   function handleLeaderboard() {
     setLeaderboard(getLeaderboardEntries());
+    setOfficialSnapshot(readOfficialRank());
   }
+
+  const handleUsageChange = React.useCallback((usage: PlayUsage) => {
+    setUsageSnapshot(usage);
+  }, []);
 
   const checkoutHref = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '';
   const stripeCheckoutHref = getStripeCheckoutHref(checkoutHref);
@@ -938,7 +995,6 @@ export default function Home() {
           setView('test');
         }}>
           <strong>World IQ</strong>
-          <span>iq.on.recursiv.io</span>
         </button>
         <div>
           <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>Today</button>
@@ -953,15 +1009,8 @@ export default function Home() {
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${modes[mode].label} test`}>
           <SignalSculpture />
-          <Runner mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} />
-          <aside className="mission-card" aria-label="World IQ subscription">
-            <div>
-              <span className="edition">( A )</span>
-              <span className="sequence">[ 001 / 012 ]</span>
-            </div>
-            <p>One official daily rank. Six free plays. Paid profiles unlock archive, history, and private reports.</p>
-            <button className="secondary micro" onClick={() => setUnlockOpen(true)}>Unlock {UNLIMITED_PRICE_LABEL}</button>
-          </aside>
+          <Runner key={mode} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} />
+          <StatusRail isPaid={paidAccess} usage={usageSnapshot} officialRank={officialSnapshot} onUnlock={() => setUnlockOpen(true)} />
         </section>
       ) : null}
 
@@ -984,7 +1033,7 @@ export default function Home() {
             <article><strong>Daily Sprint</strong><p>A one-puzzle warmup for streaks and group chats before the ranked run.</p></article>
           </div>
           <div className="monetization">
-            <div><strong>World IQ Unlimited</strong><p>Free players get six plays per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra practice.</p></div>
+            <div><strong>World IQ Unlimited</strong><p>Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra practice.</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
           </div>
           <p className="trust-note">World IQ is not a clinical IQ test, admission test, or supervised psychometric assessment.</p>
@@ -999,9 +1048,9 @@ export default function Home() {
             <h2>{paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.'}</h2>
             <p>{paidAccess
               ? 'Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.'
-              : 'Free visitors get six plays per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access and private reports.'}</p>
+              : 'Free visitors get 1 official attempt per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access and private reports.'}</p>
             <div className="plans">
-              <div><strong>Free</strong><span>6 games per day</span></div>
+              <div><strong>Free</strong><span>1 official attempt / day</span></div>
               <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>archive + reports + extra practice</span></div>
             </div>
             {paidAccess ? (
@@ -1423,6 +1472,811 @@ export default function Home() {
           .leaderboard-row { grid-template-columns: 38px minmax(0, 1fr) 54px; padding: 10px; }
           .leader-score strong { font-size: 21px; }
           .plans { grid-template-columns: 1fr; }
+        }
+
+        body {
+          background: #060708;
+          color: #e9ebec;
+          font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        main {
+          width: 100%;
+          min-height: 100vh;
+          margin: 0;
+          padding: clamp(16px, 3vw, 30px) clamp(16px, 4vw, 40px) 72px;
+          border-radius: 0;
+          border: 0;
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(130% 90% at 50% -12%, #16181b 0%, #0b0c0e 44%, #060708 100%);
+          color: #e9ebec;
+          box-shadow: none;
+        }
+        main::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          display: block;
+          pointer-events: none;
+          border: 0;
+          border-radius: 0;
+          background-image:
+            linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+          background-size: 64px 64px;
+          mask-image: radial-gradient(120% 90% at 50% 30%, #000 40%, transparent 78%);
+          z-index: 0;
+        }
+        nav,
+        .test-surface,
+        .leaderboard,
+        .features {
+          position: relative;
+          z-index: 2;
+          width: min(1200px, 100%);
+          margin-left: auto;
+          margin-right: auto;
+        }
+        nav {
+          padding: 0 0 18px;
+          border-bottom: 1px solid rgba(255,255,255,.08);
+          align-items: center;
+        }
+        .brand {
+          color: #f4f5f6;
+          gap: 0;
+        }
+        nav strong {
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 19px;
+          font-weight: 700;
+          letter-spacing: .16em;
+          line-height: 1;
+        }
+        nav > div:last-child {
+          gap: clamp(10px, 1.6vw, 20px);
+        }
+        nav button {
+          color: #9fa4a8;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+          background: transparent;
+          border: 0;
+          border-radius: 0;
+          padding: 4px 1px;
+          min-height: 32px;
+          box-shadow: none;
+        }
+        nav .brand,
+        nav .brand strong {
+          color: #f4f5f6;
+          opacity: 1;
+        }
+        nav button.active {
+          color: #f4f5f6;
+          background: transparent;
+          border-bottom: 1px solid #f4f5f6;
+        }
+        nav .nav-cta {
+          color: #e9ebec;
+          min-height: 40px;
+          padding: 10px 15px;
+          border: 1px solid rgba(255,255,255,.18);
+          border-radius: 3px;
+          background: rgba(255,255,255,.03);
+        }
+        .test-surface {
+          display: grid;
+          grid-template-columns: minmax(360px, 600px) minmax(248px, 320px);
+          justify-content: space-between;
+          align-items: start;
+          gap: clamp(20px, 3vw, 40px);
+          min-height: 0;
+          margin-top: clamp(28px, 5vh, 56px);
+          padding: 0;
+        }
+        .test-surface .runner-panel,
+        .runner-panel,
+        .leaderboard,
+        .features,
+        .rail-panel {
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          background: linear-gradient(160deg, rgba(20,22,25,.86), rgba(11,12,14,.86));
+          box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+          color: #e9ebec;
+        }
+        .test-surface .runner-panel,
+        .runner-panel {
+          width: 100%;
+          padding: clamp(20px, 3vw, 32px);
+          overflow: hidden;
+        }
+        .runner-panel.gate,
+        .runner-panel.result {
+          padding: clamp(24px, 4vw, 40px);
+        }
+        .kicker,
+        .progress-row span,
+        .question-head span,
+        .answer-footer p,
+        .rail-label,
+        .rail-mono,
+        .trust-note,
+        .fine-print,
+        .share-card span,
+        .share-card p,
+        .leader-copy span,
+        .leader-score span,
+        .empty-board span {
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        }
+        .kicker,
+        .rail-label {
+          color: #9fa4a8;
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: .22em;
+          text-transform: uppercase;
+        }
+        .progress-row,
+        .question-head,
+        .answer-footer,
+        .section-head {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .progress-row span,
+        .question-head span {
+          color: #5c6166;
+          font-size: 10.5px;
+          font-weight: 500;
+          letter-spacing: .18em;
+          white-space: nowrap;
+        }
+        .track {
+          height: 1px;
+          margin-top: 14px;
+          background: rgba(255,255,255,.08);
+          box-shadow: none;
+        }
+        .track div {
+          background: linear-gradient(90deg, #f4f5f6, rgba(244,245,246,.2));
+          border-radius: 0;
+        }
+        .question-head {
+          margin-top: 24px;
+          align-items: flex-end;
+        }
+        .question-head h2,
+        .section-head h2,
+        .features h2,
+        .leaderboard h2,
+        .gate h2,
+        .modal h2 {
+          color: #f4f5f6;
+          font-size: clamp(22px, 3.4vw, 30px);
+          font-weight: 500;
+          line-height: 1.05;
+          letter-spacing: -.015em;
+          margin: 0;
+        }
+        .prompt,
+        .free-note,
+        .section-head p,
+        .feature-grid p,
+        .monetization p,
+        .qualification span,
+        .modal p:not(.kicker) {
+          color: #969ba0;
+          font-size: 14px;
+          line-height: 1.6;
+        }
+        .prompt {
+          margin-top: 10px;
+          font-weight: 400;
+        }
+        .matrix {
+          max-width: 360px;
+          margin: 24px 0 0;
+          gap: 9px;
+          padding: 16px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          background: rgba(255,255,255,.02);
+          perspective: none;
+        }
+        .tile {
+          width: 100%;
+          min-width: 0;
+          aspect-ratio: 1;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 3px;
+          background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.025), inset 0 -18px 30px rgba(0,0,0,.24);
+        }
+        .tile.selected,
+        .option.active .tile {
+          border-color: rgba(244,245,246,.72);
+          background: linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+          box-shadow: 0 0 0 1px rgba(244,245,246,.16), inset 0 0 0 1px rgba(255,255,255,.05);
+        }
+        .missing {
+          color: #9fa4a8;
+          background: rgba(255,255,255,.025);
+          font-size: 30px;
+          font-weight: 400;
+        }
+        .ring {
+          opacity: .35;
+        }
+        .tile .bars {
+          position: absolute;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
+        .tile .bars span {
+          width: 3px;
+          height: 40px;
+          border-radius: 999px;
+          opacity: .95;
+          box-shadow: none;
+        }
+        .dots {
+          width: 54%;
+          gap: 4px;
+        }
+        .dots span {
+          width: 5px;
+          box-shadow: 0 0 12px rgba(255,255,255,.18);
+        }
+        .options {
+          justify-content: flex-start;
+          gap: clamp(10px, 1.4vw, 14px);
+          margin-top: 26px;
+        }
+        .option {
+          width: clamp(84px, 16vw, 104px);
+          padding: 0;
+          gap: 9px;
+          border: 0;
+          border-radius: 0;
+          color: #5c6166;
+          background: transparent;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: .16em;
+        }
+        .option .tile {
+          width: 100%;
+        }
+        .option.active {
+          color: #f4f5f6;
+          border: 0;
+          background: transparent;
+        }
+        .answer-footer {
+          margin-top: 28px;
+          padding-top: 20px;
+          border-top: 1px solid rgba(255,255,255,.08);
+          align-items: center;
+        }
+        .answer-footer p {
+          color: #5c6166;
+          font-size: 10.5px;
+          font-weight: 500;
+          letter-spacing: .12em;
+          line-height: 1.5;
+          text-transform: uppercase;
+        }
+        .primary,
+        .secondary {
+          border-radius: 3px;
+          min-height: 48px;
+          padding: 0 24px;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: .16em;
+          text-transform: uppercase;
+          box-shadow: none;
+        }
+        .primary {
+          color: #0a0b0c;
+          background: #f4f5f6;
+          border: 0;
+        }
+        .secondary {
+          color: #e9ebec;
+          background: transparent;
+          border: 1px solid rgba(255,255,255,.18);
+        }
+        .full {
+          width: 100%;
+        }
+        .status-rail {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          min-width: 0;
+        }
+        .rail-panel {
+          padding: 22px;
+        }
+        .rail-panel strong {
+          display: block;
+          margin-top: 12px;
+          color: #f4f5f6;
+          font-size: 15px;
+          font-weight: 600;
+          letter-spacing: .04em;
+          text-transform: uppercase;
+        }
+        .rail-panel span {
+          display: block;
+          margin-top: 10px;
+          color: #8f959a;
+          font-size: 12px;
+          line-height: 1.55;
+        }
+        .rail-rule {
+          height: 1px;
+          margin: 20px 0;
+          background: rgba(255,255,255,.08);
+        }
+        .rail-mono {
+          color: #b9bec2 !important;
+          font-size: 12px !important;
+          letter-spacing: .06em;
+        }
+        .rail-price {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .rail-price strong {
+          margin: 0;
+          font-size: 13px;
+          white-space: nowrap;
+        }
+        .unlock-panel ul {
+          list-style: none;
+          padding: 0;
+          margin: 18px 0;
+          display: grid;
+          gap: 11px;
+        }
+        .unlock-panel li {
+          color: #b9bec2;
+          font-size: 12.5px;
+          line-height: 1.45;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .unlock-panel li::before {
+          content: "";
+          width: 5px;
+          height: 5px;
+          flex: 0 0 5px;
+          background: #6c7176;
+        }
+        .result-top {
+          align-items: flex-end;
+          margin-top: 24px;
+        }
+        .result-top .score {
+          color: #f7f8f9;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: clamp(60px, 12vw, 104px);
+          font-weight: 500;
+          line-height: .9;
+          letter-spacing: -.03em;
+        }
+        .rank-card {
+          min-width: 0;
+          border: 0;
+          border-left: 1px solid rgba(255,255,255,.10);
+          border-radius: 0;
+          background: transparent;
+          padding: 0 0 0 clamp(20px, 4vw, 44px);
+          text-align: left;
+        }
+        .rank-card strong {
+          color: #e9ebec;
+          font-size: clamp(28px, 5vw, 40px);
+          font-weight: 500;
+          letter-spacing: -.02em;
+        }
+        .result-top span,
+        .rank-card span,
+        .leader-score span {
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10.5px;
+          font-weight: 500;
+          letter-spacing: .2em;
+        }
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1px;
+          margin-top: 28px;
+          background: rgba(255,255,255,.07);
+          border: 1px solid rgba(255,255,255,.07);
+          border-radius: 5px;
+          overflow: hidden;
+        }
+        .stats div {
+          border: 0;
+          border-radius: 0;
+          background: #0e1012;
+          padding: 16px 14px;
+          box-shadow: none;
+        }
+        .stats strong {
+          color: #e9ebec;
+          font-size: 22px;
+          font-weight: 500;
+          letter-spacing: 0;
+        }
+        .stats span {
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9.5px;
+          font-weight: 500;
+          letter-spacing: .16em;
+        }
+        .share-card {
+          margin-top: 24px;
+          background: #0b0c0e;
+          color: #e9ebec;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          padding: 18px;
+        }
+        .share-card p {
+          color: #8f959a;
+          font-size: 10.5px;
+          letter-spacing: .05em;
+        }
+        .share-pattern span {
+          height: 10px;
+          border-radius: 1px;
+          background: rgba(255,255,255,.14);
+          border: 0;
+        }
+        .share-pattern .hit {
+          background: #f4f5f6;
+        }
+        .qualification {
+          margin-top: 24px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-left: 2px solid #f4f5f6;
+          border-radius: 6px;
+          background: rgba(255,255,255,.025);
+          padding: 18px;
+        }
+        .qualification strong {
+          color: #f4f5f6;
+          font-size: 15px;
+          font-weight: 600;
+        }
+        .qualification span {
+          color: #969ba0;
+          font-weight: 400;
+        }
+        .trust-note {
+          color: #4f5458;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .06em;
+          line-height: 1.6;
+        }
+        .leaderboard,
+        .features {
+          margin-top: clamp(28px, 5vh, 56px);
+          padding: clamp(24px, 4vw, 40px);
+        }
+        .leaderboard-rows {
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          gap: 0;
+        }
+        .leaderboard-row,
+        .empty-board,
+        .feature-grid article,
+        .monetization,
+        .plans div {
+          border: 0;
+          border-radius: 0;
+          background: #0e1012;
+          box-shadow: none;
+        }
+        .leaderboard-row + .leaderboard-row {
+          border-top: 1px solid rgba(255,255,255,.07);
+        }
+        .leaderboard-row.local {
+          border-color: transparent;
+          background: #131619;
+        }
+        .rank {
+          border-color: rgba(255,255,255,.12);
+          background: rgba(255,255,255,.03);
+          color: #e9ebec;
+          border-radius: 3px;
+        }
+        .leader-copy strong,
+        .feature-grid strong,
+        .monetization strong {
+          color: #f4f5f6;
+        }
+        .feature-grid,
+        .plans {
+          gap: 1px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .monetization {
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          padding: 24px;
+        }
+        .modal-backdrop {
+          background: rgba(6,7,8,.74);
+          z-index: 50;
+        }
+        .modal {
+          width: min(440px, 100%);
+          color: #e9ebec;
+          background: linear-gradient(160deg, #16181b, #0c0d0f);
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 10px;
+          padding: clamp(24px, 4vw, 34px);
+          box-shadow: 0 40px 120px rgba(0,0,0,.7);
+        }
+        .modal h2 {
+          margin-top: 14px;
+        }
+        .close {
+          top: 16px;
+          right: 16px;
+          width: 32px;
+          height: 32px;
+          color: #9fa4a8;
+          background: transparent;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 3px;
+        }
+        .fine-print.error {
+          color: #ff9a9a;
+        }
+        .fine-print.success {
+          color: #baf5cf;
+        }
+        .signal-sculpture {
+          position: absolute;
+          z-index: 1;
+          width: 620px;
+          height: 420px;
+          right: max(-120px, calc((100vw - 1200px) / 2 - 130px));
+          top: 110px;
+          opacity: .2;
+          transform: perspective(900px) rotateX(18deg) rotateZ(-16deg);
+          pointer-events: none;
+          filter: saturate(0);
+        }
+        .symbol {
+          position: absolute;
+          display: block;
+          border: 1px solid rgba(255,255,255,.14);
+          background: rgba(255,255,255,.025);
+          animation: symbolDrift 12s ease-in-out infinite;
+        }
+        .signal-sculpture .dotset {
+          width: 88px;
+          height: 88px;
+          border-radius: 4px;
+        }
+        .signal-sculpture .dotset::before {
+          content: "";
+          position: absolute;
+          width: 5px;
+          height: 5px;
+          left: 28px;
+          top: 28px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.68);
+          box-shadow: 18px 0 0 rgba(255,255,255,.62), 36px 0 0 rgba(255,255,255,.58), 18px 18px 0 rgba(255,255,255,.5);
+        }
+        .signal-sculpture .bars {
+          width: 92px;
+          height: 92px;
+          border-radius: 4px;
+        }
+        .signal-sculpture .bars::before {
+          content: "";
+          position: absolute;
+          width: 3px;
+          height: 46px;
+          left: 33px;
+          top: 23px;
+          background: rgba(255,255,255,.62);
+          box-shadow: 16px 0 0 rgba(255,255,255,.52), 32px 0 0 rgba(255,255,255,.42);
+        }
+        .ring-symbol {
+          width: 108px;
+          height: 108px;
+          border-radius: 999px;
+          background: transparent;
+        }
+        .ring-symbol::before {
+          content: "";
+          position: absolute;
+          inset: 25px;
+          border: 1px solid rgba(255,255,255,.28);
+          border-radius: 999px;
+        }
+        .missing-symbol {
+          width: 98px;
+          height: 98px;
+          border-radius: 4px;
+        }
+        .missing-symbol::before {
+          content: "?";
+          position: absolute;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          color: rgba(255,255,255,.34);
+          font-size: 34px;
+        }
+        .matrix-symbol {
+          width: 128px;
+          height: 128px;
+          border-radius: 4px;
+          background-image:
+            linear-gradient(rgba(255,255,255,.10) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.10) 1px, transparent 1px);
+          background-size: 42px 42px;
+        }
+        .accent {
+          box-shadow: 0 0 40px rgba(255,255,255,.08);
+        }
+        .g1 { left: 32px; top: 70px; animation-delay: -2s; }
+        .g2 { left: 148px; top: 20px; animation-delay: -8s; transform: rotate(12deg); }
+        .g3 { left: 290px; top: 56px; animation-delay: -4s; }
+        .g4 { left: 430px; top: 12px; animation-delay: -10s; }
+        .g5 { left: 390px; top: 150px; animation-delay: -6s; }
+        .g6 { left: 190px; top: 190px; animation-delay: -12s; transform: scale(.74); opacity: .56; }
+        .g7 { left: 70px; top: 245px; animation-delay: -3s; transform: rotate(-8deg) scale(.82); }
+        .g8 { left: 300px; top: 280px; animation-delay: -7s; transform: scale(.68); }
+        .g9 { left: 125px; top: 330px; animation-delay: -14s; transform: scale(.55); opacity: .42; }
+        .g10 { left: 500px; top: 290px; animation-delay: -5s; transform: scale(.6); opacity: .64; }
+        @keyframes symbolDrift {
+          0%, 100% { translate: 0 0; }
+          50% { translate: 8px -14px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .symbol { animation: none; }
+        }
+        @media (max-width: 940px) {
+          main {
+            padding: 18px 18px 56px;
+          }
+          .test-surface {
+            grid-template-columns: 1fr;
+          }
+          .status-rail {
+            max-width: none;
+          }
+          .signal-sculpture {
+            right: -180px;
+            top: 118px;
+            opacity: .12;
+            transform: scale(.76) perspective(900px) rotateX(18deg) rotateZ(-16deg);
+          }
+        }
+        @media (max-width: 620px) {
+          main {
+            width: 100%;
+            min-height: 100vh;
+            margin: 0;
+            padding: 18px 14px 46px;
+            border-radius: 0;
+          }
+          nav {
+            padding-top: 0;
+            gap: 14px;
+          }
+          nav > div:last-child {
+            width: 100%;
+            justify-content: space-between;
+            gap: 8px;
+          }
+          nav strong {
+            font-size: 18px;
+          }
+          nav button {
+            font-size: 10px;
+            min-height: 30px;
+          }
+          nav .nav-cta {
+            padding: 8px 10px;
+            min-height: 36px;
+          }
+          .test-surface {
+            margin-top: 28px;
+            padding: 0;
+          }
+          .test-surface .runner-panel,
+          .runner-panel,
+          .rail-panel,
+          .leaderboard,
+          .features {
+            padding: 20px;
+          }
+          .progress-row,
+          .question-head,
+          .answer-footer,
+          .result-top {
+            align-items: flex-start;
+          }
+          .question-head h2 {
+            font-size: 28px;
+          }
+          .matrix {
+            max-width: 100%;
+            padding: 12px;
+            gap: 8px;
+          }
+          .options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+          }
+          .option,
+          .option .tile {
+            width: 100%;
+          }
+          .answer-footer .primary {
+            width: 100%;
+          }
+          .stats,
+          .plans {
+            grid-template-columns: 1fr;
+          }
+          .rank-card {
+            width: 100%;
+            padding-left: 0;
+            padding-top: 18px;
+            border-left: 0;
+            border-top: 1px solid rgba(255,255,255,.10);
+          }
+          .signal-sculpture {
+            top: 120px;
+            right: -280px;
+            transform: scale(.58) perspective(900px) rotateX(18deg) rotateZ(-16deg);
+          }
+          .leaderboard-row {
+            grid-template-columns: 36px minmax(0, 1fr);
+          }
+          .leader-score {
+            grid-column: 2;
+            text-align: left;
+          }
         }
       `}</style>
     </main>
