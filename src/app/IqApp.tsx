@@ -102,6 +102,8 @@ type IqProfile = {
   confidence: string;
 };
 
+type SoundKind = 'tap' | 'select' | 'commit' | 'copy' | 'success' | 'error';
+
 const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const RECURSIV_AUTH_URL = 'https://recursiv.io/auth';
@@ -132,8 +134,8 @@ const tones: Record<TileTone, string> = {
 const modes: Record<ModeKey, { label: string; title: string; body: string; cta: string }> = {
   world: {
     label: 'Today\'s IQ WARS',
-    title: 'Lock today\'s reasoning rank.',
-    body: 'One official attempt per day. Each completed day updates a developing IQ profile instead of resetting the player.',
+    title: 'Complete the full baseline.',
+    body: 'First visit is the full 12-question run. One official attempt per day makes the score harder to fake and better over time.',
     cta: 'Start today',
   },
   agi: {
@@ -366,6 +368,69 @@ async function copyTextToClipboard(text: string) {
     throw new Error('Clipboard is unavailable.');
   }
   await navigator.clipboard.writeText(text);
+}
+
+function useInteractionSoundLayer() {
+  const audioRef = React.useRef<AudioContext | null>(null);
+  const lastPlayedAtRef = React.useRef(0);
+
+  return React.useCallback((kind: SoundKind = 'tap') => {
+    if (typeof window === 'undefined') return;
+    const now = window.performance.now();
+    if (kind === 'tap' && now - lastPlayedAtRef.current < 42) return;
+    lastPlayedAtRef.current = now;
+
+    const AudioCtor = window.AudioContext || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtor) return;
+
+    const ctx = audioRef.current || new AudioCtor();
+    audioRef.current = ctx;
+    if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+
+    const t = ctx.currentTime;
+    const master = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(4200, t);
+    master.gain.setValueAtTime(0.0001, t);
+    master.gain.exponentialRampToValueAtTime(kind === 'commit' ? 0.032 : kind === 'success' ? 0.026 : 0.018, t + 0.012);
+    master.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    filter.connect(master);
+    master.connect(ctx.destination);
+
+    const notes: Record<SoundKind, Array<[number, number, number, OscillatorType]>> = {
+      tap: [[880, 0, 0.045, 'sine'], [1320, 0.008, 0.035, 'sine']],
+      select: [[520, 0, 0.055, 'triangle'], [780, 0.018, 0.045, 'sine']],
+      commit: [[220, 0, 0.075, 'sine'], [440, 0.018, 0.075, 'triangle'], [880, 0.04, 0.065, 'sine']],
+      copy: [[660, 0, 0.05, 'sine'], [990, 0.022, 0.055, 'sine']],
+      success: [[740, 0, 0.07, 'sine'], [1110, 0.038, 0.085, 'triangle']],
+      error: [[196, 0, 0.09, 'sine'], [147, 0.035, 0.07, 'sine']],
+    };
+
+    notes[kind].forEach(([frequency, delay, duration, type]) => {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, t + delay);
+      oscillator.frequency.exponentialRampToValueAtTime(frequency * 1.006, t + delay + duration);
+      gain.gain.setValueAtTime(0.0001, t + delay);
+      gain.gain.exponentialRampToValueAtTime(0.9, t + delay + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + delay + duration);
+      oscillator.connect(gain);
+      gain.connect(filter);
+      oscillator.start(t + delay);
+      oscillator.stop(t + delay + duration + 0.02);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    });
+
+    window.setTimeout(() => {
+      filter.disconnect();
+      master.disconnect();
+    }, 320);
+  }, []);
 }
 
 function readStoredGroupCode(initialGroupCode?: string) {
@@ -1014,7 +1079,7 @@ function StatusRail({
       <section className="rail-panel">
         <p className="rail-label">{copy('Session')}</p>
         <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 / 1 attempt left' : '0 / 1 · used')}</strong>
-        <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One official Today\'s IQ WARS attempt today.' : 'Your official attempt is locked for today.')}</span>
+        <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One full official IQ WARS baseline today.' : 'Your official attempt is locked for today.')}</span>
         <div className="rail-rule" />
         <p className="rail-label">{copy('Official rank')}</p>
         <span className="rail-mono">{officialRank ? `${copy('Locked')} · ${officialRank.score} · ${officialRank.rank}` : copy('Not yet locked today.')}</span>
@@ -1349,7 +1414,7 @@ function Runner({
       <div className="runner-panel gate">
         <p className="kicker">{copy(modes[mode].label)}</p>
         <h2>{copy('Your one official attempt today is locked.')}</h2>
-        <p className="free-note">{copy('Free players get 1 official Today\'s IQ WARS attempt per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.')}</p>
+        <p className="free-note">{copy('Free players get one full official IQ WARS run per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.')}</p>
         <button className="primary full" onClick={onUnlock}>{copy('Unlock profile')}</button>
       </div>
     );
@@ -1392,6 +1457,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [mode, setMode] = React.useState<ModeKey>('world');
   const [view, setView] = React.useState<ViewKey>('test');
   const [locale, setLocale] = React.useState<LocaleKey>('en');
+  const playInteractionSound = useInteractionSoundLayer();
   const startRequest = 0;
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardEntry[]>(seededLeaderboard);
   const [unlockOpen, setUnlockOpen] = React.useState(false);
@@ -1529,6 +1595,26 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     setMode(nextMode);
     setView('test');
   }
+
+  const handleInteractionPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const action = target?.closest('button, a, input');
+    if (!action) return;
+    if (action instanceof HTMLButtonElement && action.disabled) return;
+    if (action.closest('.option')) {
+      playInteractionSound('select');
+      return;
+    }
+    if (action.closest('.copy-link')) {
+      playInteractionSound('copy');
+      return;
+    }
+    if (action.classList.contains('primary')) {
+      playInteractionSound('commit');
+      return;
+    }
+    playInteractionSound('tap');
+  }, [playInteractionSound]);
 
   async function submitOfficialResult(record: OfficialRankRecord) {
     const id = playerId || readPlayerId();
@@ -1669,12 +1755,14 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     try {
       await copyTextToClipboard(url);
       setInviteState('Link copied');
+      playInteractionSound('success');
       resetInviteStateSoon('Link copied');
     } catch {
       setInviteState('Copy failed');
+      playInteractionSound('error');
       resetInviteStateSoon('Copy failed');
     }
-  }, [resetInviteStateSoon]);
+  }, [playInteractionSound, resetInviteStateSoon]);
 
   async function createGroup() {
     const code = randomRoomCode();
@@ -1729,7 +1817,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   }
 
   return (
-    <main lang={locale} data-locale={locale}>
+    <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
       <nav>
         <button className="brand" onClick={() => {
           setMode('world');
@@ -1740,8 +1828,6 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         <div>
           <span className="language-pill" aria-label={`${copy('Auto')} ${localeLabel(locale)}`}>{copy('Auto')} · {localeLabel(locale)}</span>
           <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
-          <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button>
-          <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button>
           <button className={view === 'rankings' ? 'active' : ''} onClick={() => setView('rankings')}>{copy('Rankings')}</button>
           <button className={view === 'about' ? 'active' : ''} onClick={() => setView('about')}>{copy('About')}</button>
           <button className="nav-cta" onClick={() => setUnlockOpen(true)}>{copy('Account')}</button>
@@ -1810,13 +1896,13 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             <div>
               <p className="kicker">{copy('IQ WARS by Recursiv')}</p>
               <h2>{copy('The daily reasoning rank for humans and AI.')}</h2>
-              <p>{copy('A competitive visual reasoning game. One official attempt per day updates a score profile that develops over time.')}</p>
+              <p>{copy('One full baseline test on day one, then one official attempt per day as the profile gets sharper.')}</p>
             </div>
           </div>
           <div className="feature-grid">
-            <article><strong>{copy('Today\'s IQ WARS')}</strong><p>{copy('A 12-question reasoning run that starts hard and allows one official daily submission.')}</p></article>
-            <article><strong>{copy('AI Blind Spots')}</strong><p>{copy('Lab puzzles selected because current model baselines often miss the abstraction.')}</p></article>
-            <article><strong>{copy('Developing score')}</strong><p>{copy('Your rolling IQ score gets more confident as official daily results accumulate.')}</p></article>
+            <article><strong>{copy('Full baseline')}</strong><p>{copy('First visit starts with the full 12-question run. Better signal, cleaner leaderboard, no disposable teaser score.')}</p></article>
+            <article><strong>{copy('Daily rank')}</strong><p>{copy('One official attempt per day keeps the board clean and lets the IQ profile develop over time.')}</p></article>
+            <article><strong>{copy('Friend rooms')}</strong><p>{copy('Copy one link, bring a group chat, and compare official scores on the same daily board.')}</p></article>
           </div>
           <div className="monetization">
             <div><strong>{copy('IQ WARS Unlimited')}</strong><p>{copy('Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.')}</p></div>
