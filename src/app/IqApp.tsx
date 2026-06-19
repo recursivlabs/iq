@@ -62,11 +62,37 @@ type SocialEntry = {
   elapsedMs: number | null;
   speedBonus: number | null;
   timestamp: number;
+  geo?: GeoSnapshot | null;
+};
+
+type GeoSnapshot = {
+  country: string | null;
+  countryCode: string | null;
+  region: string | null;
+  city: string | null;
+  town: string | null;
+  timeZone: string | null;
+  source: string;
+};
+
+type GeoBoardRow = {
+  id: string;
+  kind: 'country' | 'city' | 'town';
+  label: string;
+  detail: string;
+  score: number;
+  entries: number;
+  topScore: number;
 };
 
 type SocialBoards = {
   global: SocialEntry[];
   group: SocialEntry[];
+  geography: {
+    countries: GeoBoardRow[];
+    cities: GeoBoardRow[];
+    towns: GeoBoardRow[];
+  };
 };
 
 type PlayUsage = {
@@ -122,6 +148,7 @@ const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
 const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
 const GROUP_NAME_STORAGE_KEY = 'world-iq-group-name';
 const REMINDER_EMAIL_STORAGE_KEY = 'world-iq-reminder-email';
+const EMPTY_GEOGRAPHY_BOARDS: SocialBoards['geography'] = { countries: [], cities: [], towns: [] };
 
 const tones: Record<TileTone, string> = {
   ink: '#f4f5f6',
@@ -361,6 +388,77 @@ function currentOrigin() {
 
 function groupShareUrl(groupCode: string | null) {
   return groupCode ? `${currentOrigin()}/g/${groupCode}` : currentOrigin();
+}
+
+function normalizeCountryCode(value: string | null | undefined) {
+  if (!value) return null;
+  const code = value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+  return code.length === 2 ? code : null;
+}
+
+function countryName(countryCode: string | null) {
+  if (!countryCode) return null;
+  try {
+    const names = new Intl.DisplayNames(['en'], { type: 'region' });
+    return names.of(countryCode) || countryCode;
+  } catch {
+    return countryCode;
+  }
+}
+
+function countryFromBrowserLocale() {
+  if (typeof navigator === 'undefined') return null;
+  const locales = navigator.languages?.length ? navigator.languages : [navigator.language];
+  for (const locale of locales) {
+    try {
+      const parsed = new Intl.Locale(locale);
+      const code = normalizeCountryCode(parsed.region || null);
+      if (code) return code;
+    } catch {
+      const code = normalizeCountryCode(locale.match(/[-_]([A-Za-z]{2})\b/)?.[1]);
+      if (code) return code;
+    }
+  }
+  return null;
+}
+
+function cityFromTimeZone(timeZone: string | null) {
+  if (!timeZone || !timeZone.includes('/')) return null;
+  const raw = timeZone.split('/').pop() || '';
+  return raw.replace(/_/g, ' ').replace(/\s+/g, ' ').trim() || null;
+}
+
+function fallbackGeoSnapshot(): GeoSnapshot | null {
+  if (typeof window === 'undefined') return null;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  const countryCode = countryFromBrowserLocale();
+  const city = cityFromTimeZone(timeZone);
+  if (!countryCode && !city && !timeZone) return null;
+  return {
+    country: countryName(countryCode),
+    countryCode,
+    region: null,
+    city,
+    town: city,
+    timeZone,
+    source: city ? 'timezone' : countryCode ? 'locale' : 'unknown',
+  };
+}
+
+function normalizeGeoSnapshot(value: unknown): GeoSnapshot | null {
+  if (!value || typeof value !== 'object') return null;
+  const geo = value as Partial<GeoSnapshot>;
+  const hasSignal = geo.country || geo.countryCode || geo.city || geo.town || geo.region || geo.timeZone;
+  if (!hasSignal) return null;
+  return {
+    country: typeof geo.country === 'string' && geo.country.trim() ? geo.country.trim() : null,
+    countryCode: normalizeCountryCode(geo.countryCode),
+    region: typeof geo.region === 'string' && geo.region.trim() ? geo.region.trim() : null,
+    city: typeof geo.city === 'string' && geo.city.trim() ? geo.city.trim() : null,
+    town: typeof geo.town === 'string' && geo.town.trim() ? geo.town.trim() : null,
+    timeZone: typeof geo.timeZone === 'string' && geo.timeZone.trim() ? geo.timeZone.trim() : null,
+    source: typeof geo.source === 'string' && geo.source.trim() ? geo.source.trim() : 'unknown',
+  };
 }
 
 async function copyTextToClipboard(text: string) {
@@ -1056,6 +1154,61 @@ function SocialLeaderboard({
   );
 }
 
+function GeographyLeaderboard({ locale, geography }: { locale: LocaleKey; geography: SocialBoards['geography'] }) {
+  const copy = (text: string) => translate(locale, text);
+  const boards = [
+    { key: 'countries', kicker: copy('Countries'), entries: geography.countries },
+    { key: 'cities', kicker: copy('Cities'), entries: geography.cities },
+    { key: 'towns', kicker: copy('Towns'), entries: geography.towns },
+  ];
+  const hasAny = boards.some((board) => board.entries.length > 0);
+
+  return (
+    <section className="leaderboard geography-board">
+      <div className="section-head">
+        <div>
+          <p className="kicker">{copy('Geography board')}</p>
+          <h2>{copy('Where the sharpest daily scores are coming from.')}</h2>
+          <p>{copy('Countries, cities, and towns are ranked by average verified score today, deduped by player.')}</p>
+        </div>
+      </div>
+      <div className="geo-grid">
+        {boards.map((board) => (
+          <article key={board.key} className="geo-column">
+            <div className="geo-column-head">
+              <span>{board.kicker}</span>
+              <strong>{board.entries.length}</strong>
+            </div>
+            <div className="leaderboard-rows geo-rows">
+              {board.entries.length > 0 ? (
+                board.entries.map((entry, index) => (
+                  <div key={entry.id} className={`leaderboard-row ${index === 0 ? 'local' : ''}`}>
+                    <div className="rank">#{index + 1}</div>
+                    <div className="leader-copy">
+                      <strong>{entry.label}</strong>
+                      <span>{entry.detail} · {entry.entries} {copy(entry.entries === 1 ? 'player' : 'players')} · {copy('top')} {entry.topScore}</span>
+                    </div>
+                    <div className="leader-score">
+                      <strong>{entry.score}</strong>
+                      <span>{copy('avg')}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-board">
+                  <strong>{copy('No geography ranks yet.')}</strong>
+                  <span>{copy('Official scores with inferred location will appear here automatically.')}</span>
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+      {!hasAny ? <p className="trust-note">{copy('No location prompt is required. IQ WARS uses edge geography when available and timezone as a fallback.')}</p> : null}
+    </section>
+  );
+}
+
 function StatusRail({
   locale,
   isPaid,
@@ -1511,7 +1664,8 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [reminderEmail, setReminderEmail] = React.useState('');
   const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
   const [inviteState, setInviteState] = React.useState('Copy link');
-  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [] });
+  const [geoSnapshot, setGeoSnapshot] = React.useState<GeoSnapshot | null>(null);
+  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], geography: EMPTY_GEOGRAPHY_BOARDS });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
 
   React.useEffect(() => {
@@ -1542,6 +1696,30 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     if (code) writeStoredGroup(code, name);
   }, [initialGroupCode]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    async function detectGeo() {
+      const fallback = fallbackGeoSnapshot();
+      if (fallback) setGeoSnapshot(fallback);
+      try {
+        const params = new URLSearchParams();
+        if (fallback?.timeZone) params.set('tz', fallback.timeZone);
+        if (typeof navigator !== 'undefined' && navigator.language) params.set('locale', navigator.language);
+        const response = await fetch(`/api/geo?${params.toString()}`, { cache: 'no-store' });
+        const data = await response.json().catch(() => null);
+        const detected = normalizeGeoSnapshot(data) || fallback;
+        if (!cancelled && detected) setGeoSnapshot(detected);
+      } catch {
+        if (!cancelled && fallback) setGeoSnapshot(fallback);
+      }
+    }
+
+    void detectGeo();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const refreshSocialBoards = React.useCallback(async (code: string | null) => {
     try {
       const params = new URLSearchParams({ day: localDayKey() });
@@ -1552,6 +1730,11 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         setSocialBoards({
           global: data.global,
           group: Array.isArray(data.group) ? data.group : [],
+          geography: data.geography && typeof data.geography === 'object' ? {
+            countries: Array.isArray(data.geography.countries) ? data.geography.countries : [],
+            cities: Array.isArray(data.geography.cities) ? data.geography.cities : [],
+            towns: Array.isArray(data.geography.towns) ? data.geography.towns : [],
+          } : EMPTY_GEOGRAPHY_BOARDS,
         });
       }
     } catch {
@@ -1673,6 +1856,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           beatAi: record.beatAi,
           elapsedMs: record.elapsedMs ?? null,
           speedBonus: record.speedBonus ?? null,
+          geo: geoSnapshot || fallbackGeoSnapshot(),
         }),
       });
       const data = await response.json().catch(() => null);
@@ -1680,6 +1864,11 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         setSocialBoards({
           global: data.global,
           group: Array.isArray(data.group) ? data.group : [],
+          geography: data.geography && typeof data.geography === 'object' ? {
+            countries: Array.isArray(data.geography.countries) ? data.geography.countries : [],
+            cities: Array.isArray(data.geography.cities) ? data.geography.cities : [],
+            towns: Array.isArray(data.geography.towns) ? data.geography.towns : [],
+          } : EMPTY_GEOGRAPHY_BOARDS,
         });
       }
     } catch {
@@ -1921,6 +2110,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
           />
+          <GeographyLeaderboard locale={locale} geography={socialBoards.geography} />
         </>
       ) : null}
 
@@ -2363,6 +2553,11 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         .leader-copy span { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 700; }
         .leader-score { text-align: right; }
         .leader-score strong { display: block; font-family: "Arial Narrow", "Helvetica Neue Condensed", Arial, sans-serif; font-size: 28px; line-height: 28px; }
+        .geo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+        .geo-column { min-width: 0; }
+        .geo-column-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--muted); font-family: "Courier New", ui-monospace, monospace; font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+        .geo-column-head strong { color: var(--ink); font-size: 13px; }
+        .geo-rows .leaderboard-row { grid-template-columns: 38px minmax(0, 1fr) 58px; }
         .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
         .feature-grid article { border: 1px solid var(--line); border-radius: 22px; padding: 18px; background: rgba(255,255,250,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); }
         .feature-grid p, .monetization p { color: var(--muted); line-height: 22px; }
@@ -2413,6 +2608,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           .answer-footer { align-items: flex-start; }
           .answer-footer .primary { width: 100%; }
           .feature-grid { grid-template-columns: 1fr; }
+          .geo-grid { grid-template-columns: 1fr; }
           .leaderboard-row { grid-template-columns: 38px minmax(0, 1fr) 54px; padding: 10px; }
           .leader-score strong { font-size: 21px; }
           .plans { grid-template-columns: 1fr; }
@@ -3096,6 +3292,23 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           overflow: hidden;
           gap: 0;
         }
+        .geo-grid {
+          gap: 14px;
+        }
+        .geo-column-head {
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .18em;
+        }
+        .geo-column-head strong {
+          color: #f4f5f6;
+          font-weight: 600;
+        }
+        .geo-rows .leaderboard-row {
+          grid-template-columns: 36px minmax(0, 1fr) 58px;
+        }
         .social-board + .social-board {
           margin-top: 20px;
         }
@@ -3377,6 +3590,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             top: 120px;
             right: -280px;
             transform: scale(.58) perspective(900px) rotateX(18deg) rotateZ(-16deg);
+          }
+          .geo-grid {
+            grid-template-columns: 1fr;
           }
           .leaderboard-row {
             grid-template-columns: 36px minmax(0, 1fr);
