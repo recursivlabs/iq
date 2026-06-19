@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 type ModeKey = 'world' | 'agi' | 'daily';
+type ViewKey = 'test' | 'rankings' | 'about';
 type TileTone = 'ink' | 'blue' | 'green' | 'rose' | 'amber';
 
 type PatternTile = {
@@ -457,18 +458,16 @@ function Result({
 
 function Runner({
   mode,
-  setMode,
   startRequest,
   onUnlock,
   onLeaderboard,
 }: {
   mode: ModeKey;
-  setMode: (mode: ModeKey) => void;
   startRequest: number;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry) => void;
 }) {
-  const [started, setStarted] = React.useState(false);
+  const [started, setStarted] = React.useState(true);
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
@@ -478,9 +477,13 @@ function Runner({
   const current = complete ? questions[questions.length - 1] : questions[step];
   const freePlayUsed = freePlayDate === localDayKey();
 
-  React.useEffect(() => setFreePlayDate(readFreePlayDate()), []);
   React.useEffect(() => {
-    setStarted(false);
+    const storedDate = readFreePlayDate();
+    setFreePlayDate(storedDate);
+    setStarted(storedDate !== localDayKey());
+  }, []);
+  React.useEffect(() => {
+    setStarted(readFreePlayDate() !== localDayKey());
     setStep(0);
     setSelected(null);
     setAnswers([]);
@@ -507,6 +510,11 @@ function Runner({
 
   function lockAnswer() {
     if (selected === null || complete || !current) return;
+    if (!freePlayUsed) {
+      const today = localDayKey();
+      writeFreePlayDate(today);
+      setFreePlayDate(today);
+    }
     setAnswers((existing) => [...existing, {
       id: current.id,
       selected,
@@ -519,32 +527,11 @@ function Runner({
 
   if (!started) {
     return (
-      <div className="runner-panel">
-        <div className="mode-row">
-          {(Object.keys(modes) as ModeKey[]).map((key) => (
-            <button key={key} className={`mode-button ${mode === key ? 'active' : ''}`} onClick={() => setMode(key)}>
-              <span className={`mode-glyph ${key}`} aria-hidden="true" />
-              {modes[key].label}
-            </button>
-          ))}
-        </div>
-        <div className="runner-intro">
-          <div className="runner-icon" aria-hidden="true">
-            <span className={`mode-glyph ${mode}`} />
-          </div>
-          <p className="kicker">{modes[mode].label}</p>
-          <h2>{modes[mode].title}</h2>
-          <p>{modes[mode].body}</p>
-        </div>
-        <div className="stats">
-          <div><strong>{questions.length}</strong><span>puzzles</span></div>
-          <div><strong>{mode === 'daily' ? '24h' : 'rank'}</strong><span>{mode === 'daily' ? 'reset' : 'global estimate'}</span></div>
-          <div><strong>AI</strong><span>comparison</span></div>
-        </div>
-        <p className="free-note">{freePlayUsed
-          ? 'Free play used today. Unlock a paid profile for unlimited attempts, or come back tomorrow.'
-          : 'One free play resets daily. Paid profiles unlock unlimited attempts and deeper reports.'}</p>
-        <button className="primary full" onClick={begin}>{freePlayUsed ? 'Unlock unlimited plays' : modes[mode].cta}</button>
+      <div className="runner-panel gate">
+        <p className="kicker">{modes[mode].label}</p>
+        <h2>Free play used today.</h2>
+        <p className="free-note">Unlock a paid profile for unlimited attempts, or come back tomorrow.</p>
+        <button className="primary full" onClick={begin}>Unlock unlimited plays</button>
       </div>
     );
   }
@@ -584,15 +571,16 @@ function Runner({
 
 export default function Home() {
   const [mode, setMode] = React.useState<ModeKey>('world');
-  const [startRequest, setStartRequest] = React.useState(0);
+  const [view, setView] = React.useState<ViewKey>('test');
+  const startRequest = 0;
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardEntry[]>(seededLeaderboard);
   const [unlockOpen, setUnlockOpen] = React.useState(false);
 
   React.useEffect(() => setLeaderboard(getLeaderboardEntries()), []);
 
-  function startWorld() {
-    setMode('world');
-    setStartRequest((value) => value + 1);
+  function openMode(nextMode: ModeKey) {
+    setMode(nextMode);
+    setView('test');
   }
 
   function handleLeaderboard() {
@@ -604,57 +592,52 @@ export default function Home() {
   return (
     <main>
       <nav>
-        <div>
+        <button className="brand" onClick={() => {
+          setMode('world');
+          setView('test');
+        }}>
           <strong>World IQ</strong>
           <span>iq.on.recursiv.io</span>
-        </div>
+        </button>
         <div>
-          <button onClick={() => setMode('world')}>Rank</button>
-          <button onClick={() => setMode('agi')}>AGI</button>
-          <button onClick={() => setMode('daily')}>Daily</button>
-          <button className="nav-cta" onClick={() => setUnlockOpen(true)}>Sign in</button>
+          <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>World</button>
+          <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>AGI</button>
+          <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>Daily</button>
+          <button className={view === 'rankings' ? 'active' : ''} onClick={() => setView('rankings')}>Rankings</button>
+          <button className={view === 'about' ? 'active' : ''} onClick={() => setView('about')}>About</button>
+          <button className="nav-cta" onClick={() => setUnlockOpen(true)}>Account</button>
         </div>
       </nav>
 
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="kicker">World IQ by Recursiv</p>
-          <h1>The global reasoning test for humans and AI.</h1>
-          <p className="lede">Three simple loops: a global IQ-style rank, a human-vs-AGI challenge, and one daily genius puzzle. One free play resets every day.</p>
-          <div className="actions">
-            <button className="primary" onClick={startWorld}>Start the test</button>
-            <button className="secondary" onClick={() => setUnlockOpen(true)}>Create profile</button>
-          </div>
-          <div className="founding-stats">
-            <div><strong>12</strong><span>World IQ puzzles</span></div>
-            <div><strong>6</strong><span>AGI stumpers</span></div>
-            <div><strong>1</strong><span>free play per day</span></div>
-          </div>
-        </div>
-        <div className="hero-tool">
-          <Runner mode={mode} setMode={setMode} startRequest={startRequest} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} />
-        </div>
-      </section>
+      {view === 'test' ? (
+        <section className="test-surface" aria-label={`${modes[mode].label} test`}>
+          <Runner mode={mode} startRequest={startRequest} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} />
+        </section>
+      ) : null}
 
-      <Leaderboard entries={leaderboard} onUnlock={() => setUnlockOpen(true)} />
+      {view === 'rankings' ? (
+        <Leaderboard entries={leaderboard} onUnlock={() => setUnlockOpen(true)} />
+      ) : null}
 
-      <section className="features">
-        <div className="section-head">
-          <div>
-            <p className="kicker">Viral mechanics</p>
-            <h2>Simple enough for everyone. Sharp enough for the AGI crowd.</h2>
+      {view === 'about' ? (
+        <section className="features">
+          <div className="section-head">
+            <div>
+              <p className="kicker">World IQ by Recursiv</p>
+              <h2>The global reasoning test for humans and AI.</h2>
+            </div>
           </div>
-        </div>
-        <div className="feature-grid">
-          <article><strong>World IQ</strong><p>A fast reasoning score, estimated global rank, and clean share card.</p></article>
-          <article><strong>Human vs AGI</strong><p>Puzzles selected because they expose abstraction gaps that current AI systems still struggle with.</p></article>
-          <article><strong>Daily Genius</strong><p>A daily free-play reset for streaks, group challenges, and repeat traffic.</p></article>
-        </div>
-        <div className="monetization">
-          <div><strong>Recursiv Stripe ready</strong><p>Everyone gets one free play per day. Paid profiles unlock unlimited attempts, deep reports, verified badges, pro training, and team leaderboards.</p></div>
-          <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
-        </div>
-      </section>
+          <div className="feature-grid">
+            <article><strong>World IQ</strong><p>A fast reasoning score, estimated global rank, and clean share card.</p></article>
+            <article><strong>Human vs AGI</strong><p>Puzzles selected because they expose abstraction gaps that current AI systems still struggle with.</p></article>
+            <article><strong>Daily Genius</strong><p>A daily free-play reset for streaks, group challenges, and repeat traffic.</p></article>
+          </div>
+          <div className="monetization">
+            <div><strong>Recursiv Stripe ready</strong><p>Everyone gets one free play per day. Paid profiles unlock unlimited attempts, deep reports, verified badges, pro training, and team leaderboards.</p></div>
+            <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
+          </div>
+        </section>
+      ) : null}
 
       {unlockOpen ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Unlock unlimited World IQ attempts">
@@ -697,20 +680,26 @@ export default function Home() {
           --amber: #b27821;
         }
         * { box-sizing: border-box; }
-        body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        body { margin: 0; background: var(--bg); color: var(--ink); font-family: Georgia, "Times New Roman", ui-serif, serif; }
         button, a { font: inherit; }
         button { cursor: pointer; }
         button:disabled { cursor: not-allowed; opacity: .38; }
-        main { min-height: 100vh; padding: 0 22px 56px; }
-        nav { max-width: 1180px; margin: 0 auto; padding: 22px 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-        nav > div:first-child { display: grid; gap: 2px; }
-        nav strong { font-size: 18px; }
+        main { min-height: 100vh; padding: 0 20px 56px; }
+        nav { max-width: 980px; margin: 0 auto; padding: 22px 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .brand { border: 0; background: transparent; color: var(--ink); display: grid; gap: 1px; padding: 0; text-align: left; }
+        nav strong { font-size: 19px; letter-spacing: 0; }
         nav span { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; }
         nav > div:last-child { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-        nav button { border: 0; background: transparent; color: var(--muted); padding: 8px 10px; font-size: 13px; font-weight: 700; border-radius: 6px; }
+        nav button { border: 0; background: transparent; color: var(--muted); padding: 8px 9px; font-size: 14px; font-weight: 700; border-radius: 6px; }
+        nav .brand { padding: 0; color: var(--ink); border-radius: 0; }
+        nav .nav-cta { min-height: 36px; padding: 7px 12px; }
+        nav button.active { color: var(--ink); background: var(--soft); }
         .nav-cta, .secondary { border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); border-radius: 7px; min-height: 44px; padding: 10px 15px; font-weight: 850; }
         .primary { border: 0; background: var(--ink); color: var(--panel); border-radius: 7px; min-height: 44px; padding: 11px 17px; font-weight: 850; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
         .full { width: 100%; }
+        .test-surface { max-width: 520px; margin: 34px auto 0; }
+        .test-surface .runner-panel { border: 0; background: transparent; padding: 0; }
+        .test-surface .result, .test-surface .gate { border: 1px solid var(--line-strong); background: var(--panel); padding: 18px; }
         .hero { max-width: 1180px; min-height: 660px; margin: 0 auto; padding: 26px 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 490px); align-items: center; gap: 34px; }
         .kicker { color: var(--rose); font-size: 12px; text-transform: uppercase; letter-spacing: 1.6px; font-weight: 900; margin: 0; }
         h1 { font-size: clamp(56px, 7vw, 82px); line-height: .98; margin: 16px 0 0; max-width: 760px; letter-spacing: 0; }
@@ -742,7 +731,7 @@ export default function Home() {
         .track { height: 5px; background: var(--soft); border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .track div { height: 100%; background: var(--ink); border-radius: 5px; }
         .question-head { margin-top: 18px; }
-        .question-head h2 { font-size: 20px; margin: 0; }
+        .question-head h2 { font-size: 24px; margin: 0; font-weight: 850; }
         .question-head span { color: var(--rose); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 900; }
         .matrix { width: 100%; max-width: 260px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
         .tile { width: 78px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); position: relative; overflow: hidden; display: grid; place-items: center; }
@@ -796,10 +785,16 @@ export default function Home() {
           .hero-tool { max-width: 520px; }
         }
         @media (max-width: 620px) {
-          main { padding-inline: 22px; }
-          nav { align-items: flex-start; padding-top: 22px; }
+          main { padding-inline: 16px; }
+          nav { align-items: flex-start; padding-top: 18px; }
+          nav > div:last-child { gap: 4px; }
+          nav strong { font-size: 18px; }
+          nav span { font-size: 9px; letter-spacing: 1.2px; }
+          nav button { padding: 6px 6px; font-size: 12px; }
+          nav .nav-cta { min-height: 32px; padding: 5px 10px; }
           h1 { font-size: 58px; }
           .lede { font-size: 17px; line-height: 29px; }
+          .test-surface { margin-top: 28px; }
           .founding-stats { grid-template-columns: 1fr 1fr; }
           .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .tile { width: min(76px, 22vw); }
