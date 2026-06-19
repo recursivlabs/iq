@@ -1267,7 +1267,7 @@ function StatusRail({
     <aside className="status-rail" aria-label="IQ WARS session and subscription">
       <section className="rail-panel">
         <p className="rail-label">{copy('Session')}</p>
-        <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 / 1 attempt left' : '0 / 1 · used')}</strong>
+        <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 official attempt left' : '0 / 1 · used')}</strong>
         <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One full official IQ WARS baseline today.' : 'Your official attempt is locked for today.')}</span>
         <div className="rail-rule" />
         <p className="rail-label">{copy('Official rank')}</p>

@@ -30,6 +30,7 @@ const translations: Record<Exclude<LocaleKey, 'en'>, Record<string, string>> = {
     'Session': 'Sesion',
     'Paid profile': 'Perfil pago',
     '1 / 1 attempt left': '1 / 1 intento restante',
+    '1 official attempt left': '1 intento oficial restante',
     '0 / 1 · used': '0 / 1 usado',
     'Archive, reports, and extra practice are active.': 'Archivo, reportes y practica extra activos.',
     'One official Today\'s IQ WARS attempt today.': 'Un intento oficial de IQ WARS hoy.',
