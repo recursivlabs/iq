@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const IQWARS_PROJECT_ID = process.env.IQWARS_RECURSIV_PROJECT_ID || process.env.RECURSIV_PROJECT_ID || '';
+const IQWARS_PROJECT_API_KEY = process.env.IQWARS_RECURSIV_API_KEY || process.env.RECURSIV_PROJECT_API_KEY || process.env.RECURSIV_API_KEY || '';
+const IQWARS_APP_ORIGIN = (process.env.IQWARS_APP_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || 'https://iqwars.app').replace(/\/$/, '');
+const IQWARS_APP_HOST = (() => {
+  try {
+    return new URL(IQWARS_APP_ORIGIN).host;
+  } catch {
+    return 'iqwars.app';
+  }
+})();
 const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
 
 function cleanEmail(value: unknown) {
@@ -38,15 +47,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Enter the email and code.' }, { status: 400 });
   }
 
-  if (!IQWARS_PROJECT_ID) {
+  if (!IQWARS_PROJECT_ID || !IQWARS_PROJECT_API_KEY) {
     return NextResponse.json({ error: 'IQ WARS auth is not configured yet.' }, { status: 503 });
   }
 
   const response = await fetch(`${RECURSIV_AUTH_ORIGIN}/api/auth/sign-in/email-otp`, {
     method: 'POST',
     headers: {
+      Authorization: `Bearer ${IQWARS_PROJECT_API_KEY}`,
       'Content-Type': 'application/json',
-      Origin: RECURSIV_AUTH_ORIGIN,
+      Host: IQWARS_APP_HOST,
+      Origin: IQWARS_APP_ORIGIN,
     },
     body: JSON.stringify({ email, otp }),
   });
