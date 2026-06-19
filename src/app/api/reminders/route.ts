@@ -4,7 +4,7 @@ import { readReminderStore, writeReminderStore, type ReminderRecord } from '../_
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const PUBLIC_APP_URL = (process.env.IQ_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://iq.on.recursiv.io').replace(/\/$/, '');
+const PUBLIC_APP_URL = (process.env.IQ_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://iqwars.app').replace(/\/$/, '');
 
 function cleanEmail(value: unknown) {
   if (typeof value !== 'string') return '';

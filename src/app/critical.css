@@ -449,6 +449,83 @@ nav .nav-cta,
   letter-spacing: .16em;
 }
 
+.option:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.option.result-correct {
+  color: #baf5cf;
+}
+
+.option.result-correct .tile {
+  border-color: rgba(186, 245, 207, .72);
+  background: linear-gradient(160deg, rgba(186, 245, 207, .16), rgba(255, 255, 255, .025));
+  box-shadow: 0 0 0 1px rgba(186, 245, 207, .18), 0 0 30px rgba(96, 220, 152, .12), inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+
+.option.result-wrong {
+  color: #ffb5b5;
+}
+
+.option.result-wrong .tile {
+  border-color: rgba(255, 154, 154, .68);
+  background: linear-gradient(160deg, rgba(255, 154, 154, .13), rgba(255, 255, 255, .018));
+  box-shadow: 0 0 0 1px rgba(255, 154, 154, .16), 0 0 24px rgba(255, 92, 92, .08), inset 0 0 0 1px rgba(255, 255, 255, .04);
+}
+
+.answer-feedback {
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .025);
+  padding: 9px 10px;
+  display: grid;
+  gap: 3px;
+}
+
+.answer-feedback.correct {
+  border-color: rgba(186, 245, 207, .28);
+  background: rgba(186, 245, 207, .045);
+}
+
+.answer-feedback.wrong {
+  border-color: rgba(255, 154, 154, .24);
+  background: rgba(255, 154, 154, .035);
+}
+
+.answer-feedback strong {
+  color: #f4f5f6;
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.answer-feedback.correct strong {
+  color: #baf5cf;
+}
+
+.answer-feedback.wrong strong {
+  color: #ffb5b5;
+}
+
+.answer-feedback span {
+  color: #a8adb1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.runner-panel.feedback-correct .answer-footer,
+.runner-panel.feedback-wrong .answer-footer {
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+.runner-panel.feedback-correct .answer-footer p,
+.runner-panel.feedback-wrong .answer-footer p {
+  display: none;
+}
+
 .answer-footer {
   margin-top: 10px;
   padding-top: 10px;
@@ -639,6 +716,20 @@ nav .nav-cta,
     justify-self: center;
   }
 
+  .answer-feedback {
+    margin-top: 6px;
+    padding: 7px 8px;
+  }
+
+  .answer-feedback strong {
+    font-size: 9.5px;
+  }
+
+  .answer-feedback span {
+    font-size: 10.5px;
+    line-height: 1.25;
+  }
+
   .answer-footer {
     position: sticky;
     bottom: env(safe-area-inset-bottom);
@@ -702,6 +793,15 @@ nav .nav-cta,
 
   .option {
     font-size: 7.5px;
+  }
+
+  .answer-feedback {
+    max-height: 48px;
+    overflow: hidden;
+  }
+
+  .answer-feedback span {
+    font-size: 10px;
   }
 
   .answer-footer .primary {

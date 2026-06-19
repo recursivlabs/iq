@@ -21,6 +21,7 @@ type Puzzle = {
   title: string;
   difficulty: string;
   prompt: string;
+  explanation: string;
   matrix: Array<PatternTile | null>;
   options: PatternTile[];
   answerIndex: number;
@@ -32,6 +33,10 @@ type AnswerRecord = {
   selected: number;
   correct: boolean;
   aiSolved: boolean;
+};
+
+type AnswerFeedback = AnswerRecord & {
+  elapsedMs: number;
 };
 
 type LeaderboardEntry = {
@@ -309,8 +314,9 @@ const worldPuzzles: Puzzle[] = [
     id: 'world-01',
     mode: 'world',
     title: 'Additive count',
-    difficulty: 'Warmup',
-    prompt: 'Complete the final tile.',
+    difficulty: 'Calibration',
+    prompt: 'Complete the count pattern. No trick: read rows and columns.',
+    explanation: 'Dots increase by one across each row and down each column, so the missing tile has five dots.',
     matrix: [tile(1, 0, false, 0, 'ink'), tile(2, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(2, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(4, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(4, 0, false, 0, 'ink'), null],
     options: [tile(2, 1, false, 0, 'ink'), tile(5, 0, false, 0, 'ink'), tile(4, 1, false, 0, 'ink'), tile(1, 2, false, 0, 'ink')],
     answerIndex: 1,
@@ -320,8 +326,9 @@ const worldPuzzles: Puzzle[] = [
     id: 'world-02',
     mode: 'world',
     title: 'Rotating bars',
-    difficulty: 'Warmup',
-    prompt: 'Find the rotation that keeps the sequence intact.',
+    difficulty: 'Foundation',
+    prompt: 'Track the bar rotation left to right while the dot count rises by row.',
+    explanation: 'Each row rotates 0, 45, then 90 degrees. The last row keeps three dots, so the missing tile is three dots at 90 degrees.',
     matrix: [tile(1, 1, false, 0, 'blue'), tile(1, 1, false, 45, 'blue'), tile(1, 1, false, 90, 'blue'), tile(2, 1, false, 0, 'blue'), tile(2, 1, false, 45, 'blue'), tile(2, 1, false, 90, 'blue'), tile(3, 1, false, 0, 'blue'), tile(3, 1, false, 45, 'blue'), null],
     options: [tile(3, 1, false, 90, 'blue'), tile(1, 3, false, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(4, 0, true, 0, 'blue')],
     answerIndex: 0,
@@ -332,7 +339,8 @@ const worldPuzzles: Puzzle[] = [
     mode: 'world',
     title: 'Ring alternation',
     difficulty: 'Basic',
-    prompt: 'Choose the missing ring state.',
+    prompt: 'The ring flips on and off while the count and bars stay orderly.',
+    explanation: 'The ring alternates across the grid. The final position returns to ring-on with three dots and two bars.',
     matrix: [tile(1, 0, true, 0, 'green'), tile(2, 0, false, 0, 'green'), tile(3, 0, true, 0, 'green'), tile(1, 1, false, 0, 'green'), tile(2, 1, true, 0, 'green'), tile(3, 1, false, 0, 'green'), tile(1, 2, true, 0, 'green'), tile(2, 2, false, 0, 'green'), null],
     options: [tile(3, 2, true, 0, 'green'), tile(2, 2, true, 0, 'green'), tile(3, 1, true, 0, 'green'), tile(1, 2, false, 0, 'green')],
     answerIndex: 0,
@@ -343,7 +351,8 @@ const worldPuzzles: Puzzle[] = [
     mode: 'world',
     title: 'Diagonal emphasis',
     difficulty: 'Basic',
-    prompt: 'Complete the diagonal pattern.',
+    prompt: 'Follow the diagonal highlight and preserve the row structure.',
+    explanation: 'The emphasized ring sits on the main diagonal. The missing bottom-right tile is the final diagonal ring at 90 degrees.',
     matrix: [tile(2, 1, true, 0, 'rose'), tile(1, 2, false, 0, 'rose'), tile(2, 1, false, 0, 'rose'), tile(1, 2, false, 45, 'rose'), tile(2, 1, true, 45, 'rose'), tile(1, 2, false, 45, 'rose'), tile(2, 1, false, 90, 'rose'), tile(1, 2, false, 90, 'rose'), null],
     options: [tile(2, 1, true, 90, 'rose'), tile(1, 2, true, 90, 'rose'), tile(2, 2, false, 90, 'rose'), tile(3, 1, true, 45, 'rose')],
     answerIndex: 0,
@@ -353,8 +362,9 @@ const worldPuzzles: Puzzle[] = [
     id: 'world-05',
     mode: 'world',
     title: 'Column sum',
-    difficulty: 'Medium',
+    difficulty: 'Core',
     prompt: 'The bottom row combines the two above it.',
+    explanation: 'The final cell adds the dot and bar structure from the two cells above, producing three dots, two bars, and the ring.',
     matrix: [tile(1, 1, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(1, 2, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(1, 1, false, 0, 'amber'), tile(2, 1, false, 0, 'amber'), tile(3, 1, true, 0, 'amber'), tile(3, 1, true, 0, 'amber'), null],
     options: [tile(3, 2, true, 0, 'amber'), tile(2, 3, false, 0, 'amber'), tile(4, 1, true, 0, 'amber'), tile(1, 3, true, 0, 'amber')],
     answerIndex: 0,
@@ -364,8 +374,9 @@ const worldPuzzles: Puzzle[] = [
     id: 'world-06',
     mode: 'world',
     title: 'Odd one out',
-    difficulty: 'Medium',
-    prompt: 'Find the tile that completes the only consistent row.',
+    difficulty: 'Core',
+    prompt: 'Keep the row progression clean: dots rise, bars fall, and tilt advances.',
+    explanation: 'Each row adds one dot, removes one bar, and keeps the row tilt. The final tile needs five dots, zero bars, and 90 degrees.',
     matrix: [tile(1, 2, false, 0, 'blue'), tile(2, 1, true, 0, 'blue'), tile(3, 0, false, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(3, 1, true, 45, 'blue'), tile(4, 0, false, 45, 'blue'), tile(3, 2, false, 90, 'blue'), tile(4, 1, true, 90, 'blue'), null],
     options: [tile(5, 0, false, 90, 'blue'), tile(4, 0, true, 90, 'blue'), tile(5, 1, false, 45, 'blue'), tile(3, 0, false, 90, 'blue')],
     answerIndex: 0,
@@ -375,8 +386,9 @@ const worldPuzzles: Puzzle[] = [
     id: 'world-07',
     mode: 'world',
     title: 'Shape conservation',
-    difficulty: 'Medium',
-    prompt: 'Preserve the row totals.',
+    difficulty: 'Core+',
+    prompt: 'Preserve the row totals while the ring state stays balanced.',
+    explanation: 'The row keeps its total shape count. The missing tile must conserve the remaining count with the ring still active.',
     matrix: [tile(4, 0, true, 0, 'green'), tile(2, 1, false, 0, 'green'), tile(0, 2, true, 0, 'green'), tile(3, 1, true, 45, 'green'), tile(1, 2, false, 45, 'green'), tile(1, 1, true, 45, 'green'), tile(2, 2, true, 90, 'green'), tile(2, 0, false, 90, 'green'), null],
     options: [tile(0, 1, true, 90, 'green'), tile(1, 2, true, 90, 'green'), tile(3, 0, false, 90, 'green'), tile(0, 2, false, 90, 'green')],
     answerIndex: 0,
@@ -386,8 +398,9 @@ const worldPuzzles: Puzzle[] = [
     id: 'world-08',
     mode: 'world',
     title: 'Mirror transform',
-    difficulty: 'Medium',
-    prompt: 'Complete the mirrored transform.',
+    difficulty: 'Core+',
+    prompt: 'The middle column transforms; the right column mirrors the left.',
+    explanation: 'The right column mirrors the left column after the central transform, so the last tile returns to the left pattern at 90 degrees.',
     matrix: [tile(1, 1, false, 0, 'rose'), tile(2, 1, true, 45, 'rose'), tile(1, 1, false, 90, 'rose'), tile(2, 2, false, 0, 'rose'), tile(3, 2, true, 45, 'rose'), tile(2, 2, false, 90, 'rose'), tile(3, 1, false, 0, 'rose'), tile(4, 1, true, 45, 'rose'), null],
     options: [tile(3, 1, false, 90, 'rose'), tile(4, 1, false, 90, 'rose'), tile(3, 2, true, 90, 'rose'), tile(2, 1, false, 45, 'rose')],
     answerIndex: 0,
@@ -398,7 +411,8 @@ const worldPuzzles: Puzzle[] = [
     mode: 'world',
     title: 'Dual axis',
     difficulty: 'Hard',
-    prompt: 'Track two axes at once.',
+    prompt: 'Track count vertically and rotation horizontally at the same time.',
+    explanation: 'Dots rise by row while bar count and rotation move across columns. The missing tile is three dots, two bars, no ring, at 45 degrees.',
     matrix: [tile(1, 0, false, 0, 'amber'), tile(1, 1, false, 45, 'amber'), tile(1, 2, false, 90, 'amber'), tile(2, 0, true, 45, 'amber'), tile(2, 1, true, 90, 'amber'), tile(2, 2, true, 0, 'amber'), tile(3, 0, false, 90, 'amber'), tile(3, 1, false, 0, 'amber'), null],
     options: [tile(3, 2, false, 45, 'amber'), tile(3, 2, true, 45, 'amber'), tile(2, 2, false, 0, 'amber'), tile(4, 1, false, 45, 'amber')],
     answerIndex: 0,
@@ -409,7 +423,8 @@ const worldPuzzles: Puzzle[] = [
     mode: 'world',
     title: 'Inversion',
     difficulty: 'Hard',
-    prompt: 'Choose the inverted final tile.',
+    prompt: 'Invert count pressure while the rotation locks to the row.',
+    explanation: 'The sequence increases dots as bars fall, with the final row at 90 degrees. The missing tile completes the inversion with six dots and one bar.',
     matrix: [tile(0, 3, true, 0, 'ink'), tile(2, 2, false, 0, 'ink'), tile(4, 1, true, 0, 'ink'), tile(1, 3, false, 45, 'ink'), tile(3, 2, true, 45, 'ink'), tile(5, 1, false, 45, 'ink'), tile(2, 3, true, 90, 'ink'), tile(4, 2, false, 90, 'ink'), null],
     options: [tile(6, 1, true, 90, 'ink'), tile(5, 2, true, 90, 'ink'), tile(6, 0, false, 90, 'ink'), tile(4, 1, true, 45, 'ink')],
     answerIndex: 0,
@@ -420,7 +435,8 @@ const worldPuzzles: Puzzle[] = [
     mode: 'world',
     title: 'Nested logic',
     difficulty: 'Hard',
-    prompt: 'Combine count, ring, and tilt.',
+    prompt: 'Combine count, ring, color family, and tilt into one rule.',
+    explanation: 'Each step advances count, bar state, and tilt together while ring state alternates. The missing tile is the next rose-family synthesis.',
     matrix: [tile(1, 1, true, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(3, 0, true, 90, 'blue'), tile(2, 2, false, 45, 'green'), tile(3, 0, true, 90, 'green'), tile(4, 1, false, 0, 'green'), tile(3, 0, true, 90, 'rose'), tile(4, 1, false, 0, 'rose'), null],
     options: [tile(5, 2, true, 45, 'rose'), tile(4, 2, true, 45, 'rose'), tile(5, 1, false, 45, 'rose'), tile(3, 2, true, 0, 'rose')],
     answerIndex: 0,
@@ -431,7 +447,8 @@ const worldPuzzles: Puzzle[] = [
     mode: 'world',
     title: 'Final synthesis',
     difficulty: 'Elite',
-    prompt: 'Finish the complete reasoning matrix.',
+    prompt: 'Finish the complete reasoning matrix. Every attribute matters.',
+    explanation: 'The final cell synthesizes the row and column transformations: maximum count, three bars, ring-on, and the diagonal tilt.',
     matrix: [tile(2, 0, true, 0, 'amber'), tile(1, 1, false, 45, 'blue'), tile(3, 1, true, 90, 'green'), tile(3, 1, false, 45, 'blue'), tile(2, 2, true, 90, 'green'), tile(4, 2, false, 0, 'rose'), tile(4, 2, true, 90, 'green'), tile(3, 3, false, 0, 'rose'), null],
     options: [tile(5, 3, true, 45, 'amber'), tile(4, 3, true, 45, 'amber'), tile(5, 2, false, 45, 'amber'), tile(6, 3, true, 90, 'amber')],
     answerIndex: 0,
@@ -2559,6 +2576,8 @@ function Runner({
   mode,
   startRequest,
   isPaid,
+  soundEnabled,
+  onSound,
   onUnlock,
   onLeaderboard,
   onUsageChange,
@@ -2569,6 +2588,8 @@ function Runner({
   mode: ModeKey;
   startRequest: number;
   isPaid: boolean;
+  soundEnabled: boolean;
+  onSound: (kind: SoundKind) => void;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
   onUsageChange: (usage: PlayUsage) => void;
@@ -2579,6 +2600,7 @@ function Runner({
   const [started, setStarted] = React.useState(() => isPaid || playsRemaining(readPlayUsage()) > 0);
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
+  const [feedback, setFeedback] = React.useState<AnswerFeedback | null>(null);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
   const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => readPlayUsage());
   const [timerStartedAt, setTimerStartedAt] = React.useState(() => Date.now());
@@ -2588,8 +2610,11 @@ function Runner({
   const complete = started && step >= questions.length;
   const current = complete ? questions[questions.length - 1] : questions[step];
   const remainingToday = playsRemaining(playUsage);
-  const liveScore = liveIqScoreProjection(answers, questions.length, elapsedMs);
+  const visibleAnswers = feedback ? [...answers, feedback] : answers;
+  const liveScore = liveIqScoreProjection(visibleAnswers, questions.length, elapsedMs);
   const liveDelta = liveScore - 100;
+  const answeredCount = visibleAnswers.length;
+  const isLastQuestion = step + 1 >= questions.length;
 
   React.useEffect(() => {
     const usage = readPlayUsage();
@@ -2604,6 +2629,7 @@ function Runner({
     setStarted(isPaid || playsRemaining(usage) > 0);
     setStep(0);
     setSelected(null);
+    setFeedback(null);
     setAnswers([]);
     setTimerStartedAt(Date.now());
     setElapsedMs(0);
@@ -2611,12 +2637,12 @@ function Runner({
   }, [isPaid, mode, onUsageChange]);
 
   React.useEffect(() => {
-    if (!started || complete) return undefined;
+    if (!started || complete || feedback) return undefined;
     const tick = () => setElapsedMs(Date.now() - timerStartedAt);
     tick();
     const interval = window.setInterval(tick, 1000);
     return () => window.clearInterval(interval);
-  }, [complete, started, timerStartedAt]);
+  }, [complete, feedback, started, timerStartedAt]);
 
   function begin() {
     const usage = readPlayUsage();
@@ -2628,6 +2654,7 @@ function Runner({
     setStarted(true);
     setStep(0);
     setSelected(null);
+    setFeedback(null);
     setAnswers([]);
     setTimerStartedAt(Date.now());
     setElapsedMs(0);
@@ -2640,18 +2667,35 @@ function Runner({
   }, [startRequest]);
 
   function lockAnswer() {
-    if (selected === null || complete || !current) return;
+    if (feedback || selected === null || complete || !current) return;
     const finalElapsed = Date.now() - timerStartedAt;
-    setAnswers((existing) => [...existing, {
+    const nextFeedback: AnswerFeedback = {
       id: current.id,
       selected,
       correct: selected === current.answerIndex,
       aiSolved: current.aiSolved,
+      elapsedMs: finalElapsed,
+    };
+    setFeedback(nextFeedback);
+    setElapsedMs(finalElapsed);
+    if (soundEnabled) onSound(nextFeedback.correct ? 'success' : 'error');
+  }
+
+  function continueAfterFeedback() {
+    if (!feedback) return;
+    setAnswers((existing) => [...existing, {
+      id: feedback.id,
+      selected: feedback.selected,
+      correct: feedback.correct,
+      aiSolved: feedback.aiSolved,
     }]);
     setSelected(null);
+    setFeedback(null);
     if (step + 1 >= questions.length) {
-      setElapsedMs(finalElapsed);
-      setCompletedElapsedMs(finalElapsed);
+      setElapsedMs(feedback.elapsedMs);
+      setCompletedElapsedMs(feedback.elapsedMs);
+    } else {
+      setTimerStartedAt(Date.now() - feedback.elapsedMs);
     }
     setStep((value) => value + 1);
   }
@@ -2670,7 +2714,7 @@ function Runner({
   if (complete) return <Result locale={locale} mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
 
   return (
-    <div className="runner-panel">
+    <div className={`runner-panel ${feedback ? feedback.correct ? 'feedback-correct' : 'feedback-wrong' : ''}`}>
       <div className="progress-row">
         <p className="kicker">{copy(modes[mode].label)}</p>
         <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {formatElapsedTime(elapsedMs)} · {copy(isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used')}</span>
@@ -2682,7 +2726,7 @@ function Runner({
         </div>
         <div>
           <span>{copy('Answered')}</span>
-          <strong>{answers.length}/{questions.length}</strong>
+          <strong>{answeredCount}/{questions.length}</strong>
         </div>
         <div>
           <span>{copy('Trajectory')}</span>
@@ -2700,15 +2744,34 @@ function Runner({
       </div>
       <div className="options">
         {current.options.map((item, index) => (
-          <button key={`${current.id}-${index}`} aria-label={`${copy('Answer')} ${index + 1}`} className={`option ${selected === index ? 'active' : ''}`} onClick={() => setSelected(index)}>
-            <PatternTileView tile={item} selected={selected === index} />
+          <button
+            key={`${current.id}-${index}`}
+            aria-label={`${copy('Answer')} ${index + 1}`}
+            className={[
+              'option',
+              selected === index ? 'active' : '',
+              feedback && index === current.answerIndex ? 'result-correct' : '',
+              feedback && index === feedback.selected && !feedback.correct ? 'result-wrong' : '',
+            ].filter(Boolean).join(' ')}
+            disabled={Boolean(feedback)}
+            onClick={() => {
+              if (!feedback) setSelected(index);
+            }}
+          >
+            <PatternTileView tile={item} selected={selected === index || Boolean(feedback && index === current.answerIndex)} />
             <span>{String.fromCharCode(65 + index)}</span>
           </button>
         ))}
       </div>
+      {feedback ? (
+        <div className={`answer-feedback ${feedback.correct ? 'correct' : 'wrong'}`} aria-live="polite">
+          <strong>{copy(feedback.correct ? 'Correct' : 'Not quite')}</strong>
+          <span>{copy(feedback.correct ? 'Clean read.' : `Correct answer: ${String.fromCharCode(65 + current.answerIndex)}.`)} {copy(current.explanation)}</span>
+        </div>
+      ) : null}
       <div className="answer-footer">
-        <p>{copy(current.aiSolved ? 'Frontier models usually solve this.' : 'Frontier models often miss this pattern.')} {copy('Score updates after each lock.')}</p>
-        <button className="primary" disabled={selected === null} onClick={lockAnswer}>{copy('Lock answer')}</button>
+        <p>{feedback ? copy(feedback.correct ? 'Score reacted upward. Keep the rhythm.' : 'Score reacted downward. Learn the rule and keep moving.') : `${copy(current.aiSolved ? 'Frontier models usually solve this.' : 'Frontier models often miss this pattern.')} ${copy('Score updates after each lock.')}`}</p>
+        <button className="primary" disabled={!feedback && selected === null} onClick={feedback ? continueAfterFeedback : lockAnswer}>{copy(feedback ? isLastQuestion ? 'See score' : 'Next question' : 'Lock answer')}</button>
       </div>
     </div>
   );
@@ -3040,6 +3103,7 @@ export default function Home({
       playInteractionSound('select');
       return;
     }
+    if (action.closest('.answer-footer')) return;
     if (action.closest('.copy-link')) {
       playInteractionSound('copy');
       return;
@@ -3528,7 +3592,7 @@ export default function Home({
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${copy(modes[mode].label)} test`}>
           <SignalSculpture />
-          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
+	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
           <StatusRail
             locale={locale}
             isPaid={paidAccess}
@@ -4339,6 +4403,14 @@ export default function Home({
           padding: clamp(14px, 1.8vw, 20px);
           overflow: hidden;
         }
+        .runner-panel.feedback-correct {
+          border-color: rgba(178,245,204,.28);
+          box-shadow: 0 30px 90px rgba(0,0,0,.58), 0 0 46px rgba(96,220,152,.08), inset 0 1px 0 rgba(255,255,255,.06);
+        }
+        .runner-panel.feedback-wrong {
+          border-color: rgba(255,154,154,.24);
+          box-shadow: 0 30px 90px rgba(0,0,0,.58), 0 0 42px rgba(255,92,92,.06), inset 0 1px 0 rgba(255,255,255,.05);
+        }
         .runner-panel.gate,
         .runner-panel.result {
           padding: clamp(24px, 4vw, 40px);
@@ -4544,6 +4616,69 @@ export default function Home({
           color: #f4f5f6;
           border: 0;
           background: transparent;
+        }
+        .option:disabled {
+          cursor: default;
+          opacity: 1;
+        }
+        .option.result-correct {
+          color: #baf5cf;
+        }
+        .option.result-correct .tile {
+          border-color: rgba(186,245,207,.72);
+          background: linear-gradient(160deg, rgba(186,245,207,.16), rgba(255,255,255,.025));
+          box-shadow: 0 0 0 1px rgba(186,245,207,.18), 0 0 30px rgba(96,220,152,.12), inset 0 0 0 1px rgba(255,255,255,.06);
+        }
+        .option.result-wrong {
+          color: #ffb5b5;
+        }
+        .option.result-wrong .tile {
+          border-color: rgba(255,154,154,.68);
+          background: linear-gradient(160deg, rgba(255,154,154,.13), rgba(255,255,255,.018));
+          box-shadow: 0 0 0 1px rgba(255,154,154,.16), 0 0 24px rgba(255,92,92,.08), inset 0 0 0 1px rgba(255,255,255,.04);
+        }
+        .answer-feedback {
+          margin-top: 8px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          background: rgba(255,255,255,.025);
+          padding: 9px 10px;
+          display: grid;
+          gap: 3px;
+        }
+        .answer-feedback.correct {
+          border-color: rgba(186,245,207,.28);
+          background: rgba(186,245,207,.045);
+        }
+        .answer-feedback.wrong {
+          border-color: rgba(255,154,154,.24);
+          background: rgba(255,154,154,.035);
+        }
+        .answer-feedback strong {
+          color: #f4f5f6;
+          font-size: 12px;
+          letter-spacing: .14em;
+          text-transform: uppercase;
+        }
+        .answer-feedback.correct strong {
+          color: #baf5cf;
+        }
+        .answer-feedback.wrong strong {
+          color: #ffb5b5;
+        }
+        .answer-feedback span {
+          color: #a8adb1;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        .runner-panel.feedback-correct .answer-footer,
+        .runner-panel.feedback-wrong .answer-footer {
+          margin-top: 6px;
+          padding-top: 8px;
+        }
+        .runner-panel.feedback-correct .answer-footer p,
+        .runner-panel.feedback-wrong .answer-footer p {
+          display: none;
         }
         .answer-footer {
           margin-top: 10px;
@@ -5848,6 +5983,17 @@ export default function Home({
             max-width: 48px;
             justify-self: center;
           }
+          .answer-feedback {
+            margin-top: 6px;
+            padding: 7px 8px;
+          }
+          .answer-feedback strong {
+            font-size: 9.5px;
+          }
+          .answer-feedback span {
+            font-size: 10.5px;
+            line-height: 1.25;
+          }
           .answer-footer {
             position: sticky;
             bottom: env(safe-area-inset-bottom);
@@ -5908,6 +6054,13 @@ export default function Home({
             }
             .option {
               font-size: 7.5px;
+            }
+            .answer-feedback {
+              max-height: 48px;
+              overflow: hidden;
+            }
+            .answer-feedback span {
+              font-size: 10px;
             }
             .answer-footer .primary {
               min-height: 38px;

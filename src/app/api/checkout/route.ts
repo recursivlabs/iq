@@ -12,7 +12,7 @@ function jsonError(message: string, status = 400) {
 }
 
 function requestOrigin(request: NextRequest) {
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'iq.on.recursiv.io';
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'iqwars.app';
   const forwardedProto = request.headers.get('x-forwarded-proto');
   const protocol = forwardedProto || (host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https');
   return `${protocol}://${host}`;
