@@ -4,3 +4,4 @@ out/
 .env
 .env.*
 .codex/secrets/
+.vercel
