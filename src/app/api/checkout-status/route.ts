@@ -3,55 +3,75 @@ import { NextResponse, type NextRequest } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const ACCESS_COOKIE = 'world_iq_paid';
-const STRIPE_SESSION_URL = 'https://api.stripe.com/v1/checkout/sessions/';
+const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
-export async function GET(request: NextRequest) {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  if (!secretKey) {
-    return jsonError('Stripe checkout is not configured yet.', 503);
-  }
-
-  const sessionId = request.nextUrl.searchParams.get('session_id') || '';
-  if (!sessionId.startsWith('cs_')) {
-    return jsonError('Missing checkout session.', 400);
-  }
-
-  const stripeResponse = await fetch(`${STRIPE_SESSION_URL}${encodeURIComponent(sessionId)}`, {
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-    },
-    cache: 'no-store',
-  });
-
-  const data = await stripeResponse.json().catch(() => null);
-  if (!stripeResponse.ok) {
-    return jsonError('Could not verify Stripe checkout.', 502);
-  }
-
-  const active = data?.status === 'complete' && (data?.payment_status === 'paid' || data?.payment_status === 'no_payment_required');
-  const response = NextResponse.json({
-    active,
-    status: data?.status ?? null,
-    paymentStatus: data?.payment_status ?? null,
-    subscriptionId: data?.subscription ?? null,
-  });
-
+function setAccessCookie(response: NextResponse, active: boolean) {
   if (active) {
     response.cookies.set({
       name: ACCESS_COOKIE,
       value: 'active',
       httpOnly: true,
       sameSite: 'lax',
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60 * 24 * 35,
       path: '/',
     });
+    return;
   }
 
+  response.cookies.set({
+    name: ACCESS_COOKIE,
+    value: '',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 0,
+    path: '/',
+  });
+}
+
+export async function GET(request: NextRequest) {
+  const playerApiKey = request.cookies.get(PLAYER_API_KEY_COOKIE)?.value || '';
+  if (!playerApiKey) {
+    return jsonError('Create an IQ WARS account before checkout.', 401);
+  }
+
+  const recursivResponse = await fetch(`${RECURSIV_AUTH_ORIGIN}/api/v1/app-subscriptions/status`, {
+    headers: {
+      Authorization: `Bearer ${playerApiKey}`,
+    },
+    cache: 'no-store',
+  });
+
+  const data = await recursivResponse.json().catch(() => null) as {
+    data?: {
+      active?: boolean;
+      tier?: string;
+      status?: string;
+      currentPeriodEnd?: string | null;
+    };
+    error?: string;
+    message?: string;
+  } | null;
+
+  if (!recursivResponse.ok) {
+    return jsonError(data?.message || data?.error || 'Payment could not be verified yet.', recursivResponse.status || 502);
+  }
+
+  const active = Boolean(data?.data?.active);
+  const response = NextResponse.json({
+    active,
+    tier: data?.data?.tier ?? 'free',
+    status: data?.data?.status ?? 'none',
+    currentPeriodEnd: data?.data?.currentPeriodEnd ?? null,
+    subscriptionId: null,
+  });
+  setAccessCookie(response, active);
   return response;
 }

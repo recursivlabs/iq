@@ -3,9 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const DEFAULT_PRICE_CENTS = 499;
-const DEFAULT_PRODUCT_NAME = 'IQ WARS Unlimited';
-const STRIPE_CHECKOUT_SESSIONS_URL = 'https://api.stripe.com/v1/checkout/sessions';
+const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
+const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
+const DEFAULT_TIER = 'plus';
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -25,68 +25,42 @@ function safeReturnUrl(value: unknown, origin: string) {
     const expected = new URL(origin);
     if (parsed.origin !== expected.origin) return origin;
     parsed.hash = '';
+    parsed.searchParams.delete('sub');
+    parsed.searchParams.delete('tier');
     return parsed.toString();
   } catch {
     return origin;
   }
 }
 
-function checkoutReturnUrl(baseUrl: string, status: 'success' | 'cancelled') {
-  const url = new URL(baseUrl);
-  url.searchParams.set('checkout', status);
-  if (status === 'success') {
-    url.searchParams.set('session_id', '{CHECKOUT_SESSION_ID}');
-  }
-  return url.toString().replace('%7BCHECKOUT_SESSION_ID%7D', '{CHECKOUT_SESSION_ID}');
-}
-
-function configuredPriceCents() {
-  const value = Number.parseInt(process.env.IQ_STRIPE_PRICE_CENTS || '', 10);
-  if (Number.isFinite(value) && value >= 100) return value;
-  return DEFAULT_PRICE_CENTS;
-}
-
 export async function POST(request: NextRequest) {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  if (!secretKey) {
-    return jsonError('Stripe checkout is not configured yet.', 503);
+  const playerApiKey = request.cookies.get(PLAYER_API_KEY_COOKIE)?.value || '';
+  if (!playerApiKey) {
+    return jsonError('Create an IQ WARS account before checkout.', 401);
   }
 
   const body = await request.json().catch(() => ({}));
   const returnUrl = safeReturnUrl((body as { returnUrl?: unknown }).returnUrl, requestOrigin(request));
-  const productName = process.env.IQ_STRIPE_PRODUCT_NAME || DEFAULT_PRODUCT_NAME;
+  const tier = typeof (body as { tier?: unknown }).tier === 'string' && (body as { tier?: string }).tier
+    ? (body as { tier: string }).tier
+    : DEFAULT_TIER;
 
-  const params = new URLSearchParams();
-  params.set('mode', 'subscription');
-  params.set('success_url', checkoutReturnUrl(returnUrl, 'success'));
-  params.set('cancel_url', checkoutReturnUrl(returnUrl, 'cancelled'));
-  params.set('allow_promotion_codes', 'true');
-  params.set('billing_address_collection', 'auto');
-  params.set('line_items[0][quantity]', '1');
-  params.set('line_items[0][price_data][currency]', 'usd');
-  params.set('line_items[0][price_data][unit_amount]', String(configuredPriceCents()));
-  params.set('line_items[0][price_data][recurring][interval]', 'month');
-  params.set('line_items[0][price_data][product_data][name]', productName);
-  params.set('line_items[0][price_data][product_data][description]', 'Unlimited IQ WARS attempts, saved rank, and deep report access.');
-  params.set('metadata[app]', 'world-iq');
-  params.set('subscription_data[metadata][app]', 'world-iq');
-
-  const stripeResponse = await fetch(STRIPE_CHECKOUT_SESSIONS_URL, {
+  const recursivResponse = await fetch(`${RECURSIV_AUTH_ORIGIN}/api/v1/app-subscriptions/checkout`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Bearer ${playerApiKey}`,
+      'Content-Type': 'application/json',
     },
-    body: params,
+    body: JSON.stringify({
+      tier,
+      return_url: returnUrl,
+    }),
   });
 
-  const data = await stripeResponse.json().catch(() => null);
-  if (!stripeResponse.ok || typeof data?.url !== 'string') {
-    return jsonError('Could not start Stripe checkout.', 502);
+  const data = await recursivResponse.json().catch(() => null) as { data?: { url?: string }, error?: string, message?: string } | null;
+  if (!recursivResponse.ok || typeof data?.data?.url !== 'string') {
+    return jsonError(data?.message || data?.error || 'Could not open Recursiv checkout.', recursivResponse.status || 502);
   }
 
-  return NextResponse.json({
-    url: data.url,
-    sessionId: data.id,
-  });
+  return NextResponse.json({ url: data.data.url, tier });
 }

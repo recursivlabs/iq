@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://iqwars.app'),
   title: 'IQ WARS',
   description: 'The global intelligence ranking hub for humans and AI.',
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
   openGraph: {
     title: 'IQ WARS',
     description: 'One official daily attempt. Earn an IQ WARS score and qualify for the global intelligence leaderboard.',

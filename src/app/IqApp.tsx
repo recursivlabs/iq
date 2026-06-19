@@ -100,10 +100,9 @@ type PlayUsage = {
   count: number;
 };
 
-type PaidAccessRecord = {
-  active: boolean;
-  sessionId?: string;
-  subscriptionId?: string | null;
+type RecursivAccountRecord = {
+  email: string;
+  name?: string | null;
   updatedAt: number;
 };
 
@@ -134,11 +133,9 @@ const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const RECURSIV_AUTH_URL = 'https://recursiv.io/auth';
 const RECURSIV_GOOGLE_SIGNUP_URL = RECURSIV_AUTH_URL;
-const RECURSIV_EMAIL_SIGNUP_URL = RECURSIV_AUTH_URL;
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
-const PAID_ACCESS_STORAGE_KEY = 'world-iq-paid-access';
 const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
 const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
 const OFFICIAL_HISTORY_LIMIT = 60;
@@ -148,6 +145,7 @@ const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
 const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
 const GROUP_NAME_STORAGE_KEY = 'world-iq-group-name';
 const REMINDER_EMAIL_STORAGE_KEY = 'world-iq-reminder-email';
+const RECURSIV_ACCOUNT_STORAGE_KEY = 'world-iq-recursiv-account';
 const EMPTY_GEOGRAPHY_BOARDS: SocialBoards['geography'] = { countries: [], cities: [], towns: [] };
 
 const tones: Record<TileTone, string> = {
@@ -705,6 +703,14 @@ function worldIqScore(correct: number, total: number, elapsedMs?: number | null)
   return Math.round(90 + (correct / total) * 52 + speedBonusFromElapsed(elapsedMs, total));
 }
 
+function liveIqScoreProjection(answers: AnswerRecord[], total: number, elapsedMs?: number | null) {
+  if (!answers.length || total <= 0) return 100;
+  const correct = answers.filter((answer) => answer.correct).length;
+  const centeredSignal = (correct - answers.length * 0.5) / total;
+  const speedLift = Math.min(5, speedBonusFromElapsed(elapsedMs, total));
+  return Math.max(70, Math.min(155, Math.round(100 + centeredSignal * 84 + speedLift)));
+}
+
 function formatElapsedTime(ms: number | null | undefined) {
   const safeMs = Math.max(0, Math.round(ms || 0));
   const totalSeconds = Math.floor(safeMs / 1000);
@@ -759,6 +765,7 @@ function writePlayUsage(usage: PlayUsage) {
 }
 
 function playsRemaining(usage: PlayUsage) {
+  if (readOfficialRank()) return 0;
   const count = usage.day === localDayKey() ? usage.count : 0;
   return Math.max(0, DAILY_PLAY_LIMIT - count);
 }
@@ -885,20 +892,25 @@ function formatTrend(trend: number | null) {
   return `${trend > 0 ? '+' : ''}${trend} vs previous day`;
 }
 
-function readPaidAccess() {
-  if (typeof window === 'undefined') return false;
+function readRecursivAccount(): RecursivAccountRecord | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(PAID_ACCESS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) as Partial<PaidAccessRecord> : null;
-    return Boolean(parsed?.active);
+    const raw = window.localStorage.getItem(RECURSIV_ACCOUNT_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Partial<RecursivAccountRecord> : null;
+    if (!parsed?.email || typeof parsed.email !== 'string') return null;
+    return {
+      email: parsed.email,
+      name: typeof parsed.name === 'string' ? parsed.name : null,
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
+    };
   } catch {
-    return false;
+    return null;
   }
 }
 
-function savePaidAccess(record: Omit<PaidAccessRecord, 'updatedAt'>) {
+function writeRecursivAccount(record: Omit<RecursivAccountRecord, 'updatedAt'>) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(PAID_ACCESS_STORAGE_KEY, JSON.stringify({ ...record, updatedAt: Date.now() }));
+  window.localStorage.setItem(RECURSIV_ACCOUNT_STORAGE_KEY, JSON.stringify({ ...record, updatedAt: Date.now() }));
 }
 
 function clearCheckoutQuery() {
@@ -906,19 +918,9 @@ function clearCheckoutQuery() {
   const url = new URL(window.location.href);
   url.searchParams.delete('checkout');
   url.searchParams.delete('session_id');
+  url.searchParams.delete('sub');
+  url.searchParams.delete('tier');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-}
-
-function getStripeCheckoutHref(href: string) {
-  if (!href) return '';
-  try {
-    const url = new URL(href);
-    const hostname = url.hostname.toLowerCase();
-    if (hostname === 'buy.stripe.com' || hostname.endsWith('.stripe.com')) return href;
-  } catch {
-    return '';
-  }
-  return '';
 }
 
 function sharePattern(answers: AnswerRecord[]) {
@@ -1385,6 +1387,7 @@ function Result({
     };
     writeOfficialRank(officialRank);
     saveOfficialHistory(officialRank);
+    consumePlay();
     setResultStatus('official');
 
     const entry: LeaderboardEntry = {
@@ -1514,7 +1517,6 @@ function Runner({
   const [selected, setSelected] = React.useState<number | null>(null);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
   const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => readPlayUsage());
-  const [chargedAttempt, setChargedAttempt] = React.useState(false);
   const [timerStartedAt, setTimerStartedAt] = React.useState(() => Date.now());
   const [elapsedMs, setElapsedMs] = React.useState(0);
   const [completedElapsedMs, setCompletedElapsedMs] = React.useState<number | null>(null);
@@ -1522,6 +1524,8 @@ function Runner({
   const complete = started && step >= questions.length;
   const current = complete ? questions[questions.length - 1] : questions[step];
   const remainingToday = playsRemaining(playUsage);
+  const liveScore = liveIqScoreProjection(answers, questions.length, elapsedMs);
+  const liveDelta = liveScore - 100;
 
   React.useEffect(() => {
     const usage = readPlayUsage();
@@ -1537,7 +1541,6 @@ function Runner({
     setStep(0);
     setSelected(null);
     setAnswers([]);
-    setChargedAttempt(false);
     setTimerStartedAt(Date.now());
     setElapsedMs(0);
     setCompletedElapsedMs(null);
@@ -1562,7 +1565,6 @@ function Runner({
     setStep(0);
     setSelected(null);
     setAnswers([]);
-    setChargedAttempt(false);
     setTimerStartedAt(Date.now());
     setElapsedMs(0);
     setCompletedElapsedMs(null);
@@ -1576,12 +1578,6 @@ function Runner({
   function lockAnswer() {
     if (selected === null || complete || !current) return;
     const finalElapsed = Date.now() - timerStartedAt;
-    if (!isPaid && !chargedAttempt) {
-      const nextUsage = consumePlay();
-      setPlayUsage(nextUsage);
-      onUsageChange(nextUsage);
-      setChargedAttempt(true);
-    }
     setAnswers((existing) => [...existing, {
       id: current.id,
       selected,
@@ -1615,6 +1611,20 @@ function Runner({
         <p className="kicker">{copy(modes[mode].label)}</p>
         <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {formatElapsedTime(elapsedMs)} · {copy(isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used')}</span>
       </div>
+      <div className="live-score-row" aria-live="polite">
+        <div>
+          <span>{copy('Live score')}</span>
+          <strong>{liveScore}</strong>
+        </div>
+        <div>
+          <span>{copy('Answered')}</span>
+          <strong>{answers.length}/{questions.length}</strong>
+        </div>
+        <div>
+          <span>{copy('Trajectory')}</span>
+          <strong>{liveDelta > 0 ? `+${liveDelta}` : liveDelta}</strong>
+        </div>
+      </div>
       <div className="track"><div style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
       <div className="question-head">
         <h2>{copy(current.title)}</h2>
@@ -1633,7 +1643,7 @@ function Runner({
         ))}
       </div>
       <div className="answer-footer">
-        <p>{copy(current.aiSolved ? 'Frontier models usually solve this.' : 'Frontier models often miss this pattern.')}</p>
+        <p>{copy(current.aiSolved ? 'Frontier models usually solve this.' : 'Frontier models often miss this pattern.')} {copy('Score updates after each lock.')}</p>
         <button className="primary" disabled={selected === null} onClick={lockAnswer}>{copy('Lock answer')}</button>
       </div>
     </div>
@@ -1664,6 +1674,11 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [reminderEmail, setReminderEmail] = React.useState('');
   const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
   const [inviteState, setInviteState] = React.useState('Copy link');
+  const [recursivAccount, setRecursivAccount] = React.useState<RecursivAccountRecord | null>(null);
+  const [authEmail, setAuthEmail] = React.useState('');
+  const [authCode, setAuthCode] = React.useState('');
+  const [authState, setAuthState] = React.useState<'idle' | 'sending' | 'sent' | 'verifying' | 'verified' | 'error'>('idle');
+  const [authMessage, setAuthMessage] = React.useState('');
   const [geoSnapshot, setGeoSnapshot] = React.useState<GeoSnapshot | null>(null);
   const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], geography: EMPTY_GEOGRAPHY_BOARDS });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
@@ -1680,7 +1695,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     const code = readStoredGroupCode(initialGroupCode);
     const name = readStoredGroupName(code);
     setLeaderboard(getLeaderboardEntries());
-    setPaidAccess(readPaidAccess());
+    setPaidAccess(false);
     setUsageSnapshot(readPlayUsage());
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
@@ -1691,6 +1706,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     setUsernameDraft(username);
     setUsernameState(username ? `@${username} claimed` : 'Claim handle');
     setReminderEmail(readReminderEmail());
+    const account = readRecursivAccount();
+    setRecursivAccount(account);
+    setAuthEmail(account?.email || '');
     setGroupCode(code);
     setGroupName(name);
     if (code) writeStoredGroup(code, name);
@@ -1753,9 +1771,8 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
       try {
         const response = await fetch('/api/access', { cache: 'no-store' });
         const data = await response.json().catch(() => null);
-        if (!cancelled && response.ok && data?.active) {
-          setPaidAccess(true);
-          savePaidAccess({ active: true, subscriptionId: data.subscriptionId ?? null });
+        if (!cancelled && response.ok) {
+          setPaidAccess(Boolean(data?.active));
         }
       } catch {
         // Local saved access still keeps the player moving if the read endpoint is unavailable.
@@ -1772,35 +1789,35 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get('checkout');
-    const sessionId = params.get('session_id');
+    const sub = params.get('sub');
+    const tier = params.get('tier') || 'plus';
 
-    async function verifyCheckout(session: string) {
+    async function verifyCheckout() {
       setUnlockOpen(true);
       setCheckoutState('verifying');
       setCheckoutError('');
       try {
-        const response = await fetch(`/api/checkout-status?session_id=${encodeURIComponent(session)}`, { cache: 'no-store' });
+        const response = await fetch(`/api/checkout-status?tier=${encodeURIComponent(tier)}`, { cache: 'no-store' });
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.active) {
           throw new Error(data?.error || 'Payment could not be verified yet.');
         }
-        savePaidAccess({ active: true, sessionId: session, subscriptionId: data.subscriptionId ?? null });
         setPaidAccess(true);
         setCheckoutState('active');
       } catch (error) {
         setCheckoutState('error');
-        setCheckoutError(error instanceof Error ? error.message : 'Payment could not be verified yet.');
+        setCheckoutError(error instanceof Error ? error.message : 'Payment is processing. Refresh in a moment.');
       } finally {
         clearCheckoutQuery();
       }
     }
 
-    if (checkout === 'success' && sessionId) {
-      verifyCheckout(sessionId);
+    if (sub === 'success') {
+      verifyCheckout();
       return;
     }
 
-    if (checkout === 'cancelled') {
+    if (sub === 'cancelled' || checkout === 'cancelled') {
       setUnlockOpen(true);
       setCheckoutState('idle');
       setCheckoutError('Checkout was cancelled. You can restart it when ready.');
@@ -1880,6 +1897,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     setLeaderboard(getLeaderboardEntries());
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
+    setUsageSnapshot(readPlayUsage());
     if (officialRank) void submitOfficialResult(officialRank);
   }
 
@@ -2009,12 +2027,78 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     await copyGroupLink(groupCode);
   }
 
-  const checkoutHref = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '';
-  const stripeCheckoutHref = getStripeCheckoutHref(checkoutHref);
+  async function sendRecursivAuthCode() {
+    const email = authEmail.trim().toLowerCase();
+    if (!email.includes('@')) {
+      setAuthState('error');
+      setAuthMessage('Enter a valid email.');
+      return;
+    }
+    setAuthState('sending');
+    setAuthMessage('');
+    try {
+      const response = await fetch('/api/recursiv-auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Could not send code.');
+      }
+      setAuthEmail(email);
+      setAuthState('sent');
+      setAuthMessage(data?.branded ? 'IQ WARS code sent.' : 'Code sent.');
+    } catch (error) {
+      setAuthState('error');
+      setAuthMessage(error instanceof Error ? error.message : 'Could not send code.');
+    }
+  }
+
+  async function verifyRecursivAuthCode() {
+    const email = authEmail.trim().toLowerCase();
+    const code = authCode.trim();
+    if (!email.includes('@') || code.length < 4) {
+      setAuthState('error');
+      setAuthMessage('Enter the email and code.');
+      return;
+    }
+    setAuthState('verifying');
+    setAuthMessage('');
+    try {
+      const response = await fetch('/api/recursiv-auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Code could not be verified.');
+      }
+      if (!data?.projectMember) {
+        throw new Error('IQ WARS project membership is not configured yet.');
+      }
+      const account = { email, name: data?.user?.name || null };
+      writeRecursivAccount(account);
+      setRecursivAccount({ ...account, updatedAt: Date.now() });
+      setAuthState('verified');
+      setAuthMessage('IQ WARS account connected.');
+    } catch (error) {
+      setAuthState('error');
+      setAuthMessage(error instanceof Error ? error.message : 'Code could not be verified.');
+    }
+  }
+
   const checkoutBusy = checkoutState === 'opening' || checkoutState === 'verifying';
 
   async function startCheckout() {
     if (checkoutBusy) return;
+    if (!recursivAccount) {
+      setCheckoutState('error');
+      setCheckoutError('Create an IQ WARS account before checkout.');
+      setAuthMessage('Create an IQ WARS account before checkout.');
+      return;
+    }
     setCheckoutState('opening');
     setCheckoutError('');
     try {
@@ -2026,16 +2110,12 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || typeof data?.url !== 'string') {
-        throw new Error(data?.error || 'Could not open Stripe checkout.');
+        throw new Error(data?.error || 'Could not open Recursiv checkout.');
       }
       window.location.assign(data.url);
     } catch (error) {
-      if (stripeCheckoutHref) {
-        window.location.assign(stripeCheckoutHref);
-        return;
-      }
       setCheckoutState('error');
-      setCheckoutError(error instanceof Error ? error.message : 'Could not open Stripe checkout.');
+      setCheckoutError(error instanceof Error ? error.message : 'Could not open Recursiv checkout.');
     }
   }
 
@@ -2144,7 +2224,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             <h2>{copy(paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.')}</h2>
             <p>{paidAccess
               ? copy('Your paid IQ WARS access is active on this device. Keep building history, practicing, and saving rank cards.')
-              : copy('Free visitors get 1 official attempt per day. Create a Recursiv account with Google or email for the platform profile, or continue to Stripe for archive access, score history, and private reports.')}</p>
+              : recursivAccount
+                ? `${copy('Connected as')} ${recursivAccount.email}. ${copy('Continue to Recursiv checkout for archive access, score history, and private reports.')}`
+                : copy('Free visitors get 1 official attempt per day. Create an IQ WARS account with a branded email code, then continue to Recursiv checkout for archive access, score history, and private reports.')}</p>
             <div className="plans">
               <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
               <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>{copy('archive + reports + extra practice')}</span></div>
@@ -2153,12 +2235,36 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
               <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
             ) : (
               <div className="stacked-actions">
-                <div className="auth-options" aria-label={copy('Recursiv signup options')}>
-                  <a className="secondary full center-link google-auth" href={RECURSIV_GOOGLE_SIGNUP_URL}>
-                    <span className="google-mark" aria-hidden="true">G</span>
-                    {copy('Continue with Google')}
-                  </a>
-                  <a className="secondary full center-link" href={RECURSIV_EMAIL_SIGNUP_URL}>{copy('Continue with email')}</a>
+                <div className="auth-card" aria-label={copy('IQ WARS signup options')}>
+                  <label className="name-field">
+                    <span>{copy('IQ WARS email')}</span>
+                    <input value={authEmail} onChange={(event) => {
+                      setAuthEmail(event.target.value);
+                      setAuthMessage('');
+                      if (authState === 'error') setAuthState('idle');
+                    }} maxLength={120} placeholder="you@email.com" inputMode="email" />
+                  </label>
+                  <div className="auth-row">
+                    <button className="secondary full" disabled={authState === 'sending'} onClick={sendRecursivAuthCode}>
+                      {copy(authState === 'sending' ? 'Sending code' : authState === 'sent' ? 'Send again' : 'Email me a code')}
+                    </button>
+                    <a className="secondary full center-link google-auth" href={RECURSIV_GOOGLE_SIGNUP_URL}>
+                      <span className="google-mark" aria-hidden="true">G</span>
+                      {copy('Google via Recursiv')}
+                    </a>
+                  </div>
+                  <label className="name-field">
+                    <span>{copy('Verification code')}</span>
+                    <input value={authCode} onChange={(event) => {
+                      setAuthCode(event.target.value.replace(/\D+/g, '').slice(0, 8));
+                      setAuthMessage('');
+                      if (authState === 'error') setAuthState('sent');
+                    }} maxLength={8} placeholder="000000" inputMode="numeric" />
+                  </label>
+                  <button className="secondary full" disabled={authState === 'verifying'} onClick={verifyRecursivAuthCode}>
+                    {copy(authState === 'verifying' ? 'Verifying code' : recursivAccount ? 'Account connected' : 'Verify IQ WARS account')}
+                  </button>
+                  {authMessage ? <span className={`fine-print ${authState === 'error' ? 'error' : authState === 'verified' ? 'success' : ''}`}>{copy(authMessage)}</span> : null}
                 </div>
                 <button className="primary full" disabled={checkoutBusy} onClick={startCheckout}>
                   {copy(checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout')}
@@ -2168,7 +2274,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             <span className="fine-print">
               {paidAccess
                 ? copy('Archive access and extra practice are enabled.')
-                : `${copy('Games-style pricing at')} ${UNLIMITED_PRICE_LABEL}. ${copy('Checkout is created securely with Stripe.')}`}
+                : `${copy('Games-style pricing at')} ${UNLIMITED_PRICE_LABEL}. ${copy('Checkout is created securely by Recursiv.')}`}
             </span>
             {checkoutError ? <span className="fine-print error">{copy(checkoutError)}</span> : null}
             {checkoutState === 'active' ? <span className="fine-print success">{copy('Payment verified. Unlimited is active.')}</span> : null}
@@ -2503,6 +2609,10 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         .free-note { text-align: center; font-weight: 750; margin: 12px 0 0; }
         .progress-row, .question-head, .answer-footer, .section-head, .leaderboard-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
         .progress-row span { color: #363a3c; font-family: "Courier New", ui-monospace, monospace; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+        .live-score-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+        .live-score-row div { border: 1px solid rgba(17,17,17,.13); background: rgba(255,255,250,.24); box-shadow: inset 0 1px 0 rgba(255,255,255,.42), 0 10px 24px rgba(0,0,0,.05); border-radius: 14px; padding: 10px 12px; min-width: 0; }
+        .live-score-row span { display: block; color: var(--muted); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+        .live-score-row strong { display: block; margin-top: 3px; font-family: "Arial Narrow", "Helvetica Neue Condensed", Arial, sans-serif; font-size: 26px; line-height: 24px; letter-spacing: .02em; }
         .track { height: 4px; background: rgba(17,17,17,.08); border-radius: 999px; overflow: hidden; margin-top: 14px; box-shadow: inset 0 1px 2px rgba(0,0,0,.14); }
         .track div { height: 100%; background: linear-gradient(90deg, var(--ink), #5e5e5a, var(--accent)); border-radius: 999px; }
         .question-head { margin-top: 40px; }
@@ -2572,6 +2682,8 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         .fine-print { display: block; margin-top: 10px; text-align: center; }
         .stacked-actions { display: grid; gap: 10px; }
         .auth-options { display: grid; gap: 8px; }
+        .auth-card { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,250,.22); padding: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,.36); }
+        .auth-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .google-auth { gap: 10px; border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.035); }
         .google-mark { width: 18px; height: 18px; display: inline-grid; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: #f4f5f6; font-family: "Space Grotesk", system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0; }
         .fine-print.error { color: #6f2727; }
@@ -2607,6 +2719,10 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           .option .tile { width: min(116px, 28vw); }
           .answer-footer { align-items: flex-start; }
           .answer-footer .primary { width: 100%; }
+          .live-score-row { gap: 6px; }
+          .live-score-row div { border-radius: 12px; padding: 8px; }
+          .live-score-row span { font-size: 8px; letter-spacing: .08em; }
+          .live-score-row strong { font-size: 22px; line-height: 22px; }
           .feature-grid { grid-template-columns: 1fr; }
           .geo-grid { grid-template-columns: 1fr; }
           .leaderboard-row { grid-template-columns: 38px minmax(0, 1fr) 54px; padding: 10px; }
@@ -2794,6 +2910,42 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           letter-spacing: .18em;
           white-space: nowrap;
         }
+        .live-score-row {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 1px;
+          margin-top: 16px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .live-score-row div {
+          min-width: 0;
+          padding: 12px;
+          background: rgba(9,10,11,.72);
+        }
+        .live-score-row span {
+          display: block;
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9px;
+          font-weight: 500;
+          letter-spacing: .16em;
+          line-height: 1.3;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+        .live-score-row strong {
+          display: block;
+          margin-top: 5px;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 26px;
+          font-weight: 500;
+          letter-spacing: -.015em;
+          line-height: 1;
+        }
         .track {
           height: 1px;
           margin-top: 14px;
@@ -2975,6 +3127,20 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         }
         .auth-options {
           display: grid;
+          gap: 8px;
+        }
+        .auth-card {
+          display: grid;
+          gap: 10px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 8px;
+          background: rgba(255,255,255,.025);
+          padding: 12px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+        }
+        .auth-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
           gap: 8px;
         }
         .google-auth {
@@ -3574,9 +3740,22 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           .answer-footer .primary {
             width: 100%;
           }
+          .live-score-row div {
+            padding: 9px;
+          }
+          .live-score-row span {
+            font-size: 8px;
+            letter-spacing: .1em;
+          }
+          .live-score-row strong {
+            font-size: 22px;
+          }
           .stats,
           .profile-stats,
           .plans {
+            grid-template-columns: 1fr;
+          }
+          .auth-row {
             grid-template-columns: 1fr;
           }
           .rank-card {
