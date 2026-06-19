@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
-const DEFAULT_TIER = 'plus';
+const DEFAULT_TIER = (process.env.IQWARS_SUBSCRIPTION_TIER || '').trim();
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
   const tier = typeof (body as { tier?: unknown }).tier === 'string' && (body as { tier?: string }).tier
     ? (body as { tier: string }).tier
     : DEFAULT_TIER;
+  if (!tier) {
+    return jsonError('Paid upgrade is not configured yet. Your IQ WARS account is connected and the free daily test is active.', 503);
+  }
 
   const recursivResponse = await fetch(`${RECURSIV_AUTH_ORIGIN}/api/v1/app-subscriptions/checkout`, {
     method: 'POST',

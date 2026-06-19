@@ -77,6 +77,16 @@ type SocialEntry = {
   geo?: GeoSnapshot | null;
 };
 
+type RoomMessage = {
+  id: string;
+  groupCode: string;
+  playerId: string;
+  displayName: string;
+  username: string | null;
+  body: string;
+  timestamp: number;
+};
+
 type XVerificationRecord = {
   handle: string;
   status: 'pending_post' | 'verified';
@@ -143,6 +153,7 @@ type PlayerSettings = {
   showXBadge: boolean;
   showScoreHistory: boolean;
   showAgentActivity: boolean;
+  labModesEnabled: boolean;
   soundEnabled: boolean;
   reducedMotion: boolean;
   highContrast: boolean;
@@ -166,6 +177,7 @@ type PublicProfileRecord = {
   best: number | null;
   rank: string | null;
   attempts: number;
+  answers: number;
   profilePublic: boolean;
   showLocation: boolean;
   showXBadge: boolean;
@@ -189,6 +201,7 @@ type OfficialRankRecord = {
 
 type IqProfile = {
   attempts: number;
+  answers: number;
   score: number | null;
   best: number | null;
   trend: number | null;
@@ -199,6 +212,7 @@ type SoundKind = 'tap' | 'select' | 'commit' | 'copy' | 'success' | 'error';
 
 const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
+const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
@@ -228,6 +242,7 @@ const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   showXBadge: true,
   showScoreHistory: true,
   showAgentActivity: true,
+  labModesEnabled: false,
   soundEnabled: true,
   reducedMotion: false,
   highContrast: false,
@@ -1250,7 +1265,7 @@ function saveOfficialHistory(record: OfficialRankRecord) {
 
 function getIqProfile(history: OfficialRankRecord[]): IqProfile {
   if (!history.length) {
-    return { attempts: 0, score: null, best: null, trend: null, confidence: 'Unrated' };
+    return { attempts: 0, answers: 0, score: null, best: null, trend: null, confidence: 'Unrated' };
   }
 
   const chronological = [...history].sort((a, b) => a.timestamp - b.timestamp);
@@ -1259,14 +1274,23 @@ function getIqProfile(history: OfficialRankRecord[]): IqProfile {
   const weights = recent.reduce((total, _entry, index) => total + index + 1, 0);
   const latest = chronological[chronological.length - 1];
   const previous = chronological[chronological.length - 2];
+  const answers = chronological.reduce((total, entry) => total + Math.max(0, Math.round(entry.total || 0)), 0);
 
   return {
     attempts: chronological.length,
+    answers,
     score: Math.round(weighted / weights),
     best: Math.max(...chronological.map((entry) => entry.score)),
     trend: previous ? latest.score - previous.score : null,
-    confidence: chronological.length >= 14 ? 'Stable profile' : chronological.length >= 7 ? 'Emerging profile' : 'Calibrating',
+    confidence: answers >= 168 ? 'Stable profile' : answers >= 84 ? 'Emerging profile' : 'Calibrating',
   };
+}
+
+function scoreEvidenceClass(answers: number) {
+  if (answers >= 168) return 'high';
+  if (answers >= 84) return 'mid';
+  if (answers > 0) return 'low';
+  return 'none';
 }
 
 function formatTrend(trend: number | null) {
@@ -1403,15 +1427,16 @@ function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRe
   const copy = (text: string) => translate(locale, text);
   const profile = getIqProfile(history);
   const recent = sortOfficialHistory(history).slice(0, 14).reverse();
+  const evidenceClass = scoreEvidenceClass(profile.answers);
 
   return (
-    <section className="profile-panel" aria-label={copy('Developing IQ WARS profile')}>
+    <section className={`profile-panel score-evidence-${evidenceClass}`} aria-label={copy('Developing IQ WARS profile')}>
       <div className="section-head">
         <div>
           <p className="kicker">{copy('Developing IQ')}</p>
           <h2>{profile.score ? `${profile.score} ${copy('rolling score')}` : copy('Build your score over time.')}</h2>
           <p>{profile.attempts > 0
-            ? `${copy(profile.confidence)}. ${copy('One official attempt per day keeps the score honest and lets the profile mature over time.')}`
+            ? `${copy(profile.confidence)} · ${profile.answers} ${copy('answers completed')}. ${copy('One official attempt per day keeps the score honest and lets the profile mature over time.')}`
             : copy('Your profile starts with the first official attempt. Each daily result becomes one signal in the rolling score.')}</p>
         </div>
         <button className="secondary" onClick={onUnlock}>{copy('Save profile')}</button>
@@ -1419,6 +1444,7 @@ function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRe
 
       <div className="profile-stats">
         <div><strong>{profile.score ?? '---'}</strong><span>{copy('rolling IQ')}</span></div>
+        <div><strong>{profile.answers}</strong><span>{copy('answers completed')}</span></div>
         <div><strong>{profile.attempts}</strong><span>{copy('official days')}</span></div>
         <div><strong>{profile.best ?? '---'}</strong><span>{copy('best score')}</span></div>
         <div><strong>{copy(formatTrend(profile.trend))}</strong><span>{copy('trajectory')}</span></div>
@@ -1534,6 +1560,108 @@ function SocialLeaderboard({
             <span>{copy('Finish Today\'s IQ WARS to put the first verified score on this board.')}</span>
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function SocialHub({
+  locale,
+  account,
+  groupCode,
+  groupName,
+  inviteState,
+  groupEntries,
+  globalEntries,
+  messages,
+  messageDraft,
+  messageState,
+  onMessageDraft,
+  onSendMessage,
+  onCreateGroup,
+  onCopyInvite,
+}: {
+  locale: LocaleKey;
+  account: RecursivAccountRecord;
+  groupCode: string | null;
+  groupName: string;
+  inviteState: string;
+  groupEntries: SocialEntry[];
+  globalEntries: SocialEntry[];
+  messages: RoomMessage[];
+  messageDraft: string;
+  messageState: string;
+  onMessageDraft: (value: string) => void;
+  onSendMessage: () => void | Promise<void>;
+  onCreateGroup: () => void | Promise<void>;
+  onCopyInvite: () => void | Promise<void>;
+}) {
+  const copy = (text: string) => translate(locale, text);
+  const roomFeed = groupEntries.length > 0 ? groupEntries : globalEntries.slice(0, 6);
+  const inviteCopied = inviteState === 'Link copied';
+
+  return (
+    <section className="social-hub" aria-label={copy('Logged-in social layer')}>
+      <div className="section-head">
+        <div>
+          <p className="kicker">{copy('Social layer')}</p>
+          <h2>{copy(groupCode ? 'Friend room command center' : 'Create a friend room to unlock local competition.')}</h2>
+          <p>{copy(groupCode ? 'Your connected IQ WARS account can follow the room feed, chat with the group, and copy the same daily link without changing the test flow.' : 'Connected players get feed and room chat only after account connection, keeping the public test frictionless.')}</p>
+        </div>
+        <div className="social-actions">
+          <span>{copy('Connected as')} {account.email}</span>
+          <button className={`secondary copy-link ${inviteCopied ? 'copied' : ''}`} onClick={groupCode ? onCopyInvite : onCreateGroup}>{copy(groupCode ? inviteState : 'Create & copy link')}</button>
+        </div>
+      </div>
+      <div className="social-hub-grid">
+        <article className="social-feed-panel">
+          <div className="social-panel-head">
+            <strong>{copy(groupCode ? 'Friend feed' : 'Global feed preview')}</strong>
+            <span>{copy(groupCode ? groupName : 'No room yet')}</span>
+          </div>
+          <div className="social-feed-list">
+            {roomFeed.length > 0 ? roomFeed.map((entry) => (
+              <div key={`${entry.id}:feed`} className="social-feed-item">
+                <div>
+                  <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
+                  <span>{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} {copy('AI misses')}</span>
+                </div>
+                <b>{entry.score}</b>
+              </div>
+            )) : (
+              <div className="social-empty">
+                <strong>{copy('No friend scores yet.')}</strong>
+                <span>{copy('Send the room link and first completed attempts will appear here.')}</span>
+              </div>
+            )}
+          </div>
+        </article>
+        <article className="room-chat-panel">
+          <div className="social-panel-head">
+            <strong>{copy('Room chat')}</strong>
+            <span>{copy(groupCode ? 'Visible to anyone with this room link.' : 'Create a room first.')}</span>
+          </div>
+          <div className="room-message-list">
+            {groupCode && messages.length > 0 ? messages.map((message) => (
+              <div key={message.id} className="room-message">
+                <div>
+                  <strong>{message.username ? `@${message.username}` : message.displayName}</strong>
+                  <span>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <p>{message.body}</p>
+              </div>
+            )) : (
+              <div className="social-empty">
+                <strong>{copy(groupCode ? 'No messages yet.' : 'No room chat yet.')}</strong>
+                <span>{copy(groupCode ? 'Drop the first note after today\'s attempt.' : 'Create a friend room, then connected players can chat here.')}</span>
+              </div>
+            )}
+          </div>
+          <div className="room-chat-compose">
+            <input value={messageDraft} onChange={(event) => onMessageDraft(event.target.value)} disabled={!groupCode} maxLength={240} placeholder={copy(groupCode ? 'Post a room note' : 'Create a room to chat')} />
+            <button className="primary" disabled={!groupCode || !messageDraft.trim()} onClick={onSendMessage}>{copy(messageState || 'Post')}</button>
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -1780,8 +1908,10 @@ function ProfileCard({ locale, profile, status, onCopy, copied }: { locale: Loca
       </section>
     );
   }
+  const answers = profile.answers ?? profile.attempts * 12;
+  const evidenceClass = scoreEvidenceClass(answers);
   return (
-    <section className="profile-card public-profile-card">
+    <section className={`profile-card public-profile-card score-evidence-${evidenceClass}`}>
       <div className="profile-card-top">
         <div>
           <p className="kicker">{profile.agent ? copy('Test agent profile') : copy('IQ WARS profile')}</p>
@@ -1792,6 +1922,7 @@ function ProfileCard({ locale, profile, status, onCopy, copied }: { locale: Loca
       </div>
       <div className="profile-score-grid">
         <div><strong>{profile.score ?? '---'}</strong><span>{copy('rolling IQ')}</span></div>
+        <div><strong>{answers}</strong><span>{copy('answers completed')}</span></div>
         <div><strong>{profile.best ?? '---'}</strong><span>{copy('best')}</span></div>
         <div><strong>{profile.rank || '---'}</strong><span>{copy('rank')}</span></div>
         <div><strong>{profile.attempts}</strong><span>{copy('days')}</span></div>
@@ -1869,6 +2000,18 @@ function ProfileView({
   );
 }
 
+function AccountGate({ locale, title, body, onConnect }: { locale: LocaleKey; title: string; body: string; onConnect: () => void }) {
+  const copy = (text: string) => translate(locale, text);
+  return (
+    <section className="account-gate">
+      <p className="kicker">{copy('Account required')}</p>
+      <h2>{copy(title)}</h2>
+      <p>{copy(body)}</p>
+      <button className="primary" onClick={onConnect}>{copy('Connect account')}</button>
+    </section>
+  );
+}
+
 function SettingToggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (value: boolean) => void }) {
   return (
     <label className="setting-toggle">
@@ -1917,6 +2060,7 @@ function SettingsView({
         <div className="settings-panel">
           <p className="rail-label">{copy('Game')}</p>
           <SettingToggle label={copy('Sound')} description={copy('Subtle interaction audio layer.')} checked={settings.soundEnabled} onChange={(value) => onSetting('soundEnabled', value)} />
+          <SettingToggle label={copy('Optional lab modes')} description={copy('Show AI blind-spot and sprint practice tabs only outside friend rooms.')} checked={settings.labModesEnabled} onChange={(value) => onSetting('labModesEnabled', value)} />
           <SettingToggle label={copy('Reduced motion')} description={copy('Prefer calmer animation where supported.')} checked={settings.reducedMotion} onChange={(value) => onSetting('reducedMotion', value)} />
           <SettingToggle label={copy('High contrast')} description={copy('Reserve stronger contrast for readability.')} checked={settings.highContrast} onChange={(value) => onSetting('highContrast', value)} />
           <SettingToggle label={copy('Share score by default')} description={copy('Prefer scorecard copy after the official daily run.')} checked={settings.shareScoreByDefault} onChange={(value) => onSetting('shareScoreByDefault', value)} />
@@ -2366,13 +2510,14 @@ function StatusRail({
   const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
   const remaining = Math.max(0, DAILY_PLAY_LIMIT - usedToday);
   const iqProfile = getIqProfile(officialHistory);
+  const evidenceClass = scoreEvidenceClass(iqProfile.answers);
   const inviteCopied = inviteState === 'Link copied';
 
   return (
     <aside className="status-rail" aria-label="IQ WARS session and subscription">
       <GeoGlobePanel locale={locale} geography={geography} fallbackGeo={geoSnapshot} />
 
-      <section className="rail-panel">
+      <section className={`rail-panel score-evidence-${evidenceClass}`}>
         <p className="rail-label">{copy('Session')}</p>
         <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 official attempt left' : '0 / 1 · used')}</strong>
         <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One full official IQ WARS baseline today.' : 'Your official attempt is locked for today.')}</span>
@@ -2383,7 +2528,7 @@ function StatusRail({
         <p className="rail-label">{copy('Developing IQ')}</p>
         <strong>{iqProfile.score ?? copy('Unrated')}</strong>
         <span>{iqProfile.attempts > 0
-          ? `${copy(iqProfile.confidence)} · ${iqProfile.attempts} ${copy('official days')} · ${copy(formatTrend(iqProfile.trend))}`
+          ? `${copy(iqProfile.confidence)} · ${iqProfile.answers} ${copy('answers completed')} · ${copy(formatTrend(iqProfile.trend))}`
           : copy('Complete today\'s official attempt to start the profile.')}</span>
       </section>
 
@@ -2873,6 +3018,9 @@ export default function Home({
   const [xState, setXState] = React.useState('');
   const [geoSnapshot, setGeoSnapshot] = React.useState<GeoSnapshot | null>(null);
   const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], geography: EMPTY_GEOGRAPHY_BOARDS });
+  const [roomMessages, setRoomMessages] = React.useState<RoomMessage[]>([]);
+  const [roomMessageDraft, setRoomMessageDraft] = React.useState('');
+  const [roomMessageState, setRoomMessageState] = React.useState('Post');
   const [settings, setSettings] = React.useState<PlayerSettings>(DEFAULT_PLAYER_SETTINGS);
   const [profileBio, setProfileBio] = React.useState('');
   const [profileCity, setProfileCity] = React.useState('');
@@ -3059,6 +3207,30 @@ export default function Home({
     refreshSocialBoards(groupCode || null);
   }, [groupCode, refreshSocialBoards]);
 
+  const refreshRoomMessages = React.useCallback(async (code: string | null) => {
+    if (!code) {
+      setRoomMessages([]);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/rooms/messages?group=${encodeURIComponent(code)}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => null);
+      if (response.ok && Array.isArray(data?.messages)) {
+        setRoomMessages(data.messages);
+      }
+    } catch {
+      // Room chat is additive; score submission and the test remain available if chat is unavailable.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!recursivAccount) {
+      setRoomMessages([]);
+      return;
+    }
+    void refreshRoomMessages(groupCode || null);
+  }, [groupCode, recursivAccount, refreshRoomMessages]);
+
   React.useEffect(() => {
     let cancelled = false;
 
@@ -3120,6 +3292,12 @@ export default function Home({
     }
   }, []);
 
+  React.useEffect(() => {
+    if (mode !== 'world' && (!settings.labModesEnabled || groupCode)) {
+      setMode('world');
+    }
+  }, [groupCode, mode, settings.labModesEnabled]);
+
   function navigateView(nextView: ViewKey) {
     setView(nextView);
     setActiveBlogSlug('');
@@ -3139,6 +3317,11 @@ export default function Home({
   }
 
   function openMode(nextMode: ModeKey) {
+    if (nextMode !== 'world' && (!settings.labModesEnabled || groupCode)) {
+      setMode('world');
+      navigateView('test');
+      return;
+    }
     setMode(nextMode);
     navigateView('test');
   }
@@ -3427,6 +3610,42 @@ export default function Home({
     await copyGroupLink(groupCode);
   }
 
+  function handleRoomMessageDraft(value: string) {
+    setRoomMessageDraft(value.slice(0, 240));
+    setRoomMessageState('Post');
+  }
+
+  async function sendRoomMessage() {
+    const body = roomMessageDraft.replace(/\s+/g, ' ').trim();
+    if (!recursivAccount || !groupCode || !body) return;
+    setRoomMessageState('Posting');
+    try {
+      const response = await fetch('/api/rooms/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupCode,
+          playerId: playerId || readPlayerId(),
+          displayName: playerName || readPlayerName(playerId || readPlayerId()),
+          username: claimedUsername || readClaimedUsername(),
+          body,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(data?.messages)) {
+        throw new Error(data?.error || 'Message failed');
+      }
+      setRoomMessages(data.messages);
+      setRoomMessageDraft('');
+      setRoomMessageState('Posted');
+      playInteractionSound('success');
+      window.setTimeout(() => setRoomMessageState('Post'), 1400);
+    } catch {
+      setRoomMessageState('Try again');
+      playInteractionSound('error');
+    }
+  }
+
   async function sendRecursivAuthCode() {
     const email = authEmail.trim().toLowerCase();
     if (!email.includes('@')) {
@@ -3482,7 +3701,9 @@ export default function Home({
       writeRecursivAccount(account);
       setRecursivAccount({ ...account, updatedAt: Date.now() });
       setAuthState('verified');
-      setAuthMessage('IQ WARS account connected.');
+      setCheckoutState('idle');
+      setCheckoutError('');
+      setAuthMessage('IQ WARS account connected. Profile and settings are unlocked.');
     } catch (error) {
       setAuthState('error');
       setAuthMessage(error instanceof Error ? error.message : 'Code could not be verified.');
@@ -3497,6 +3718,11 @@ export default function Home({
       setCheckoutState('error');
       setCheckoutError('Create an IQ WARS account before checkout.');
       setAuthMessage('Create an IQ WARS account before checkout.');
+      return;
+    }
+    if (!CHECKOUT_READY) {
+      setCheckoutState('error');
+      setCheckoutError('Paid upgrade is not live yet. Your account is connected and the free daily test is active.');
       return;
     }
     setCheckoutState('opening');
@@ -3546,6 +3772,7 @@ export default function Home({
       best: iqProfile.best,
       rank: officialSnapshot?.rank || null,
       attempts: iqProfile.attempts,
+      answers: iqProfile.answers,
       profilePublic: settings.profilePublic,
       showLocation: settings.showLocation,
       showXBadge: settings.showXBadge,
@@ -3617,6 +3844,7 @@ export default function Home({
   const localProfile = localPublicProfile();
   const localProfilePath = `/u/${localProfile.slug}`;
   const activeArticle = BLOG_ARTICLES.find((article) => article.slug === activeBlogSlug) || null;
+  const labModesVisible = Boolean(recursivAccount && settings.labModesEnabled && !groupCode);
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -3630,10 +3858,12 @@ export default function Home({
         <div>
           <span className="language-pill" aria-label={`${copy('Auto')} ${localeLabel(locale)}`}>{copy('Auto')} · {localeLabel(locale)}</span>
           <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
+          {labModesVisible ? <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button> : null}
+          {labModesVisible ? <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button> : null}
           <button className={view === 'rankings' ? 'active' : ''} onClick={() => navigateView('rankings')}>{copy('Rankings')}</button>
-          <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button>
+          {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
           <button className={view === 'about' ? 'active' : ''} onClick={() => navigateView('about')}>{copy('About')}</button>
-          <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button>
+          {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
           <button className="nav-cta" onClick={() => setUnlockOpen(true)}>{copy('Account')}</button>
         </div>
       </nav>
@@ -3677,6 +3907,25 @@ export default function Home({
         </section>
       ) : null}
 
+      {view === 'test' && recursivAccount ? (
+        <SocialHub
+          locale={locale}
+          account={recursivAccount}
+          groupCode={groupCode || null}
+          groupName={groupName}
+          inviteState={inviteState}
+          groupEntries={displayBoards.group}
+          globalEntries={displayBoards.global}
+          messages={roomMessages}
+          messageDraft={roomMessageDraft}
+          messageState={roomMessageState}
+          onMessageDraft={handleRoomMessageDraft}
+          onSendMessage={sendRoomMessage}
+          onCreateGroup={createGroup}
+          onCopyInvite={copyInvite}
+        />
+      ) : null}
+
       {view === 'rankings' ? (
         <>
           <RankingsGlobeHero locale={locale} geography={displayBoards.geography} global={displayBoards.global} />
@@ -3711,7 +3960,16 @@ export default function Home({
         </section>
       ) : null}
 
-      {view === 'profile' && !initialProfileSlug ? (
+      {view === 'profile' && !initialProfileSlug && !recursivAccount ? (
+        <AccountGate
+          locale={locale}
+          title="Connect account to manage your profile."
+          body="Public profile controls unlock after email connection so anonymous visitors can play without account friction."
+          onConnect={() => setUnlockOpen(true)}
+        />
+      ) : null}
+
+      {view === 'profile' && !initialProfileSlug && recursivAccount ? (
         <ProfileView
           locale={locale}
           profile={localProfile}
@@ -3742,7 +4000,16 @@ export default function Home({
         />
       ) : null}
 
-      {view === 'settings' ? (
+      {view === 'settings' && !recursivAccount ? (
+        <AccountGate
+          locale={locale}
+          title="Connect account to manage settings."
+          body="Settings control public identity, social features, reminders, sound, analytics, and profile visibility after account connection."
+          onConnect={() => setUnlockOpen(true)}
+        />
+      ) : null}
+
+      {view === 'settings' && recursivAccount ? (
         <SettingsView
           locale={locale}
           settings={settings}
@@ -3808,18 +4075,43 @@ export default function Home({
           <div className="modal">
             <button className="close" onClick={() => setUnlockOpen(false)} aria-label={copy('Close')}>×</button>
             <p className="kicker">{copy('IQ WARS account')}</p>
-            <h2>{copy(paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.')}</h2>
+            <h2>{copy(paidAccess ? 'Unlimited is active.' : recursivAccount ? 'Account connected.' : 'Connect email to save your IQ profile.')}</h2>
             <p>{paidAccess
               ? copy('Your paid IQ WARS access is active on this device. Keep building history, practicing, and saving rank cards.')
               : recursivAccount
-                ? `${copy('Connected as')} ${recursivAccount.email}. ${copy('Continue to Recursiv checkout for archive access, score history, and private reports.')}`
-                : copy('Free visitors get 1 official attempt per day. Create an IQ WARS account with a branded email code, then continue to Recursiv checkout for archive access, score history, and private reports.')}</p>
+                ? `${copy('Connected as')} ${recursivAccount.email}. ${copy('Profile, settings, friend rooms, reminders, and room chat are unlocked. Paid upgrade is optional and not required to keep playing.')}`
+                : copy('Free visitors get one full official IQ WARS run per day. Email connection saves your developing score, profile, settings, friend rooms, and reminders without blocking play.')}</p>
             <div className="plans">
               <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
-              <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>{copy('archive + reports + extra practice')}</span></div>
+              <div><strong>{copy(CHECKOUT_READY ? UNLIMITED_PRICE_LABEL : 'Upgrade soon')}</strong><span>{copy('archive + reports + extra practice')}</span></div>
             </div>
             {paidAccess ? (
               <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
+            ) : recursivAccount ? (
+              <div className="stacked-actions">
+                <div className="auth-card account-connected-card">
+                  <strong>{copy('Profile and settings unlocked.')}</strong>
+                  <span>{copy('Your daily score history can now become a public profile whenever you choose to save it.')}</span>
+                  <div className="auth-row">
+                    <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
+                    <button className="secondary full" onClick={() => {
+                      setUnlockOpen(false);
+                      navigateView('profile');
+                    }}>{copy('Open profile')}</button>
+                  </div>
+                  <button className="secondary full" onClick={() => {
+                    setUnlockOpen(false);
+                    navigateView('settings');
+                  }}>{copy('Open settings')}</button>
+                </div>
+                {CHECKOUT_READY ? (
+                  <button className="secondary full" disabled={checkoutBusy} onClick={startCheckout}>
+                    {copy(checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout')}
+                  </button>
+                ) : (
+                  <span className="fine-print">{copy('Paid upgrade is not live yet. Your account is connected and the free daily test is active.')}</span>
+                )}
+              </div>
             ) : (
               <div className="stacked-actions">
                 <div className="auth-card" aria-label={copy('IQ WARS signup options')}>
@@ -3847,15 +4139,14 @@ export default function Home({
                   </button>
                   {authMessage ? <span className={`fine-print ${authState === 'error' ? 'error' : authState === 'verified' ? 'success' : ''}`}>{copy(authMessage)}</span> : null}
                 </div>
-                <button className="primary full" disabled={checkoutBusy} onClick={startCheckout}>
-                  {copy(checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout')}
-                </button>
               </div>
             )}
             <span className="fine-print">
               {paidAccess
                 ? copy('Archive access and extra practice are enabled.')
-                : `${copy('Games-style pricing at')} ${UNLIMITED_PRICE_LABEL}. ${copy('Checkout is created securely by Recursiv.')}`}
+                : CHECKOUT_READY
+                  ? `${copy('Games-style pricing at')} ${UNLIMITED_PRICE_LABEL}. ${copy('Checkout is created securely by Recursiv.')}`
+                  : copy('Paid upgrade is not live yet. Nothing else is required to keep playing your daily official test.')}
             </span>
             {checkoutError ? <span className="fine-print error">{copy(checkoutError)}</span> : null}
             {checkoutState === 'active' ? <span className="fine-print success">{copy('Payment verified. Unlimited is active.')}</span> : null}
@@ -4348,6 +4639,8 @@ export default function Home({
         .leaderboard,
         .features,
         .profile-panel,
+        .social-hub,
+        .account-gate,
         .activity-ticker,
         .rankings-globe-hero,
         .profile-page,
@@ -4438,6 +4731,8 @@ export default function Home({
         .leaderboard,
         .features,
         .profile-panel,
+        .social-hub,
+        .account-gate,
         .profile-card,
         .settings-panel,
         .legal-page,
@@ -5271,13 +5566,64 @@ export default function Home({
         }
         .leaderboard,
         .features,
-        .profile-panel {
+        .profile-panel,
+        .social-hub,
+        .account-gate {
           margin-top: clamp(28px, 5vh, 56px);
           padding: clamp(24px, 4vw, 40px);
         }
+        .account-gate {
+          max-width: 680px;
+          display: grid;
+          gap: 16px;
+        }
+        .account-gate h2 {
+          margin: 0;
+          color: #f4f5f6;
+          font-size: clamp(30px, 5vw, 54px);
+          line-height: .96;
+          font-weight: 500;
+          letter-spacing: -.025em;
+        }
+        .account-gate p:not(.kicker) {
+          color: #969ba0;
+          max-width: 56ch;
+          line-height: 1.65;
+          margin: 0;
+        }
+        .account-gate .primary {
+          width: fit-content;
+        }
+        .score-evidence-low {
+          border-color: rgba(216,184,95,.24) !important;
+          box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 44px rgba(216,184,95,.04), inset 0 1px 0 rgba(255,255,255,.05) !important;
+        }
+        .score-evidence-mid {
+          border-color: rgba(176,204,224,.28) !important;
+          box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 48px rgba(176,204,224,.05), inset 0 1px 0 rgba(255,255,255,.05) !important;
+        }
+        .score-evidence-high {
+          border-color: rgba(186,245,207,.30) !important;
+          box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 52px rgba(96,220,152,.06), inset 0 1px 0 rgba(255,255,255,.05) !important;
+        }
+        .score-evidence-low .profile-stats strong,
+        .score-evidence-low .profile-score-grid strong,
+        .score-evidence-low > strong {
+          color: #d8b85f;
+        }
+        .score-evidence-mid .profile-stats strong,
+        .score-evidence-mid .profile-score-grid strong,
+        .score-evidence-mid > strong {
+          color: #c7d4dc;
+        }
+        .score-evidence-high .profile-stats strong,
+        .score-evidence-high .profile-score-grid strong,
+        .score-evidence-high > strong {
+          color: #baf5cf;
+        }
         .profile-stats {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 1px;
           margin-top: 28px;
           border: 1px solid rgba(255,255,255,.08);
@@ -5364,6 +5710,136 @@ export default function Home({
         }
         .social-board + .social-board {
           margin-top: 20px;
+        }
+        .social-hub {
+          display: grid;
+          gap: 22px;
+        }
+        .social-actions {
+          min-width: min(320px, 100%);
+          display: grid;
+          justify-items: end;
+          gap: 10px;
+        }
+        .social-actions span,
+        .social-panel-head span,
+        .social-feed-item span,
+        .room-message span,
+        .social-empty span {
+          color: #6f767b;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .12em;
+          line-height: 1.45;
+          text-transform: uppercase;
+        }
+        .social-hub-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 1px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .social-feed-panel,
+        .room-chat-panel {
+          min-width: 0;
+          display: grid;
+          gap: 16px;
+          background: #0e1012;
+          padding: clamp(18px, 3vw, 26px);
+        }
+        .social-panel-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 12px;
+        }
+        .social-panel-head strong,
+        .social-feed-item strong,
+        .room-message strong,
+        .social-empty strong {
+          color: #f4f5f6;
+          font-size: 13px;
+          font-weight: 600;
+          letter-spacing: .06em;
+          text-transform: uppercase;
+        }
+        .social-feed-list,
+        .room-message-list {
+          display: grid;
+          gap: 1px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .social-feed-item,
+        .room-message,
+        .social-empty {
+          min-width: 0;
+          background: #0a0b0c;
+          padding: 13px;
+        }
+        .social-feed-item {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 12px;
+        }
+        .social-feed-item div,
+        .room-message div {
+          min-width: 0;
+          display: grid;
+          gap: 5px;
+        }
+        .social-feed-item b {
+          color: #f4f5f6;
+          font-size: 24px;
+          font-weight: 500;
+          line-height: 1;
+        }
+        .room-message-list {
+          max-height: 280px;
+          overflow: auto;
+        }
+        .room-message {
+          display: grid;
+          gap: 9px;
+        }
+        .room-message div {
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: baseline;
+        }
+        .room-message p {
+          color: #b9bec2;
+          font-size: 13px;
+          line-height: 1.55;
+          margin: 0;
+          overflow-wrap: anywhere;
+        }
+        .room-chat-compose {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 8px;
+        }
+        .room-chat-compose input {
+          min-width: 0;
+          min-height: 48px;
+          color: #f4f5f6;
+          background: rgba(255,255,255,.035);
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 3px;
+          padding: 0 12px;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 12px;
+          outline: none;
+        }
+        .room-chat-compose input:disabled,
+        .room-chat-compose button:disabled {
+          opacity: .45;
         }
         .leaderboard-row,
         .empty-board,
@@ -5688,7 +6164,7 @@ export default function Home({
         }
         .profile-score-grid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 1px;
           margin-top: 28px;
           border: 1px solid rgba(255,255,255,.08);
@@ -5951,7 +6427,8 @@ export default function Home({
           }
           .rankings-globe-hero,
           .profile-page,
-          .settings-grid {
+          .settings-grid,
+          .social-hub-grid {
             grid-template-columns: 1fr;
           }
           .rankings-globe-shell {
@@ -6021,7 +6498,9 @@ export default function Home({
           .rail-panel,
           .leaderboard,
           .features,
-          .profile-panel {
+          .profile-panel,
+          .social-hub,
+          .account-gate {
             padding: 12px;
           }
           .test-surface .runner-panel {
@@ -6218,7 +6697,18 @@ export default function Home({
           .stats,
           .profile-stats,
           .social-architecture,
-          .plans {
+          .plans,
+          .social-hub-grid {
+            grid-template-columns: 1fr;
+          }
+          .social-actions {
+            justify-items: stretch;
+          }
+          .social-actions .secondary,
+          .account-gate .primary {
+            width: 100%;
+          }
+          .room-chat-compose {
             grid-template-columns: 1fr;
           }
           .auth-row {

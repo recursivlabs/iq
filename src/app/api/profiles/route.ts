@@ -18,6 +18,7 @@ type PublicProfile = {
   best: number | null;
   rank: string | null;
   attempts: number;
+  answers: number;
   profilePublic: boolean;
   showLocation: boolean;
   showXBadge: boolean;
@@ -35,16 +36,16 @@ const STORE_FILE = 'world-iq-profiles.json';
 const MAX_PROFILES = 5000;
 
 const SEEDED_AGENT_PROFILES: PublicProfile[] = [
-  { id: 'agent-euclid', slug: 'agent_euclid', username: 'agent_euclid', displayName: 'Agent Euclid', bio: 'Seeded test profile. Pattern speed, geometry, and clean-room reasoning.', city: 'New York', country: 'United States', xHandle: null, xVerified: false, score: 142, best: 142, rank: '#8,210', attempts: 18, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-noether', slug: 'agent_noether', username: 'agent_noether', displayName: 'Agent Noether', bio: 'Seeded test profile. Symmetry-heavy abstract reasoning.', city: 'Berlin', country: 'Germany', xHandle: null, xVerified: false, score: 139, best: 141, rank: '#12,480', attempts: 16, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-turing', slug: 'agent_turing', username: 'agent_turing', displayName: 'Agent Turing', bio: 'Seeded test profile. Sequential inference and code-shaped puzzles.', city: 'London', country: 'United Kingdom', xHandle: null, xVerified: false, score: 136, best: 140, rank: '#19,300', attempts: 14, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-ramanujan', slug: 'agent_ramanujan', username: 'agent_ramanujan', displayName: 'Agent Ramanujan', bio: 'Seeded test profile. Number sense and nonlinear leaps.', city: 'Chennai', country: 'India', xHandle: null, xVerified: false, score: 134, best: 138, rank: '#25,900', attempts: 15, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-hypatia', slug: 'agent_hypatia', username: 'agent_hypatia', displayName: 'Agent Hypatia', bio: 'Seeded test profile. Visual logic and philosophy of patterns.', city: 'Alexandria', country: 'Egypt', xHandle: null, xVerified: false, score: 131, best: 133, rank: '#38,400', attempts: 13, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-curie', slug: 'agent_curie', username: 'agent_curie', displayName: 'Agent Curie', bio: 'Seeded test profile. Signal detection under pressure.', city: 'Paris', country: 'France', xHandle: null, xVerified: false, score: 128, best: 132, rank: '#54,100', attempts: 12, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-lovelace', slug: 'agent_lovelace', username: 'agent_lovelace', displayName: 'Agent Lovelace', bio: 'Seeded test profile. Symbolic sequences and system taste.', city: 'San Francisco', country: 'United States', xHandle: null, xVerified: false, score: 126, best: 130, rank: '#71,600', attempts: 11, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-gauss', slug: 'agent_gauss', username: 'agent_gauss', displayName: 'Agent Gauss', bio: 'Seeded test profile. Compact proofs and fast error correction.', city: 'Toronto', country: 'Canada', xHandle: null, xVerified: false, score: 123, best: 128, rank: '#93,200', attempts: 10, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-wu', slug: 'agent_wu', username: 'agent_wu', displayName: 'Agent Wu', bio: 'Seeded test profile. Experimental precision and spatial controls.', city: 'Singapore', country: 'Singapore', xHandle: null, xVerified: false, score: 121, best: 125, rank: '#111,900', attempts: 9, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
-  { id: 'agent-feynman', slug: 'agent_feynman', username: 'agent_feynman', displayName: 'Agent Feynman', bio: 'Seeded test profile. Intuition-first physics reasoning.', city: 'Sydney', country: 'Australia', xHandle: null, xVerified: false, score: 118, best: 124, rank: '#142,000', attempts: 8, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-euclid', slug: 'agent_euclid', username: 'agent_euclid', displayName: 'Agent Euclid', bio: 'Seeded test profile. Pattern speed, geometry, and clean-room reasoning.', city: 'New York', country: 'United States', xHandle: null, xVerified: false, score: 142, best: 142, rank: '#8,210', attempts: 18, answers: 216, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-noether', slug: 'agent_noether', username: 'agent_noether', displayName: 'Agent Noether', bio: 'Seeded test profile. Symmetry-heavy abstract reasoning.', city: 'Berlin', country: 'Germany', xHandle: null, xVerified: false, score: 139, best: 141, rank: '#12,480', attempts: 16, answers: 192, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-turing', slug: 'agent_turing', username: 'agent_turing', displayName: 'Agent Turing', bio: 'Seeded test profile. Sequential inference and code-shaped puzzles.', city: 'London', country: 'United Kingdom', xHandle: null, xVerified: false, score: 136, best: 140, rank: '#19,300', attempts: 14, answers: 168, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-ramanujan', slug: 'agent_ramanujan', username: 'agent_ramanujan', displayName: 'Agent Ramanujan', bio: 'Seeded test profile. Number sense and nonlinear leaps.', city: 'Chennai', country: 'India', xHandle: null, xVerified: false, score: 134, best: 138, rank: '#25,900', attempts: 15, answers: 180, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-hypatia', slug: 'agent_hypatia', username: 'agent_hypatia', displayName: 'Agent Hypatia', bio: 'Seeded test profile. Visual logic and philosophy of patterns.', city: 'Alexandria', country: 'Egypt', xHandle: null, xVerified: false, score: 131, best: 133, rank: '#38,400', attempts: 13, answers: 156, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-curie', slug: 'agent_curie', username: 'agent_curie', displayName: 'Agent Curie', bio: 'Seeded test profile. Signal detection under pressure.', city: 'Paris', country: 'France', xHandle: null, xVerified: false, score: 128, best: 132, rank: '#54,100', attempts: 12, answers: 144, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-lovelace', slug: 'agent_lovelace', username: 'agent_lovelace', displayName: 'Agent Lovelace', bio: 'Seeded test profile. Symbolic sequences and system taste.', city: 'San Francisco', country: 'United States', xHandle: null, xVerified: false, score: 126, best: 130, rank: '#71,600', attempts: 11, answers: 132, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-gauss', slug: 'agent_gauss', username: 'agent_gauss', displayName: 'Agent Gauss', bio: 'Seeded test profile. Compact proofs and fast error correction.', city: 'Toronto', country: 'Canada', xHandle: null, xVerified: false, score: 123, best: 128, rank: '#93,200', attempts: 10, answers: 120, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-wu', slug: 'agent_wu', username: 'agent_wu', displayName: 'Agent Wu', bio: 'Seeded test profile. Experimental precision and spatial controls.', city: 'Singapore', country: 'Singapore', xHandle: null, xVerified: false, score: 121, best: 125, rank: '#111,900', attempts: 9, answers: 108, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
+  { id: 'agent-feynman', slug: 'agent_feynman', username: 'agent_feynman', displayName: 'Agent Feynman', bio: 'Seeded test profile. Intuition-first physics reasoning.', city: 'Sydney', country: 'Australia', xHandle: null, xVerified: false, score: 118, best: 124, rank: '#142,000', attempts: 8, answers: 96, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
 ];
 
 function cleanSlug(value: unknown) {
@@ -89,6 +90,7 @@ function normalizeProfile(value: Record<string, unknown>): PublicProfile | null 
     best: cleanNumber(value.best, 0, 200),
     rank: cleanOptionalText(value.rank, 24),
     attempts: cleanNumber(value.attempts, 0, 10000) || 0,
+    answers: cleanNumber(value.answers, 0, 1_000_000) || (cleanNumber(value.attempts, 0, 10000) || 0) * 12,
     profilePublic: value.profilePublic !== false,
     showLocation: value.showLocation !== false,
     showXBadge: value.showXBadge !== false,
@@ -117,6 +119,7 @@ function publicProfile(profile: PublicProfile) {
   if (!profile.profilePublic) return null;
   return {
     ...profile,
+    answers: typeof profile.answers === 'number' ? profile.answers : profile.attempts * 12,
     city: profile.showLocation ? profile.city : null,
     country: profile.showLocation ? profile.country : null,
     xHandle: profile.showXBadge ? profile.xHandle : null,

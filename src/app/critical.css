@@ -53,7 +53,9 @@ nav,
 .test-surface,
 .leaderboard,
 .features,
-.profile-panel {
+.profile-panel,
+.social-hub,
+.account-gate {
   position: relative;
   z-index: 2;
   width: min(1200px, 100%);
@@ -181,6 +183,8 @@ nav .nav-cta,
 .leaderboard,
 .features,
 .profile-panel,
+.social-hub,
+.account-gate,
 .rail-panel {
   border: 1px solid rgba(255, 255, 255, .08);
   border-radius: 8px;
@@ -194,6 +198,42 @@ nav .nav-cta,
   width: 100%;
   padding: clamp(14px, 1.8vw, 20px);
   overflow: hidden;
+}
+
+.account-gate {
+  max-width: 680px;
+  margin-top: clamp(28px, 5vh, 56px);
+  padding: clamp(24px, 4vw, 40px);
+  display: grid;
+  gap: 16px;
+}
+
+.account-gate h2 {
+  margin: 0;
+  color: #f4f5f6;
+  font-size: clamp(30px, 5vw, 54px);
+  line-height: .96;
+  font-weight: 500;
+  letter-spacing: -.025em;
+}
+
+.account-gate p:not(.kicker) {
+  color: #969ba0;
+  max-width: 56ch;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.score-evidence-low {
+  border-color: rgba(216, 184, 95, .24) !important;
+}
+
+.score-evidence-mid {
+  border-color: rgba(176, 204, 224, .28) !important;
+}
+
+.score-evidence-high {
+  border-color: rgba(186, 245, 207, .30) !important;
 }
 
 .status-rail {
@@ -677,8 +717,56 @@ nav .nav-cta,
   padding: 12px;
 }
 
+.social-hub {
+  margin-top: clamp(28px, 5vh, 56px);
+  padding: clamp(24px, 4vw, 40px);
+  display: grid;
+  gap: 22px;
+}
+
+.social-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .08);
+}
+
+.social-feed-panel,
+.room-chat-panel {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  background: #0e1012;
+  padding: clamp(18px, 3vw, 26px);
+}
+
+.room-chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.room-chat-compose input {
+  min-width: 0;
+  min-height: 48px;
+  color: #f4f5f6;
+  background: rgba(255, 255, 255, .035);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 3px;
+  padding: 0 12px;
+  font-size: 12px;
+  outline: none;
+}
+
 @media (max-width: 940px) {
   .test-surface {
+    grid-template-columns: 1fr;
+  }
+
+  .social-hub-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -718,9 +806,15 @@ nav .nav-cta,
   .runner-panel,
   .rail-panel,
   .leaderboard,
-  .features,
-  .profile-panel {
+    .features,
+    .profile-panel,
+    .social-hub,
+    .account-gate {
     padding: 12px;
+  }
+
+  .room-chat-compose {
+    grid-template-columns: 1fr;
   }
 
   .test-surface {
