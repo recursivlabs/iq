@@ -65,6 +65,17 @@ type SocialEntry = {
   geo?: GeoSnapshot | null;
 };
 
+type XVerificationRecord = {
+  handle: string;
+  status: 'pending_post' | 'verified';
+  method: 'post' | 'oauth';
+  proofToken?: string | null;
+  name?: string | null;
+  location?: string | null;
+  followers?: number | null;
+  updatedAt: number;
+};
+
 type GeoSnapshot = {
   country: string | null;
   countryCode: string | null;
@@ -83,6 +94,14 @@ type GeoBoardRow = {
   score: number;
   entries: number;
   topScore: number;
+};
+
+type GlobeRegion = GeoBoardRow & {
+  x: number;
+  y: number;
+  heat: number;
+  size: number;
+  hue: number;
 };
 
 type SocialBoards = {
@@ -146,7 +165,40 @@ const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
 const GROUP_NAME_STORAGE_KEY = 'world-iq-group-name';
 const REMINDER_EMAIL_STORAGE_KEY = 'world-iq-reminder-email';
 const RECURSIV_ACCOUNT_STORAGE_KEY = 'world-iq-recursiv-account';
+const X_VERIFICATION_STORAGE_KEY = 'world-iq-x-verification';
 const EMPTY_GEOGRAPHY_BOARDS: SocialBoards['geography'] = { countries: [], cities: [], towns: [] };
+const COUNTRY_GLOBE_CENTERS: Record<string, [number, number]> = {
+  US: [-98, 39],
+  CA: [-106, 56],
+  MX: [-102, 23],
+  BR: [-52, -10],
+  AR: [-64, -34],
+  GB: [-2, 54],
+  IE: [-8, 53],
+  FR: [2, 46],
+  DE: [10, 51],
+  ES: [-4, 40],
+  IT: [12, 43],
+  NL: [5, 52],
+  SE: [15, 62],
+  NO: [8, 61],
+  PL: [19, 52],
+  RU: [90, 60],
+  TR: [35, 39],
+  IN: [78, 22],
+  CN: [104, 35],
+  JP: [138, 37],
+  KR: [128, 36],
+  SG: [104, 1],
+  ID: [118, -2],
+  AU: [134, -25],
+  NZ: [172, -42],
+  ZA: [24, -29],
+  NG: [8, 9],
+  EG: [30, 27],
+  AE: [54, 24],
+  SA: [45, 24],
+};
 
 const tones: Record<TileTone, string> = {
   ink: '#f4f5f6',
@@ -338,26 +390,37 @@ const dailyPuzzles: Puzzle[] = [
 ];
 
 const rankedWorldPuzzleIds = [
+  'world-01',
+  'world-02',
+  'world-03',
+  'world-04',
+  'world-05',
+  'world-06',
+  'world-07',
+  'world-08',
   'world-09',
   'world-10',
   'world-11',
   'world-12',
-  'world-07',
-  'world-08',
-  'world-06',
-  'world-05',
-  'world-04',
-  'world-03',
-  'world-02',
-  'world-01',
 ];
 
 const rankedWorldPuzzles: Puzzle[] = rankedWorldPuzzleIds.map((id, index) => {
   const source = worldPuzzles.find((puzzle) => puzzle.id === id)!;
+  const difficulty = index === 0
+    ? 'Calibration'
+    : index < 3
+      ? 'Foundation'
+      : index < 6
+        ? 'Adaptive'
+        : index < 8
+          ? 'Advanced'
+          : index < 11
+            ? 'Frontier'
+            : 'Elite';
   return {
     ...source,
-    difficulty: index < 4 ? 'Frontier' : index < 8 ? 'Hard' : 'Advanced',
-    prompt: index === 0 ? 'Track two axes from the first move.' : source.prompt,
+    difficulty,
+    prompt: index === 0 ? 'Start with the signal. The board ramps quickly.' : source.prompt,
   };
 });
 
@@ -457,6 +520,148 @@ function normalizeGeoSnapshot(value: unknown): GeoSnapshot | null {
     timeZone: typeof geo.timeZone === 'string' && geo.timeZone.trim() ? geo.timeZone.trim() : null,
     source: typeof geo.source === 'string' && geo.source.trim() ? geo.source.trim() : 'unknown',
   };
+}
+
+function cleanXHandle(value: string | null | undefined) {
+  return (value || '').trim().replace(/^@+/, '').replace(/[^a-zA-Z0-9_]+/g, '').slice(0, 15);
+}
+
+function normalizeXVerification(value: unknown): XVerificationRecord | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Partial<XVerificationRecord>;
+  const handle = cleanXHandle(record.handle);
+  if (!handle) return null;
+  const status = record.status === 'verified' ? 'verified' : 'pending_post';
+  const method = record.method === 'oauth' ? 'oauth' : 'post';
+  return {
+    handle,
+    status,
+    method,
+    proofToken: typeof record.proofToken === 'string' && record.proofToken.trim() ? record.proofToken.trim().slice(0, 80) : null,
+    name: typeof record.name === 'string' && record.name.trim() ? record.name.trim().slice(0, 80) : null,
+    location: typeof record.location === 'string' && record.location.trim() ? record.location.trim().slice(0, 120) : null,
+    followers: typeof record.followers === 'number' && Number.isFinite(record.followers) ? Math.max(0, Math.floor(record.followers)) : null,
+    updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : Date.now(),
+  };
+}
+
+function readXVerification(): XVerificationRecord | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(X_VERIFICATION_STORAGE_KEY);
+    return raw ? normalizeXVerification(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeXVerification(record: XVerificationRecord | null) {
+  if (typeof window === 'undefined') return;
+  if (!record) {
+    window.localStorage.removeItem(X_VERIFICATION_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(X_VERIFICATION_STORAGE_KEY, JSON.stringify({ ...record, updatedAt: Date.now() }));
+}
+
+function geoFromXLocation(location: string | null | undefined): GeoSnapshot | null {
+  if (!location) return null;
+  const parts = location.split(',').map((part) => part.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const countryCandidate = parts[parts.length - 1] || null;
+  const countryCode = normalizeCountryCode(countryCandidate || undefined);
+  const city = parts.length > 1 ? parts[0] : null;
+  return {
+    country: countryCode ? countryName(countryCode) : countryCandidate,
+    countryCode,
+    region: parts.length > 2 ? parts.slice(1, -1).join(', ') : null,
+    city,
+    town: city,
+    timeZone: null,
+    source: 'x_profile',
+  };
+}
+
+function xProofToken(record: OfficialRankRecord, playerId: string) {
+  const playerSeed = (playerId || 'iqwars').replace(/[^a-z0-9]/gi, '').slice(-6).toUpperCase() || 'IQWARS';
+  return `IQWARS-${record.day.replace(/-/g, '')}-${record.score}-${playerSeed}`;
+}
+
+function buildXScorecardText(record: OfficialRankRecord, groupCode: string | null, groupName: string, playerId: string) {
+  const token = xProofToken(record, playerId);
+  const roomLine = groupCode ? `\nRoom: ${groupName}\n${groupShareUrl(groupCode)}` : `\n${currentOrigin()}`;
+  return {
+    token,
+    text: `IQ WARS ${record.day}: ${record.score} reasoning | ${record.rank} | ${record.correct}/${record.total} | ${formatElapsedTime(record.elapsedMs)}\n${token}${roomLine}`,
+  };
+}
+
+function xIntentUrl(text: string) {
+  return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
+function hashNumber(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0);
+}
+
+function globeCoordinateFromLabel(label: string, detail: string, kind: GeoBoardRow['kind']): [number, number] {
+  const code = normalizeCountryCode(kind === 'country' ? detail || label : detail.match(/\b([A-Z]{2})\b/)?.[1]);
+  if (code && COUNTRY_GLOBE_CENTERS[code]) return COUNTRY_GLOBE_CENTERS[code];
+  const hash = hashNumber(`${label}:${detail}:${kind}`);
+  const lon = ((hash % 320) / 320) * 300 - 150;
+  const lat = ((((hash / 320) | 0) % 140) / 140) * 110 - 55;
+  return [lon, lat];
+}
+
+function projectGlobePoint(lon: number, lat: number) {
+  const lambda = ((lon + 18) * Math.PI) / 180;
+  const phi = (lat * Math.PI) / 180;
+  const cosPhi = Math.cos(phi);
+  const depth = Math.cos(lambda) * cosPhi;
+  return {
+    x: 50 + Math.sin(lambda) * cosPhi * 43,
+    y: 50 - Math.sin(phi) * 43,
+    depth,
+  };
+}
+
+function buildGlobeRegions(geography: SocialBoards['geography'], fallbackGeo: GeoSnapshot | null): GlobeRegion[] {
+  const rows = [...geography.countries, ...geography.cities.slice(0, 8), ...geography.towns.slice(0, 5)];
+  if (!rows.length && fallbackGeo) {
+    rows.push({
+      id: fallbackGeo.countryCode || fallbackGeo.city || fallbackGeo.timeZone || 'local',
+      kind: fallbackGeo.countryCode ? 'country' : 'city',
+      label: fallbackGeo.city || fallbackGeo.country || fallbackGeo.timeZone || 'Local signal',
+      detail: [fallbackGeo.region, fallbackGeo.countryCode || fallbackGeo.country].filter(Boolean).join(' · ') || fallbackGeo.source,
+      score: 100,
+      entries: 1,
+      topScore: 100,
+    });
+  }
+
+  const maxEntries = Math.max(1, ...rows.map((row) => row.entries));
+  return rows
+    .map((row) => {
+      const [lon, lat] = globeCoordinateFromLabel(row.label, row.detail, row.kind);
+      const projected = projectGlobePoint(lon, lat);
+      const scoreHeat = Math.max(0, Math.min(1, (row.score - 90) / 55));
+      const trafficHeat = Math.max(0.18, Math.min(1, row.entries / maxEntries));
+      return {
+        ...row,
+        x: Math.max(8, Math.min(92, projected.x)),
+        y: Math.max(8, Math.min(92, projected.y)),
+        heat: Math.max(0.22, Math.min(1, scoreHeat * 0.68 + trafficHeat * 0.32)),
+        size: Math.round(9 + trafficHeat * 18 + scoreHeat * 9),
+        hue: row.score >= 130 ? 42 : row.score >= 116 ? 178 : 210,
+      };
+    })
+    .sort((a, b) => b.heat - a.heat || b.entries - a.entries || b.score - a.score)
+    .slice(0, 18);
 }
 
 async function copyTextToClipboard(text: string) {
@@ -1211,12 +1416,116 @@ function GeographyLeaderboard({ locale, geography }: { locale: LocaleKey; geogra
   );
 }
 
+function GeoGlobePanel({
+  locale,
+  geography,
+  fallbackGeo,
+}: {
+  locale: LocaleKey;
+  geography: SocialBoards['geography'];
+  fallbackGeo: GeoSnapshot | null;
+}) {
+  const copy = (text: string) => translate(locale, text);
+  const regions = React.useMemo(() => buildGlobeRegions(geography, fallbackGeo), [geography, fallbackGeo]);
+  const topRegion = regions[0] || null;
+  const totalEntries = regions.reduce((total, region) => total + region.entries, 0);
+
+  return (
+    <section className="rail-panel geo-globe-panel" aria-label={copy('IQ WARS geography globe')}>
+      <div className="globe-copy">
+        <p className="rail-label">{copy('World signal')}</p>
+        <strong>{topRegion ? topRegion.label : copy('Awaiting traffic')}</strong>
+        <span>{topRegion
+          ? `${copy('Top active region')} · ${topRegion.score} ${copy('avg')} · ${topRegion.entries} ${copy(topRegion.entries === 1 ? 'player' : 'players')}`
+          : copy('Live score heat appears as regions lock official runs.')}</span>
+      </div>
+      <div className="globe-shell" aria-hidden="true">
+        <div className="globe-orbit orbit-a" />
+        <div className="globe-orbit orbit-b" />
+        <div className="globe-sphere">
+          <div className="globe-grid latitude" />
+          <div className="globe-grid longitude" />
+          {regions.map((region, index) => (
+            <span
+              key={`${region.kind}-${region.id}-${index}`}
+              className="globe-region"
+              style={{
+                left: `${region.x}%`,
+                top: `${region.y}%`,
+                width: `${region.size}px`,
+                height: `${region.size}px`,
+                opacity: 0.48 + region.heat * 0.46,
+                background: `hsl(${region.hue} 76% ${48 + region.heat * 20}%)`,
+                boxShadow: `0 0 ${16 + region.heat * 34}px hsla(${region.hue}, 86%, 64%, ${0.26 + region.heat * 0.42})`,
+                animationDelay: `${index * -0.42}s`,
+              }}
+              title={`${region.label}: ${region.score}`}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="globe-metrics">
+        <div><strong>{regions.length}</strong><span>{copy('regions')}</span></div>
+        <div><strong>{totalEntries || '0'}</strong><span>{copy('signals')}</span></div>
+      </div>
+    </section>
+  );
+}
+
+function XVerificationPanel({
+  locale,
+  handle,
+  verification,
+  state,
+  canPostScorecard,
+  onHandleChange,
+  onPostScorecard,
+  onVerifyPost,
+}: {
+  locale: LocaleKey;
+  handle: string;
+  verification: XVerificationRecord | null;
+  state: string;
+  canPostScorecard: boolean;
+  onHandleChange: (handle: string) => void;
+  onPostScorecard: () => void;
+  onVerifyPost: () => void;
+}) {
+  const copy = (text: string) => translate(locale, text);
+  const verified = verification?.status === 'verified';
+  const authUrl = '/api/x/connect';
+
+  return (
+    <section className="rail-panel x-panel">
+      <p className="rail-label">{copy('X badge')}</p>
+      <strong>{verified ? `@${verification.handle}` : copy('Verify public proof')}</strong>
+      <span>{verified
+        ? `${copy('Verified')} ${verification.name ? `· ${verification.name}` : ''}${verification.location ? ` · ${verification.location}` : ''}`
+        : copy('Connect X or post a scorecard to prove the account behind a leaderboard name.')}</span>
+      <label className="name-field">
+        <span>{copy('X handle')}</span>
+        <input value={handle ? `@${handle}` : ''} onChange={(event) => onHandleChange(event.target.value)} maxLength={16} placeholder="@handle" />
+      </label>
+      <div className="auth-row">
+        <a className="secondary full center-link" href={authUrl}>{copy('Auth X')}</a>
+        <button className="secondary full" disabled={!canPostScorecard} onClick={onPostScorecard}>{copy('Post score')}</button>
+      </div>
+      <button className="secondary full" disabled={!handle || !verification?.proofToken || verified} onClick={onVerifyPost}>
+        {copy(verified ? 'Badge active' : 'Check post')}
+      </button>
+      {state ? <span className={`fine-print ${verified ? 'success' : state.toLowerCase().includes('fail') || state.toLowerCase().includes('not') ? 'error' : ''}`}>{copy(state)}</span> : null}
+    </section>
+  );
+}
+
 function StatusRail({
   locale,
   isPaid,
   usage,
   officialRank,
   officialHistory,
+  geography,
+  geoSnapshot,
   groupCode,
   groupName,
   playerName,
@@ -1225,6 +1534,9 @@ function StatusRail({
   reminderEmail,
   reminderState,
   inviteState,
+  xHandle,
+  xVerification,
+  xState,
   onCreateGroup,
   onCopyInvite,
   onPlayerNameChange,
@@ -1232,6 +1544,9 @@ function StatusRail({
   onClaimUsername,
   onReminderEmailChange,
   onReminderSubmit,
+  onXHandleChange,
+  onXPostScorecard,
+  onXVerifyPost,
   onUnlock,
 }: {
   locale: LocaleKey;
@@ -1239,6 +1554,8 @@ function StatusRail({
   usage: PlayUsage;
   officialRank: OfficialRankRecord | null;
   officialHistory: OfficialRankRecord[];
+  geography: SocialBoards['geography'];
+  geoSnapshot: GeoSnapshot | null;
   groupCode: string | null;
   groupName: string;
   playerName: string;
@@ -1247,6 +1564,9 @@ function StatusRail({
   reminderEmail: string;
   reminderState: string;
   inviteState: string;
+  xHandle: string;
+  xVerification: XVerificationRecord | null;
+  xState: string;
   onCreateGroup: () => void | Promise<void>;
   onCopyInvite: () => void | Promise<void>;
   onPlayerNameChange: (name: string) => void;
@@ -1254,6 +1574,9 @@ function StatusRail({
   onClaimUsername: () => void;
   onReminderEmailChange: (email: string) => void;
   onReminderSubmit: () => void;
+  onXHandleChange: (handle: string) => void;
+  onXPostScorecard: () => void;
+  onXVerifyPost: () => void;
   onUnlock: () => void;
 }) {
   const copy = (text: string) => translate(locale, text);
@@ -1265,6 +1588,8 @@ function StatusRail({
 
   return (
     <aside className="status-rail" aria-label="IQ WARS session and subscription">
+      <GeoGlobePanel locale={locale} geography={geography} fallbackGeo={geoSnapshot} />
+
       <section className="rail-panel">
         <p className="rail-label">{copy('Session')}</p>
         <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 official attempt left' : '0 / 1 · used')}</strong>
@@ -1307,6 +1632,17 @@ function StatusRail({
         </button>
         {inviteCopied ? <span className="copy-confirmation" role="status" aria-live="polite">{copy('Group link copied')}</span> : null}
       </section>
+
+      <XVerificationPanel
+        locale={locale}
+        handle={xHandle}
+        verification={xVerification}
+        state={xState}
+        canPostScorecard={Boolean(officialRank && xHandle)}
+        onHandleChange={onXHandleChange}
+        onPostScorecard={onXPostScorecard}
+        onVerifyPost={onXVerifyPost}
+      />
 
       <section className="rail-panel unlock-panel">
         <div className="rail-price">
@@ -1664,8 +2000,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [usageSnapshot, setUsageSnapshot] = React.useState<PlayUsage>(() => blankPlayUsage());
   const [officialSnapshot, setOfficialSnapshot] = React.useState<OfficialRankRecord | null>(null);
   const [officialHistory, setOfficialHistory] = React.useState<OfficialRankRecord[]>([]);
-  const [groupCode, setGroupCode] = React.useState<string>(() => readStoredGroupCode(initialGroupCode));
-  const [groupName, setGroupName] = React.useState<string>(() => groupNameFromCode(readStoredGroupCode(initialGroupCode)));
+  const initialRouteGroupCode = cleanGroupCode(initialGroupCode);
+  const [groupCode, setGroupCode] = React.useState<string>(initialRouteGroupCode);
+  const [groupName, setGroupName] = React.useState<string>(() => initialRouteGroupCode ? groupNameFromCode(initialRouteGroupCode) : '');
   const [playerId, setPlayerId] = React.useState('');
   const [playerName, setPlayerName] = React.useState('');
   const [usernameDraft, setUsernameDraft] = React.useState('');
@@ -1679,6 +2016,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [authCode, setAuthCode] = React.useState('');
   const [authState, setAuthState] = React.useState<'idle' | 'sending' | 'sent' | 'verifying' | 'verified' | 'error'>('idle');
   const [authMessage, setAuthMessage] = React.useState('');
+  const [xHandle, setXHandle] = React.useState('');
+  const [xVerification, setXVerification] = React.useState<XVerificationRecord | null>(null);
+  const [xState, setXState] = React.useState('');
   const [geoSnapshot, setGeoSnapshot] = React.useState<GeoSnapshot | null>(null);
   const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], geography: EMPTY_GEOGRAPHY_BOARDS });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
@@ -1709,10 +2049,52 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     const account = readRecursivAccount();
     setRecursivAccount(account);
     setAuthEmail(account?.email || '');
+    const xRecord = readXVerification();
+    setXVerification(xRecord);
+    setXHandle(xRecord?.handle || '');
+    setXState(xRecord?.status === 'verified' ? 'X badge active' : xRecord?.proofToken ? 'Post pending verification' : '');
     setGroupCode(code);
     setGroupName(name);
     if (code) writeStoredGroup(code, name);
   }, [initialGroupCode]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const params = url.searchParams;
+    const status = params.get('x_status');
+    const verified = params.get('x_verified') === '1';
+    const handle = cleanXHandle(params.get('x_handle'));
+    const name = params.get('x_name');
+    const location = params.get('x_location');
+    const followers = Number(params.get('x_followers'));
+
+    if (verified && handle) {
+      const record: XVerificationRecord = {
+        handle,
+        status: 'verified',
+        method: 'oauth',
+        proofToken: null,
+        name: name?.trim() || null,
+        location: location?.trim() || null,
+        followers: Number.isFinite(followers) ? followers : null,
+        updatedAt: Date.now(),
+      };
+      writeXVerification(record);
+      setXVerification(record);
+      setXHandle(handle);
+      setXState('X badge active');
+      const xGeo = geoFromXLocation(record.location);
+      if (xGeo) setGeoSnapshot((current) => current?.source === 'x_profile' ? current : xGeo);
+    } else if (status) {
+      setXState(status === 'not_configured' ? 'X auth is not configured yet' : status === 'cancelled' ? 'X auth cancelled' : 'X auth failed');
+    }
+
+    if (verified || status) {
+      ['x_verified', 'x_handle', 'x_name', 'x_location', 'x_followers', 'x_status'].forEach((key) => params.delete(key));
+      window.history.replaceState({}, '', `${url.pathname}${params.toString() ? `?${params.toString()}` : ''}${url.hash}`);
+    }
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1983,6 +2365,91 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     }
   }
 
+  function handleXHandleChange(value: string) {
+    const next = cleanXHandle(value);
+    setXHandle(next);
+    if (!next) {
+      setXState('');
+      return;
+    }
+    if (xVerification?.handle && cleanXHandle(xVerification.handle).toLowerCase() === next.toLowerCase()) {
+      setXState(xVerification.status === 'verified' ? 'X badge active' : 'Post pending verification');
+      return;
+    }
+    setXState('Post a scorecard or auth X');
+  }
+
+  function postXScorecard() {
+    if (!officialSnapshot) {
+      setXState('Lock today\'s score first');
+      playInteractionSound('error');
+      return;
+    }
+    const handle = cleanXHandle(xHandle);
+    if (!handle) {
+      setXState('Add X handle');
+      playInteractionSound('error');
+      return;
+    }
+    const scorecard = buildXScorecardText(officialSnapshot, groupCode || null, groupName, playerId || readPlayerId());
+    const record: XVerificationRecord = {
+      handle,
+      status: 'pending_post',
+      method: 'post',
+      proofToken: scorecard.token,
+      updatedAt: Date.now(),
+    };
+    writeXVerification(record);
+    setXVerification(record);
+    setXState('Post opened. Return and check.');
+    playInteractionSound('copy');
+    if (typeof window !== 'undefined') {
+      window.open(xIntentUrl(scorecard.text), '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  async function verifyXPost() {
+    const handle = cleanXHandle(xHandle || xVerification?.handle);
+    const token = xVerification?.proofToken;
+    if (!handle || !token) {
+      setXState('Post score first');
+      playInteractionSound('error');
+      return;
+    }
+    setXState('Checking X');
+    try {
+      const response = await fetch('/api/x/verify-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle, token }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.verified) {
+        throw new Error(data?.error || 'Post not found yet');
+      }
+      const record: XVerificationRecord = {
+        handle,
+        status: 'verified',
+        method: 'post',
+        proofToken: token,
+        name: typeof data.profile?.name === 'string' ? data.profile.name : null,
+        location: typeof data.profile?.location === 'string' ? data.profile.location : null,
+        followers: typeof data.profile?.followers === 'number' ? data.profile.followers : null,
+        updatedAt: Date.now(),
+      };
+      writeXVerification(record);
+      setXVerification(record);
+      setXHandle(handle);
+      setXState('X badge active');
+      const xGeo = geoFromXLocation(record.location);
+      if (xGeo) setGeoSnapshot((current) => current?.source === 'x_profile' ? current : xGeo);
+      playInteractionSound('success');
+    } catch (error) {
+      setXState(error instanceof Error ? error.message : 'X check failed');
+      playInteractionSound('error');
+    }
+  }
+
   const resetInviteStateSoon = React.useCallback((state: string) => {
     if (typeof window === 'undefined') return;
     window.setTimeout(() => {
@@ -2147,6 +2614,8 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             usage={usageSnapshot}
             officialRank={officialSnapshot}
             officialHistory={officialHistory}
+            geography={socialBoards.geography}
+            geoSnapshot={geoSnapshot}
             groupCode={groupCode || null}
             groupName={groupName}
             playerName={playerName}
@@ -2155,6 +2624,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             reminderEmail={reminderEmail}
             reminderState={reminderState}
             inviteState={inviteState}
+            xHandle={xHandle}
+            xVerification={xVerification}
+            xState={xState}
             onCreateGroup={createGroup}
             onCopyInvite={copyInvite}
             onPlayerNameChange={handlePlayerNameChange}
@@ -2162,6 +2634,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             onClaimUsername={claimUsername}
             onReminderEmailChange={handleReminderEmailChange}
             onReminderSubmit={submitReminder}
+            onXHandleChange={handleXHandleChange}
+            onXPostScorecard={postXScorecard}
+            onXVerifyPost={verifyXPost}
             onUnlock={() => setUnlockOpen(true)}
           />
         </section>
@@ -3173,6 +3648,163 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         .rail-panel {
           padding: 22px;
         }
+        .geo-globe-panel {
+          position: relative;
+          overflow: hidden;
+          padding: 18px 18px 16px;
+          min-height: 350px;
+          background:
+            radial-gradient(circle at 50% 34%, rgba(255,255,255,.08), transparent 38%),
+            linear-gradient(160deg, rgba(22,24,28,.96), rgba(7,8,10,.94));
+        }
+        .globe-copy {
+          position: relative;
+          z-index: 2;
+        }
+        .geo-globe-panel .globe-copy strong {
+          max-width: 100%;
+          margin-top: 8px;
+          font-size: 20px;
+          line-height: 1.02;
+          letter-spacing: -.01em;
+          overflow-wrap: anywhere;
+        }
+        .geo-globe-panel .globe-copy span {
+          min-height: 38px;
+        }
+        .globe-shell {
+          position: relative;
+          width: min(250px, 100%);
+          aspect-ratio: 1;
+          margin: 20px auto 10px;
+          display: grid;
+          place-items: center;
+          perspective: 760px;
+        }
+        .globe-sphere {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 1;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 999px;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at 38% 26%, rgba(255,255,255,.22), rgba(255,255,255,.045) 21%, transparent 38%),
+            radial-gradient(circle at 64% 62%, rgba(184,231,255,.1), transparent 35%),
+            linear-gradient(145deg, rgba(255,255,255,.06), rgba(255,255,255,.01) 45%, rgba(0,0,0,.5));
+          box-shadow:
+            inset -30px -36px 76px rgba(0,0,0,.7),
+            inset 18px 14px 44px rgba(255,255,255,.07),
+            0 28px 72px rgba(0,0,0,.54),
+            0 0 80px rgba(160,185,205,.08);
+          transform: rotateX(9deg) rotateZ(-8deg);
+        }
+        .globe-sphere::before {
+          content: "";
+          position: absolute;
+          inset: -12%;
+          border-radius: 999px;
+          background:
+            linear-gradient(90deg, transparent 0 44%, rgba(255,255,255,.045) 50%, transparent 56%),
+            repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 1px, transparent 1px 26px),
+            repeating-linear-gradient(0deg, rgba(255,255,255,.06) 0 1px, transparent 1px 28px);
+          opacity: .42;
+          transform: rotate(13deg);
+          animation: globeGrid 18s linear infinite;
+        }
+        .globe-sphere::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          background: radial-gradient(circle at 31% 22%, rgba(255,255,255,.28), transparent 18%), linear-gradient(90deg, transparent 0 52%, rgba(0,0,0,.38) 88%);
+          pointer-events: none;
+        }
+        .globe-grid {
+          position: absolute;
+          inset: 8%;
+          border-radius: 999px;
+          pointer-events: none;
+          opacity: .34;
+        }
+        .globe-grid.latitude {
+          background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255,255,255,.12) 23px, transparent 24px);
+          mask-image: radial-gradient(circle, #000 66%, transparent 68%);
+        }
+        .globe-grid.longitude {
+          background: repeating-linear-gradient(90deg, transparent 0 25px, rgba(255,255,255,.12) 26px, transparent 27px);
+          mask-image: radial-gradient(circle, #000 66%, transparent 68%);
+          animation: globeGrid 24s linear infinite reverse;
+        }
+        .globe-region {
+          position: absolute;
+          z-index: 3;
+          border-radius: 999px;
+          transform: translate(-50%, -50%);
+          border: 1px solid rgba(255,255,255,.42);
+          animation: globePulse 2.8s ease-in-out infinite;
+        }
+        .globe-region::after {
+          content: "";
+          position: absolute;
+          inset: -8px;
+          border-radius: 999px;
+          border: 1px solid currentColor;
+          opacity: .2;
+        }
+        .globe-orbit {
+          position: absolute;
+          inset: 3%;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.075);
+          transform: rotateX(74deg) rotateZ(-16deg);
+        }
+        .globe-orbit.orbit-b {
+          inset: 11%;
+          transform: rotateX(62deg) rotateZ(68deg);
+          opacity: .58;
+        }
+        .globe-metrics {
+          position: relative;
+          z-index: 2;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 1px;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          background: rgba(255,255,255,.08);
+        }
+        .globe-metrics div {
+          min-width: 0;
+          padding: 10px 12px;
+          background: rgba(5,6,7,.58);
+        }
+        .globe-metrics strong {
+          margin: 0;
+          color: #f4f5f6;
+          font-size: 18px;
+          line-height: 1;
+          letter-spacing: 0;
+          text-transform: none;
+        }
+        .globe-metrics span {
+          margin-top: 5px;
+          color: #6f767b;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9px;
+          letter-spacing: .16em;
+          line-height: 1.2;
+          text-transform: uppercase;
+        }
+        .x-panel {
+          display: grid;
+          gap: 12px;
+        }
+        .x-panel strong,
+        .x-panel span {
+          margin-top: 0;
+        }
         .rail-panel strong {
           display: block;
           margin-top: 12px;
@@ -3236,6 +3868,14 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         }
         .name-field input:focus {
           border-color: rgba(244,245,246,.54);
+        }
+        @keyframes globePulse {
+          0%, 100% { scale: .82; filter: saturate(.9); }
+          50% { scale: 1.08; filter: saturate(1.22); }
+        }
+        @keyframes globeGrid {
+          0% { transform: rotate(13deg) translateX(-5%); }
+          100% { transform: rotate(13deg) translateX(5%); }
         }
         .rail-price {
           display: flex;
@@ -3655,7 +4295,12 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           50% { translate: 8px -14px; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .symbol { animation: none; }
+          .symbol,
+          .globe-sphere::before,
+          .globe-grid.longitude,
+          .globe-region {
+            animation: none;
+          }
         }
         @media (max-width: 940px) {
           main {
@@ -3749,6 +4394,12 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           }
           .live-score-row strong {
             font-size: 22px;
+          }
+          .geo-globe-panel {
+            min-height: 330px;
+          }
+          .globe-shell {
+            width: min(232px, 100%);
           }
           .stats,
           .profile-stats,
