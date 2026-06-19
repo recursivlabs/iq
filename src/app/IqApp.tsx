@@ -4,7 +4,7 @@ import * as React from 'react';
 import { detectBrowserLocale, localeLabel, translate, type LocaleKey } from './i18n';
 
 type ModeKey = 'world' | 'agi' | 'daily';
-type ViewKey = 'test' | 'rankings' | 'about' | 'profile' | 'settings' | 'privacy' | 'terms';
+type ViewKey = 'test' | 'rankings' | 'about' | 'research' | 'agents' | 'blog' | 'profile' | 'settings' | 'privacy' | 'terms';
 type TileTone = 'ink' | 'blue' | 'green' | 'rose' | 'amber';
 
 type PatternTile = {
@@ -207,6 +207,8 @@ const PLAYER_CITY_STORAGE_KEY = 'world-iq-player-city';
 const PLAYER_COUNTRY_STORAGE_KEY = 'world-iq-player-country';
 const PROFILE_SYNC_STATE_STORAGE_KEY = 'world-iq-profile-sync-state';
 const LAUNCH_APP_DOCS_URL = 'https://docs.recursiv.io/guides/ai-tools/connect-claude-desktop';
+const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT || '';
+const ADSENSE_SLOT = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_SLOT || '';
 const EMPTY_GEOGRAPHY_BOARDS: SocialBoards['geography'] = { countries: [], cities: [], towns: [] };
 const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   profilePublic: true,
@@ -226,6 +228,9 @@ const VIEW_PATHS: Record<ViewKey, string> = {
   test: '/',
   rankings: '/rankings',
   about: '/about',
+  research: '/research',
+  agents: '/agents',
+  blog: '/blog',
   profile: '/profile',
   settings: '/settings',
   privacy: '/privacy',
@@ -943,6 +948,9 @@ function viewFromPath(pathname: string): ViewKey | null {
   if (pathname === '/' || pathname.startsWith('/g/')) return 'test';
   if (pathname === '/rankings') return 'rankings';
   if (pathname === '/about') return 'about';
+  if (pathname === '/research') return 'research';
+  if (pathname === '/agents') return 'agents';
+  if (pathname === '/blog' || pathname.startsWith('/blog/')) return 'blog';
   if (pathname === '/profile' || pathname.startsWith('/u/')) return 'profile';
   if (pathname === '/settings') return 'settings';
   if (pathname === '/privacy') return 'privacy';
@@ -1908,6 +1916,295 @@ const LEGAL_DOCS: Record<'privacy' | 'terms', { title: string; lede: string; sec
   },
 };
 
+type BlogArticle = {
+  slug: string;
+  title: string;
+  description: string;
+  keywords: string[];
+  regionIntent: string;
+  sections: Array<{ heading: string; body: string }>;
+};
+
+const RESEARCH_SOURCES = [
+  {
+    title: 'Raven-style matrices measure abstract and fluid reasoning.',
+    body: 'Raven Progressive Matrices are widely used as nonverbal abstract-reasoning tasks. IQ WARS borrows the visual-reasoning format, not the clinical scoring claims.',
+    url: 'https://en.wikipedia.org/wiki/Raven%27s_Progressive_Matrices',
+  },
+  {
+    title: 'Working-memory training has mixed evidence for broad IQ gains.',
+    body: 'Early n-back studies reported fluid-intelligence transfer, while later controlled studies and meta-analyses found weaker or less durable far-transfer effects.',
+    url: 'https://en.wikipedia.org/wiki/Working_memory_training',
+  },
+  {
+    title: 'Abstract visual reasoning is also an AI benchmark.',
+    body: 'Recent RPM-style research treats visual analogy tasks as a way to test whether models generalize rules or merely recognize familiar patterns.',
+    url: 'https://arxiv.org/abs/2201.12382',
+  },
+];
+
+const BLOG_ARTICLES: BlogArticle[] = [
+  {
+    slug: 'best-online-iq-test',
+    title: 'Best Online IQ Test: What Actually Makes an Internet IQ Test Useful?',
+    description: 'A practical guide to the features that make an online IQ test feel serious: matrix reasoning, timing, daily limits, leaderboards, and honest caveats.',
+    keywords: ['best online IQ test', 'internet IQ test', 'free IQ test', 'IQ WARS'],
+    regionIntent: 'Global search intent: best online IQ test, best IQ test online, internet IQ leaderboard.',
+    sections: [
+      { heading: 'The useful signal', body: 'The best internet IQ test is not the one that promises a clinical diagnosis in five minutes. It is the one that gives a repeatable reasoning challenge, minimizes lucky guessing, records time pressure, and lets performance mature over multiple days.' },
+      { heading: 'Why visual matrices work online', body: 'Abstract matrix puzzles reduce language bias and focus on pattern rules, transformations, symmetry, addition, subtraction, and relational reasoning. That makes them ideal for a global browser-based competition.' },
+      { heading: 'Why IQ WARS is different', body: 'IQ WARS uses one official daily run, live scoring, timing, friend rooms, geography rankings, and public profiles. It is built for repeat competition rather than one disposable score screenshot.' },
+    ],
+  },
+  {
+    slug: 'can-iq-puzzles-make-you-smarter',
+    title: 'Can IQ Puzzles Make You Smarter?',
+    description: 'The balanced research view: practice improves puzzle skill, near transfer is plausible, broad durable IQ gains are more controversial.',
+    keywords: ['can IQ puzzles make you smarter', 'brain training research', 'fluid intelligence training'],
+    regionIntent: 'Answers the high-volume global question without overclaiming medical or clinical outcomes.',
+    sections: [
+      { heading: 'What improves fastest', body: 'People usually improve at recognizing the rules they practice: rotation, count, contrast, missing elements, and multi-rule transformations. That is real skill acquisition, even when it is not the same as permanently increasing general intelligence.' },
+      { heading: 'What research says', body: 'Working-memory and brain-training studies show reliable task practice effects, mixed near-transfer effects, and disputed far-transfer effects to broad intelligence measures. IQ WARS treats daily scores as competitive reasoning signals, not clinical proof of innate ability.' },
+      { heading: 'Best use', body: 'Use IQ puzzles like chess tactics or mental math: short, consistent, challenging reps. The goal is better reasoning hygiene and competitive feedback, not a guaranteed IQ-point claim.' },
+    ],
+  },
+  {
+    slug: 'raven-matrices-and-fluid-intelligence',
+    title: 'Raven Matrices, Fluid Intelligence, and Why Visual IQ Puzzles Went Viral',
+    description: 'Why matrix reasoning became the internet-native format for comparing abstract problem solving across countries and languages.',
+    keywords: ['Raven matrices', 'fluid intelligence', 'matrix reasoning test'],
+    regionIntent: 'Targets academic and search traffic around Raven-style tests and fluid reasoning.',
+    sections: [
+      { heading: 'The format', body: 'A matrix puzzle asks you to infer the missing cell from visual rules. The rules can be spatial, numerical, symbolic, or compositional. The best items require more than one rule at once.' },
+      { heading: 'Why it travels', body: 'Matrix reasoning uses shapes instead of vocabulary, so it works better across languages than trivia or word analogy games. That makes it a strong format for a global daily leaderboard.' },
+      { heading: 'What IQ WARS changes', body: 'IQ WARS adds daily cadence, timing, friend competition, and geography rankings. The product is not a licensed Raven test; it is a modern competitive reasoning layer inspired by the same abstract-reasoning tradition.' },
+    ],
+  },
+  {
+    slug: 'hardest-iq-test-online',
+    title: 'The Hardest IQ Test Online Should Still Be Fair',
+    description: 'A hard IQ test should ramp cleanly, punish guessing less, and explain what it measures without pretending to be a supervised assessment.',
+    keywords: ['hardest IQ test online', 'hard IQ questions', 'difficult reasoning puzzles'],
+    regionIntent: 'Captures viral hard-test queries while positioning IQ WARS as challenging but usable.',
+    sections: [
+      { heading: 'Hard is not random', body: 'A strong hard puzzle is compressible: once you see the rule, the answer feels inevitable. A weak hard puzzle just feels arbitrary.' },
+      { heading: 'Ramp matters', body: 'The first question should calibrate rather than humiliate. Difficulty should then rise quickly, so high performers separate while new players still understand the game.' },
+      { heading: 'Timing matters', body: 'Two people can solve the same pattern, but the faster solver may show stronger fluency. IQ WARS uses timing as part of the competitive score rather than a hidden afterthought.' },
+    ],
+  },
+  {
+    slug: 'iq-leaderboard-countries-cities',
+    title: 'Which Country Has the Highest IQ? A Better Internet Leaderboard Question',
+    description: 'Why daily reasoning leaderboards should compare active scores by countries, cities, towns, and friend groups without pretending to measure populations clinically.',
+    keywords: ['highest IQ country', 'smartest country leaderboard', 'city IQ rankings'],
+    regionIntent: 'Geo-optimized for country/city/town intelligence ranking searches.',
+    sections: [
+      { heading: 'The viral question', body: 'People love asking which country, city, school, office, or group chat is smartest. The responsible version compares active daily players, not entire populations.' },
+      { heading: 'Why daily beats static lists', body: 'Static IQ-by-country lists are often stale, controversial, and methodologically messy. A daily game leaderboard can be transparent: who played, when, how they scored, and how many players contributed.' },
+      { heading: 'Friend groups are the atomic unit', body: 'The most meaningful geography is often local: your town, office, school, or chat. IQ WARS makes the global map visible, but friend rooms create the daily habit.' },
+    ],
+  },
+  {
+    slug: 'ai-vs-human-iq-test',
+    title: 'AI vs Human IQ Tests: Why Matrix Puzzles Are Still Interesting',
+    description: 'Modern models can solve many pattern problems, but rule generalization, omitted-rule tests, and timing still make abstract reasoning useful.',
+    keywords: ['AI IQ test', 'AI vs human intelligence', 'AGI reasoning benchmark'],
+    regionIntent: 'Positions IQ WARS for AGI, agent benchmark, and AI reasoning search.',
+    sections: [
+      { heading: 'Models are strong', body: 'Frontier models are increasingly good at common visual and symbolic patterns. That makes easy IQ-style content less useful as an AI benchmark.' },
+      { heading: 'The next benchmark', body: 'The interesting question is not whether a model saw a familiar puzzle type. It is whether an agent generalizes under novel rules, time pressure, and changing item families.' },
+      { heading: 'Agent-ready IQ WARS', body: 'IQ WARS can track agents beside humans with disclosed labels, separate leaderboards, attempt logs, timing, and rule-family performance. That creates a public reasoning arena rather than a hidden model demo.' },
+    ],
+  },
+  {
+    slug: 'daily-iq-test-habit',
+    title: 'The Daily IQ Test Habit: Why One Attempt Per Day Works',
+    description: 'Daily limits make scores harder to spam, easier to share, and more meaningful as a rolling profile.',
+    keywords: ['daily IQ test', 'one IQ test per day', 'daily brain puzzle'],
+    regionIntent: 'Targets daily puzzle, Wordle-like, and streak-based intelligence searches.',
+    sections: [
+      { heading: 'Scarcity improves signal', body: 'If everyone gets unlimited official attempts, rankings become a retake contest. One official daily run makes the first result matter.' },
+      { heading: 'Scores develop over time', body: 'A single online score is noisy. A rolling profile across days can show consistency, volatility, improvement, and confidence.' },
+      { heading: 'Friend groups return', body: 'Daily cadence creates a shared appointment. People come back because their group chat, city, or country has a new board every day.' },
+    ],
+  },
+  {
+    slug: 'how-to-score-higher-on-iq-puzzles',
+    title: 'How to Score Higher on IQ Puzzles Without Cheating',
+    description: 'Train rule detection, reduce impulsive guesses, manage time, and learn the common families of abstract reasoning.',
+    keywords: ['how to score higher on IQ test', 'IQ puzzle tips', 'matrix reasoning tips'],
+    regionIntent: 'Useful search-oriented guide for players who want practical improvement.',
+    sections: [
+      { heading: 'Name the rule', body: 'Before selecting an answer, state the rule in your head: count increases, shape rotates, color alternates, diagonals combine, or two attributes change independently.' },
+      { heading: 'Check rows and columns', body: 'Good matrix puzzles usually work both horizontally and vertically. If your answer only fits one direction, keep checking.' },
+      { heading: 'Use the clock wisely', body: 'Fast wrong answers hurt. Spend a few seconds verifying the rule, then commit decisively once the pattern becomes stable.' },
+    ],
+  },
+  {
+    slug: 'internet-iq-test-privacy',
+    title: 'Internet IQ Test Privacy: What a Serious Score App Should Not Require',
+    description: 'A privacy-first IQ competition should not require demographics to play and should let users control public fields.',
+    keywords: ['IQ test privacy', 'anonymous IQ test', 'public IQ profile'],
+    regionIntent: 'Supports trust and compliance search around online IQ tests.',
+    sections: [
+      { heading: 'Play first', body: 'A reasoning game should not block play behind demographic forms. Optional profile fields can improve rankings, but they should not be required.' },
+      { heading: 'Control public identity', body: 'Public profiles should let users choose username, location visibility, X badge visibility, and score history visibility.' },
+      { heading: 'Aggregate carefully', body: 'Country and city boards are more useful when they show sample sizes and active players. They should be read as game rankings, not scientific claims about populations.' },
+    ],
+  },
+  {
+    slug: 'best-iq-test-for-friend-groups',
+    title: 'The Best IQ Test for Friend Groups Is a Daily Competition',
+    description: 'Why friend rooms, one-tap invite links, and daily local leaderboards make IQ tests more viral than solo score pages.',
+    keywords: ['IQ test with friends', 'friend IQ leaderboard', 'group IQ test'],
+    regionIntent: 'Targets social and viral IQ-test search queries.',
+    sections: [
+      { heading: 'The group chat loop', body: 'A solo score is a screenshot. A friend-room score is a challenge. The fastest viral loop is one tap: create link, paste into chat, compare today.' },
+      { heading: 'Local pressure', body: 'People care about beating friends more than strangers. The global board gives status, but the friend board creates daily pressure.' },
+      { heading: 'Why one daily run matters', body: 'If everyone in a room has one official attempt, excuses get harder and results become easier to trust.' },
+    ],
+  },
+];
+
+function activeBlogSlugFromPath(fallback = '') {
+  if (fallback) return fallback;
+  if (typeof window === 'undefined') return '';
+  const match = window.location.pathname.match(/^\/blog\/([^/]+)/);
+  return match?.[1] || '';
+}
+
+function AdSenseSlot({ label = 'Advertisement' }: { label?: string }) {
+  React.useEffect(() => {
+    if (!ADSENSE_CLIENT || !ADSENSE_SLOT || typeof window === 'undefined') return;
+    try {
+      const adsWindow = window as Window & { adsbygoogle?: unknown[] };
+      adsWindow.adsbygoogle = adsWindow.adsbygoogle || [];
+      adsWindow.adsbygoogle.push({});
+    } catch {
+      // Ads must never block the daily test.
+    }
+  }, []);
+
+  return (
+    <aside className="ad-slot" aria-label={label}>
+      <span>{label}</span>
+      {ADSENSE_CLIENT && ADSENSE_SLOT ? (
+        <ins
+          className="adsbygoogle"
+          style={{ display: 'block' }}
+          data-ad-client={ADSENSE_CLIENT}
+          data-ad-slot={ADSENSE_SLOT}
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+        />
+      ) : (
+        <strong>IQ WARS supports free daily play with sponsorship and ads.</strong>
+      )}
+    </aside>
+  );
+}
+
+function ResearchView() {
+  return (
+    <section className="features research-page">
+      <div className="section-head">
+        <div>
+          <p className="kicker">Research</p>
+          <h2>Daily abstract reasoning practice, measured honestly.</h2>
+          <p>IQ WARS is built around matrix-style visual reasoning because it is language-light, globally playable, and closely related to fluid-reasoning tasks. The research case is promising for practice and skill acquisition, but we do not claim a browser game clinically raises IQ.</p>
+        </div>
+      </div>
+      <div className="feature-grid">
+        {RESEARCH_SOURCES.map((source) => (
+          <article key={source.title}>
+            <strong>{source.title}</strong>
+            <p>{source.body}</p>
+            <a href={source.url} target="_blank" rel="noreferrer">Read source</a>
+          </article>
+        ))}
+      </div>
+      <div className="monetization">
+        <div><strong>What daily play can improve</strong><p>Pattern fluency, rule search, visual checking, attention under time pressure, and familiarity with common abstract-reasoning transformations.</p></div>
+        <div><strong>What remains unproven</strong><p>Broad, durable increases in general intelligence from generic brain games are disputed. IQ WARS reports game performance and rolling competitive signals.</p></div>
+      </div>
+      <AdSenseSlot />
+    </section>
+  );
+}
+
+function AgentsView() {
+  return (
+    <section className="features agents-page">
+      <div className="section-head">
+        <div>
+          <p className="kicker">Agent-ready</p>
+          <h2>A public reasoning arena for humans and AI agents.</h2>
+          <p>IQ WARS should measure disclosed agents beside humans without hiding automation. Agent entries can be labeled, timed, scored by rule family, and compared against human baselines.</p>
+        </div>
+      </div>
+      <div className="feature-grid">
+        <article><strong>Agent identity</strong><p>Agent profiles should show model/provider, owner, tool permissions, run mode, and whether the attempt used vision, code, search, or external tools.</p></article>
+        <article><strong>Performance telemetry</strong><p>Track accuracy, solve time, puzzle family, calibration drift, retry policy, and daily variance. Separate official runs from practice or evaluation runs.</p></article>
+        <article><strong>Fair leaderboards</strong><p>Humans, verified agents, and seeded test agents should be filterable. Agent scores can pressure-test AGI claims without polluting human friend-room competition.</p></article>
+      </div>
+      <div className="monetization">
+        <div><strong>Revenue model</strong><p>Free daily play is ad-supported. Paid players unlock archive access, reports, extra practice, and private rooms. Agent operators can later pay for benchmark runs, API access, and branded evaluation reports.</p></div>
+        <button className="secondary" onClick={() => { if (typeof window !== 'undefined') window.location.href = LAUNCH_APP_DOCS_URL; }}>Launch an agent app</button>
+      </div>
+      <AdSenseSlot label="Sponsor slot" />
+    </section>
+  );
+}
+
+function BlogIndex({ onArticle }: { onArticle: (slug: string) => void }) {
+  return (
+    <section className="features blog-page">
+      <div className="section-head">
+        <div>
+          <p className="kicker">IQ WARS Library</p>
+          <h2>Viral IQ research, rankings, and internet test strategy.</h2>
+          <p>Search-optimized explainers for players, friend groups, cities, countries, and AI-agent benchmarkers.</p>
+        </div>
+      </div>
+      <div className="article-grid">
+        {BLOG_ARTICLES.map((article) => (
+          <article key={article.slug} className="article-card">
+            <span>{article.keywords[0]}</span>
+            <h3>{article.title}</h3>
+            <p>{article.description}</p>
+            <button className="secondary" onClick={() => onArticle(article.slug)}>Read</button>
+          </article>
+        ))}
+      </div>
+      <AdSenseSlot />
+    </section>
+  );
+}
+
+function BlogArticleView({ article, onBack }: { article: BlogArticle; onBack: () => void }) {
+  return (
+    <section className="legal-page article-page">
+      <p className="kicker">IQ WARS Research Blog</p>
+      <h2>{article.title}</h2>
+      <p>{article.description}</p>
+      <div className="seo-row">
+        {article.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
+      </div>
+      <p className="trust-note">{article.regionIntent}</p>
+      <div className="legal-sections">
+        {article.sections.map((section) => (
+          <article key={section.heading}>
+            <strong>{section.heading}</strong>
+            <p>{section.body}</p>
+          </article>
+        ))}
+      </div>
+      <AdSenseSlot />
+      <button className="secondary" onClick={onBack}>Back to blog</button>
+    </section>
+  );
+}
+
 function LegalView({ type }: { type: 'privacy' | 'terms' }) {
   const doc = LEGAL_DOCS[type];
   return (
@@ -1937,6 +2234,9 @@ function SiteFooter({ locale, onView }: { locale: LocaleKey; onView: (view: View
       </div>
       <div className="footer-links">
         <button onClick={() => onView('about')}>{copy('About')}</button>
+        <button onClick={() => onView('research')}>{copy('Research')}</button>
+        <button onClick={() => onView('agents')}>{copy('Agents')}</button>
+        <button onClick={() => onView('blog')}>{copy('Blog')}</button>
         <button onClick={() => onView('privacy')}>{copy('Privacy')}</button>
         <button onClick={() => onView('terms')}>{copy('Terms')}</button>
         <a href={LAUNCH_APP_DOCS_URL} target="_blank" rel="noreferrer">{copy('Launch an app')}</a>
@@ -2418,13 +2718,16 @@ export default function Home({
   initialGroupCode = '',
   initialView = 'test',
   initialProfileSlug = '',
+  initialBlogSlug = '',
 }: {
   initialGroupCode?: string;
   initialView?: ViewKey;
   initialProfileSlug?: string;
+  initialBlogSlug?: string;
 }) {
   const [mode, setMode] = React.useState<ModeKey>('world');
   const [view, setView] = React.useState<ViewKey>(initialView);
+  const [activeBlogSlug, setActiveBlogSlug] = React.useState(() => activeBlogSlugFromPath(initialBlogSlug));
   const [locale, setLocale] = React.useState<LocaleKey>('en');
   const playInteractionSound = useInteractionSoundLayer();
   const startRequest = 0;
@@ -2513,10 +2816,17 @@ export default function Home({
   }, [initialView]);
 
   React.useEffect(() => {
+    setActiveBlogSlug(activeBlogSlugFromPath(initialBlogSlug));
+  }, [initialBlogSlug]);
+
+  React.useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const onPop = () => {
       const nextView = viewFromPath(window.location.pathname);
-      if (nextView) setView(nextView);
+      if (nextView) {
+        setView(nextView);
+        setActiveBlogSlug(nextView === 'blog' ? activeBlogSlugFromPath('') : '');
+      }
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -2699,10 +3009,19 @@ export default function Home({
 
   function navigateView(nextView: ViewKey) {
     setView(nextView);
+    setActiveBlogSlug('');
     if (typeof window === 'undefined') return;
     const path = VIEW_PATHS[nextView];
     if (path && window.location.pathname !== path) {
       window.history.pushState({}, '', path);
+    }
+  }
+
+  function openBlogArticle(slug: string) {
+    setActiveBlogSlug(slug);
+    setView('blog');
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', `/blog/${slug}`);
     }
   }
 
@@ -3183,6 +3502,7 @@ export default function Home({
   }, [settings.showAgentActivity, socialBoards]);
   const localProfile = localPublicProfile();
   const localProfilePath = `/u/${localProfile.slug}`;
+  const activeArticle = BLOG_ARTICLES.find((article) => article.slug === activeBlogSlug) || null;
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -3349,6 +3669,18 @@ export default function Home({
           </div>
           <p className="trust-note">{copy('IQ WARS is not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
         </section>
+      ) : null}
+
+      {view === 'research' ? <ResearchView /> : null}
+
+      {view === 'agents' ? <AgentsView /> : null}
+
+      {view === 'blog' && activeArticle ? (
+        <BlogArticleView article={activeArticle} onBack={() => navigateView('blog')} />
+      ) : null}
+
+      {view === 'blog' && !activeArticle ? (
+        <BlogIndex onArticle={openBlogArticle} />
       ) : null}
 
       {view === 'privacy' ? <LegalView type="privacy" /> : null}
@@ -3981,9 +4313,9 @@ export default function Home({
           grid-template-columns: minmax(360px, 600px) minmax(248px, 320px);
           justify-content: space-between;
           align-items: start;
-          gap: clamp(20px, 3vw, 40px);
+          gap: clamp(16px, 2.4vw, 32px);
           min-height: 0;
-          margin-top: clamp(28px, 5vh, 56px);
+          margin-top: clamp(8px, 1.8vh, 18px);
           padding: 0;
         }
         .test-surface .runner-panel,
@@ -4004,7 +4336,7 @@ export default function Home({
         .test-surface .runner-panel,
         .runner-panel {
           width: 100%;
-          padding: clamp(20px, 3vw, 32px);
+          padding: clamp(14px, 1.8vw, 20px);
           overflow: hidden;
         }
         .runner-panel.gate,
@@ -4055,7 +4387,7 @@ export default function Home({
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 1px;
-          margin-top: 16px;
+          margin-top: 8px;
           border: 1px solid rgba(255,255,255,.08);
           border-radius: 8px;
           overflow: hidden;
@@ -4063,7 +4395,7 @@ export default function Home({
         }
         .live-score-row div {
           min-width: 0;
-          padding: 12px;
+          padding: 7px 8px;
           background: rgba(9,10,11,.72);
         }
         .live-score-row span {
@@ -4079,17 +4411,17 @@ export default function Home({
         }
         .live-score-row strong {
           display: block;
-          margin-top: 5px;
+          margin-top: 3px;
           color: #f4f5f6;
           font-family: "Space Grotesk", system-ui, sans-serif;
-          font-size: 26px;
+          font-size: 23px;
           font-weight: 500;
           letter-spacing: -.015em;
           line-height: 1;
         }
         .track {
           height: 1px;
-          margin-top: 14px;
+          margin-top: 8px;
           background: rgba(255,255,255,.08);
           box-shadow: none;
         }
@@ -4098,7 +4430,7 @@ export default function Home({
           border-radius: 0;
         }
         .question-head {
-          margin-top: 24px;
+          margin-top: 10px;
           align-items: flex-end;
         }
         .question-head h2,
@@ -4108,7 +4440,7 @@ export default function Home({
         .gate h2,
         .modal h2 {
           color: #f4f5f6;
-          font-size: clamp(22px, 3.4vw, 30px);
+          font-size: clamp(20px, 3vw, 27px);
           font-weight: 500;
           line-height: 1.05;
           letter-spacing: -.015em;
@@ -4126,14 +4458,14 @@ export default function Home({
           line-height: 1.6;
         }
         .prompt {
-          margin-top: 10px;
+          margin-top: 5px;
           font-weight: 400;
         }
         .matrix {
-          max-width: 360px;
-          margin: 24px 0 0;
-          gap: 9px;
-          padding: 16px;
+          max-width: min(306px, 100%);
+          margin: 10px 0 0;
+          gap: 6px;
+          padding: 8px;
           border: 1px solid rgba(255,255,255,.08);
           border-radius: 6px;
           background: rgba(255,255,255,.02);
@@ -4171,7 +4503,7 @@ export default function Home({
         }
         .tile .bars span {
           width: 3px;
-          height: 40px;
+          height: 34px;
           border-radius: 999px;
           opacity: .95;
           box-shadow: none;
@@ -4188,14 +4520,14 @@ export default function Home({
           display: grid;
           grid-template-columns: repeat(6, minmax(0, 1fr));
           justify-content: flex-start;
-          gap: clamp(10px, 1.4vw, 14px);
-          margin-top: 26px;
+          gap: clamp(7px, 1vw, 10px);
+          margin-top: 9px;
         }
         .option {
           width: 100%;
           min-width: 0;
           padding: 0;
-          gap: 9px;
+          gap: 5px;
           border: 0;
           border-radius: 0;
           color: #5c6166;
@@ -4214,18 +4546,21 @@ export default function Home({
           background: transparent;
         }
         .answer-footer {
-          margin-top: 28px;
-          padding-top: 20px;
+          margin-top: 10px;
+          padding-top: 10px;
           border-top: 1px solid rgba(255,255,255,.08);
           align-items: center;
         }
         .answer-footer p {
           color: #5c6166;
-          font-size: 10.5px;
+          font-size: 9.5px;
           font-weight: 500;
           letter-spacing: .12em;
           line-height: 1.5;
           text-transform: uppercase;
+        }
+        .answer-footer .primary {
+          min-height: 42px;
         }
         .primary,
         .secondary {
@@ -4826,6 +5161,72 @@ export default function Home({
           color: #969ba0;
           line-height: 1.6;
         }
+        .article-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1px;
+          margin-top: 22px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .article-card {
+          min-width: 0;
+          padding: 22px;
+          background: #0e1012;
+          display: grid;
+          gap: 12px;
+        }
+        .article-card span,
+        .seo-row span,
+        .ad-slot span {
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9px;
+          font-weight: 500;
+          letter-spacing: .16em;
+          text-transform: uppercase;
+        }
+        .article-card h3 {
+          color: #f4f5f6;
+          margin: 0;
+          font-size: 22px;
+          line-height: 1.08;
+          font-weight: 500;
+          letter-spacing: -.01em;
+        }
+        .article-card p,
+        .research-page a,
+        .article-page .trust-note {
+          color: #969ba0;
+        }
+        .seo-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 16px;
+        }
+        .seo-row span {
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 999px;
+          padding: 7px 10px;
+        }
+        .ad-slot {
+          margin-top: 22px;
+          min-height: 96px;
+          border: 1px dashed rgba(255,255,255,.18);
+          border-radius: 8px;
+          background: linear-gradient(135deg, rgba(255,255,255,.035), rgba(255,255,255,.01));
+          display: grid;
+          align-content: center;
+          gap: 8px;
+          padding: 18px;
+        }
+        .ad-slot strong {
+          color: #c9cdd0;
+          font-weight: 500;
+        }
         .modal-backdrop {
           background: rgba(6,7,8,.74);
           z-index: 50;
@@ -5302,33 +5703,53 @@ export default function Home({
         @media (max-width: 620px) {
           main {
             width: 100%;
-            min-height: 100vh;
+            min-height: 100svh;
             margin: 0;
-            padding: 18px 14px 46px;
+            padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
             border-radius: 0;
           }
           nav {
+            display: grid;
+            grid-template-columns: 1fr;
             padding-top: 0;
-            gap: 14px;
+            padding-bottom: 7px;
+            gap: 6px;
           }
           nav > div:last-child {
             width: 100%;
-            justify-content: space-between;
+            justify-content: flex-start;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
             gap: 8px;
           }
+          nav > div:last-child::-webkit-scrollbar {
+            display: none;
+          }
+          .language-pill,
+          nav button {
+            flex: 0 0 auto;
+            white-space: nowrap;
+          }
           nav strong {
-            font-size: 18px;
+            font-size: 16px;
           }
           nav button {
-            font-size: 10px;
-            min-height: 30px;
+            font-size: 9.5px;
+            min-height: 28px;
+            padding: 6px 7px;
           }
           nav .nav-cta {
-            padding: 8px 10px;
-            min-height: 36px;
+            padding: 7px 9px;
+            min-height: 32px;
+          }
+          .activity-ticker {
+            margin-top: 6px;
+            height: 26px;
+            min-height: 26px;
           }
           .test-surface {
-            margin-top: 28px;
+            margin-top: 6px;
             padding: 0;
           }
           .test-surface .runner-panel,
@@ -5337,7 +5758,32 @@ export default function Home({
           .leaderboard,
           .features,
           .profile-panel {
-            padding: 20px;
+            padding: 12px;
+          }
+          .test-surface .runner-panel {
+            height: min(630px, calc(100svh - 132px));
+            min-height: 0;
+            max-height: min(630px, calc(100svh - 132px));
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+          }
+          .progress-row {
+            gap: 6px;
+          }
+          .progress-row .kicker {
+            font-size: 9px;
+            letter-spacing: .16em;
+          }
+          .progress-row span {
+            font-size: 8.5px;
+            letter-spacing: .08em;
+          }
+          .live-score-row {
+            margin-top: 6px;
+          }
+          .track {
+            margin-top: 6px;
           }
           .progress-row,
           .question-head,
@@ -5345,35 +5791,127 @@ export default function Home({
           .result-top {
             align-items: flex-start;
           }
+          .question-head {
+            margin-top: 7px;
+            gap: 8px;
+          }
           .question-head h2 {
-            font-size: 28px;
+            font-size: 21px;
+            line-height: 1;
+          }
+          .question-head span {
+            font-size: 8.5px;
+            letter-spacing: .12em;
+          }
+          .prompt {
+            margin-top: 4px;
+            font-size: 10.5px;
+            line-height: 1.25;
           }
           .matrix {
-            max-width: 100%;
-            padding: 12px;
-            gap: 8px;
+            width: clamp(176px, 31svh, 244px);
+            max-width: 82%;
+            margin: 6px auto 0;
+            padding: 6px;
+            gap: 4px;
+            flex: 0 0 auto;
+          }
+          .missing {
+            font-size: 22px;
+          }
+          .tile .bars span {
+            height: 22px;
+          }
+          .ring {
+            border-width: 1px;
+          }
+          .dots span {
+            width: 4px;
           }
           .options {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 5px;
+            margin-top: 6px;
+            flex: 0 0 auto;
           }
           .option,
           .option .tile {
             width: 100%;
           }
+          .option {
+            font-size: 8px;
+            letter-spacing: .08em;
+            gap: 3px;
+          }
+          .option .tile {
+            max-width: 48px;
+            justify-self: center;
+          }
+          .answer-footer {
+            position: sticky;
+            bottom: env(safe-area-inset-bottom);
+            z-index: 5;
+            margin-top: auto;
+            padding-top: 7px;
+            align-items: stretch;
+            background: linear-gradient(180deg, rgba(13,14,16,0), rgba(13,14,16,.96) 18%);
+          }
+          .answer-footer p {
+            display: none;
+          }
           .answer-footer .primary {
             width: 100%;
+            min-height: 40px;
           }
           .live-score-row div {
-            padding: 9px;
+            padding: 5px 6px;
           }
           .live-score-row span {
-            font-size: 8px;
-            letter-spacing: .1em;
+            font-size: 7px;
+            letter-spacing: .06em;
           }
           .live-score-row strong {
-            font-size: 22px;
+            font-size: 17px;
+          }
+          @media (max-height: 740px) {
+            .test-surface .runner-panel {
+              height: calc(100svh - 126px);
+              max-height: calc(100svh - 126px);
+            }
+            .progress-row .kicker,
+            .progress-row span {
+              font-size: 7.5px;
+            }
+            .live-score-row div {
+              padding: 4px 5px;
+            }
+            .live-score-row strong {
+              font-size: 15px;
+            }
+            .question-head {
+              margin-top: 5px;
+            }
+            .question-head h2 {
+              font-size: 18px;
+            }
+            .prompt {
+              max-height: 26px;
+              overflow: hidden;
+            }
+            .matrix {
+              width: clamp(156px, 28svh, 198px);
+              padding: 5px;
+            }
+            .option .tile {
+              max-width: 38px;
+            }
+            .option {
+              font-size: 7.5px;
+            }
+            .answer-footer .primary {
+              min-height: 38px;
+            }
           }
           .geo-globe-panel {
             min-height: 330px;
@@ -5399,6 +5937,7 @@ export default function Home({
           }
           .ranking-globe-stats,
           .profile-score-grid,
+          .article-grid,
           .settings-grid.two {
             grid-template-columns: 1fr;
           }

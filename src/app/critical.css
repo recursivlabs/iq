@@ -27,9 +27,9 @@ input {
 
 main {
   width: 100%;
-  min-height: 100vh;
+  min-height: 100svh;
   margin: 0;
-  padding: clamp(16px, 3vw, 30px) clamp(16px, 4vw, 40px) 72px;
+  padding: clamp(14px, 2.4vw, 26px) clamp(14px, 3.4vw, 36px) 56px;
   position: relative;
   overflow: hidden;
   background: radial-gradient(130% 90% at 50% -12%, #16181b 0%, #0b0c0e 44%, #060708 100%);
@@ -171,8 +171,8 @@ nav .nav-cta,
   grid-template-columns: minmax(360px, 600px) minmax(248px, 320px);
   justify-content: space-between;
   align-items: start;
-  gap: clamp(20px, 3vw, 40px);
-  margin-top: clamp(28px, 5vh, 56px);
+  gap: clamp(16px, 2.4vw, 32px);
+  margin-top: clamp(8px, 1.8vh, 18px);
   padding: 0;
 }
 
@@ -192,7 +192,7 @@ nav .nav-cta,
 .test-surface .runner-panel,
 .runner-panel {
   width: 100%;
-  padding: clamp(20px, 3vw, 32px);
+  padding: clamp(14px, 1.8vw, 20px);
   overflow: hidden;
 }
 
@@ -253,8 +253,57 @@ nav .nav-cta,
 }
 
 .prompt {
-  margin-top: 10px;
+  margin-top: 5px;
   font-weight: 400;
+}
+
+.live-score-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .08);
+}
+
+.live-score-row div {
+  min-width: 0;
+  padding: 7px 8px;
+  background: rgba(9, 10, 11, .72);
+}
+
+.live-score-row span {
+  display: block;
+  color: #5c6166;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.live-score-row strong {
+  display: block;
+  margin-top: 3px;
+  color: #f4f5f6;
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+  line-height: 1;
+}
+
+.track {
+  height: 1px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, .08);
+}
+
+.question-head {
+  margin-top: 10px;
 }
 
 .rail-panel strong {
@@ -359,12 +408,12 @@ nav .nav-cta,
 }
 
 .matrix {
-  max-width: 360px;
-  margin: 24px 0 0;
+  max-width: min(306px, 100%);
+  margin: 10px 0 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 9px;
-  padding: 16px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid rgba(255, 255, 255, .08);
   border-radius: 6px;
   background: rgba(255, 255, 255, .02);
@@ -383,8 +432,8 @@ nav .nav-cta,
 .options {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: clamp(10px, 1.4vw, 14px);
-  margin-top: 26px;
+  gap: clamp(7px, 1vw, 10px);
+  margin-top: 9px;
 }
 
 .option {
@@ -398,6 +447,26 @@ nav .nav-cta,
   font-size: 11px;
   font-weight: 500;
   letter-spacing: .16em;
+}
+
+.answer-footer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  align-items: center;
+}
+
+.answer-footer p {
+  color: #5c6166;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: .12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.answer-footer .primary {
+  min-height: 42px;
 }
 
 .modal-backdrop {
@@ -453,13 +522,33 @@ nav .nav-cta,
 
 @media (max-width: 620px) {
   main {
-    padding: 18px 14px 46px;
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  nav {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding-bottom: 7px;
+    gap: 6px;
   }
 
   nav > div:last-child {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
     gap: 8px;
+  }
+
+  nav > div:last-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  .language-pill,
+  nav button {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .test-surface .runner-panel,
@@ -468,10 +557,154 @@ nav .nav-cta,
   .leaderboard,
   .features,
   .profile-panel {
-    padding: 20px;
+    padding: 12px;
+  }
+
+  .test-surface {
+    margin-top: 6px;
+  }
+
+  .test-surface .runner-panel {
+    height: min(630px, calc(100svh - 132px));
+    min-height: 0;
+    max-height: min(630px, calc(100svh - 132px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .live-score-row {
+    margin-top: 6px;
+  }
+
+  .live-score-row div {
+    padding: 5px 6px;
+  }
+
+  .live-score-row span {
+    font-size: 7px;
+    letter-spacing: .06em;
+  }
+
+  .live-score-row strong {
+    font-size: 17px;
+  }
+
+  .track {
+    margin-top: 6px;
+  }
+
+  .question-head {
+    margin-top: 7px;
+    gap: 8px;
+  }
+
+  .question-head h2 {
+    font-size: 21px;
+  }
+
+  .question-head span {
+    font-size: 8.5px;
+    letter-spacing: .12em;
+  }
+
+  .prompt {
+    margin-top: 4px;
+    font-size: 10.5px;
+    line-height: 1.25;
+  }
+
+  .matrix {
+    width: clamp(176px, 31svh, 244px);
+    max-width: 82%;
+    margin: 6px auto 0;
+    padding: 6px;
+    gap: 4px;
   }
 
   .options {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 6px;
+  }
+
+  .option {
+    font-size: 8px;
+    letter-spacing: .08em;
+    gap: 3px;
+  }
+
+  .option .tile {
+    max-width: 48px;
+    justify-self: center;
+  }
+
+  .answer-footer {
+    position: sticky;
+    bottom: env(safe-area-inset-bottom);
+    z-index: 5;
+    margin-top: auto;
+    padding-top: 7px;
+    align-items: stretch;
+    background: linear-gradient(180deg, rgba(13, 14, 16, 0), rgba(13, 14, 16, .96) 18%);
+  }
+
+  .answer-footer p {
+    display: none;
+  }
+
+  .answer-footer .primary {
+    width: 100%;
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 620px) and (max-height: 740px) {
+  .test-surface .runner-panel {
+    height: calc(100svh - 126px);
+    max-height: calc(100svh - 126px);
+  }
+
+  .progress-row .kicker,
+  .progress-row span {
+    font-size: 7.5px;
+  }
+
+  .live-score-row div {
+    padding: 4px 5px;
+  }
+
+  .live-score-row strong {
+    font-size: 15px;
+  }
+
+  .question-head {
+    margin-top: 5px;
+  }
+
+  .question-head h2 {
+    font-size: 18px;
+  }
+
+  .prompt {
+    max-height: 26px;
+    overflow: hidden;
+  }
+
+  .matrix {
+    width: clamp(156px, 28svh, 198px);
+    padding: 5px;
+  }
+
+  .option .tile {
+    max-width: 38px;
+  }
+
+  .option {
+    font-size: 7.5px;
+  }
+
+  .answer-footer .primary {
+    min-height: 38px;
   }
 }
