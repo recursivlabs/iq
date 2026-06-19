@@ -187,8 +187,6 @@ type SoundKind = 'tap' | 'select' | 'commit' | 'copy' | 'success' | 'error';
 
 const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
-const RECURSIV_AUTH_URL = 'https://recursiv.io/auth';
-const RECURSIV_GOOGLE_SIGNUP_URL = RECURSIV_AUTH_URL;
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
@@ -3386,15 +3384,9 @@ export default function Home({
                       if (authState === 'error') setAuthState('idle');
                     }} maxLength={120} placeholder="you@email.com" inputMode="email" />
                   </label>
-                  <div className="auth-row">
-                    <button className="secondary full" disabled={authState === 'sending'} onClick={sendRecursivAuthCode}>
-                      {copy(authState === 'sending' ? 'Sending code' : authState === 'sent' ? 'Send again' : 'Email me a code')}
-                    </button>
-                    <a className="secondary full center-link google-auth" href={RECURSIV_GOOGLE_SIGNUP_URL}>
-                      <span className="google-mark" aria-hidden="true">G</span>
-                      {copy('Google via Recursiv')}
-                    </a>
-                  </div>
+                  <button className="secondary full" disabled={authState === 'sending'} onClick={sendRecursivAuthCode}>
+                    {copy(authState === 'sending' ? 'Sending code' : authState === 'sent' ? 'Send again' : 'Email me a code')}
+                  </button>
                   <label className="name-field">
                     <span>{copy('Verification code')}</span>
                     <input value={authCode} onChange={(event) => {
@@ -3826,8 +3818,6 @@ export default function Home({
         .auth-options { display: grid; gap: 8px; }
         .auth-card { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,250,.22); padding: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,.36); }
         .auth-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .google-auth { gap: 10px; border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.035); }
-        .google-mark { width: 18px; height: 18px; display: inline-grid; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: #f4f5f6; font-family: "Space Grotesk", system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0; }
         .fine-print.error { color: #6f2727; }
         .fine-print.success { color: #244f37; }
         @media (max-width: 940px) {
@@ -4293,24 +4283,6 @@ export default function Home({
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 8px;
-        }
-        .google-auth {
-          gap: 10px;
-          border-color: rgba(255,255,255,.28);
-          background: rgba(255,255,255,.035);
-        }
-        .google-mark {
-          width: 18px;
-          height: 18px;
-          display: inline-grid;
-          place-items: center;
-          border: 1px solid rgba(255,255,255,.24);
-          border-radius: 999px;
-          color: #f4f5f6;
-          font-family: "Space Grotesk", system-ui, sans-serif;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0;
         }
         .full {
           width: 100%;

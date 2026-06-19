@@ -190,7 +190,6 @@ const translations: Record<Exclude<LocaleKey, 'en'>, Record<string, string>> = {
     'Continue playing': 'Seguir jugando',
     'Create Recursiv account': 'Crear cuenta Recursiv',
     'Recursiv signup options': 'Opciones de registro Recursiv',
-    'Continue with Google': 'Continuar con Google',
     'Continue with email': 'Continuar con email',
     'Opening checkout': 'Abriendo checkout',
     'Verifying payment': 'Verificando pago',
