@@ -44,6 +44,27 @@ type LeaderboardEntry = {
   local?: boolean;
 };
 
+type SocialEntry = {
+  id: string;
+  day: string;
+  playerId: string;
+  displayName: string;
+  groupCode: string | null;
+  groupName: string | null;
+  score: number;
+  rank: string;
+  percentile: number;
+  correct: number;
+  total: number;
+  beatAi: number;
+  timestamp: number;
+};
+
+type SocialBoards = {
+  global: SocialEntry[];
+  group: SocialEntry[];
+};
+
 type PlayUsage = {
   day: string;
   count: number;
@@ -85,6 +106,10 @@ const PAID_ACCESS_STORAGE_KEY = 'world-iq-paid-access';
 const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
 const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
 const OFFICIAL_HISTORY_LIMIT = 60;
+const PLAYER_ID_STORAGE_KEY = 'world-iq-player-id';
+const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
+const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
+const GROUP_NAME_STORAGE_KEY = 'world-iq-group-name';
 
 const tones: Record<TileTone, string> = {
   ink: '#f4f5f6',
@@ -301,6 +326,76 @@ const rankedWorldPuzzles: Puzzle[] = rankedWorldPuzzleIds.map((id, index) => {
 
 function localDayKey(date = new Date()) {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+}
+
+function cleanGroupCode(value: string | null | undefined) {
+  return (value || '').toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+}
+
+function groupNameFromCode(code: string) {
+  if (!code) return '';
+  return code.split('-').filter(Boolean).map((part) => part.slice(0, 1).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function randomRoomCode() {
+  const chunk = Math.random().toString(36).slice(2, 8);
+  return `room-${chunk}`;
+}
+
+function currentOrigin() {
+  if (typeof window === 'undefined') return 'https://iq.on.recursiv.io';
+  return window.location.origin;
+}
+
+function groupShareUrl(groupCode: string | null) {
+  return groupCode ? `${currentOrigin()}/g/${groupCode}` : currentOrigin();
+}
+
+function readStoredGroupCode(initialGroupCode?: string) {
+  const cleanedInitial = cleanGroupCode(initialGroupCode);
+  if (cleanedInitial) return cleanedInitial;
+  if (typeof window === 'undefined') return '';
+  const queryGroup = cleanGroupCode(new URLSearchParams(window.location.search).get('g'));
+  if (queryGroup) return queryGroup;
+  return cleanGroupCode(window.localStorage.getItem(GROUP_CODE_STORAGE_KEY) || '');
+}
+
+function writeStoredGroup(code: string, name?: string) {
+  if (typeof window === 'undefined' || !code) return;
+  window.localStorage.setItem(GROUP_CODE_STORAGE_KEY, code);
+  window.localStorage.setItem(GROUP_NAME_STORAGE_KEY, name || groupNameFromCode(code));
+}
+
+function readStoredGroupName(code: string) {
+  if (!code) return '';
+  if (typeof window === 'undefined') return groupNameFromCode(code);
+  const saved = window.localStorage.getItem(GROUP_NAME_STORAGE_KEY);
+  return saved?.trim() || groupNameFromCode(code);
+}
+
+function readPlayerId() {
+  if (typeof window === 'undefined') return 'server-player';
+  const existing = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+  if (existing) return existing;
+  const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, next);
+  return next;
+}
+
+function defaultPlayerName(playerId: string) {
+  return `Player ${playerId.replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase() || 'IQ'}`;
+}
+
+function readPlayerName(playerId: string) {
+  if (typeof window === 'undefined') return defaultPlayerName(playerId);
+  return window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.trim() || defaultPlayerName(playerId);
+}
+
+function writePlayerName(name: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim().slice(0, 32));
 }
 
 function todayPuzzle() {
@@ -553,6 +648,8 @@ function buildShareText({
   beatAi,
   answers,
   status,
+  groupCode,
+  groupName,
 }: {
   mode: ModeKey;
   score: number;
@@ -563,16 +660,19 @@ function buildShareText({
   beatAi: number;
   answers: AnswerRecord[];
   status: 'official' | 'practice' | 'daily' | 'lab' | 'pending';
+  groupCode: string | null;
+  groupName: string;
 }) {
   const topLabel = percentile >= 99.9 ? 'top 0.1%' : `top ${(100 - percentile).toFixed(percentile >= 99 ? 1 : 0)}%`;
+  const roomLine = groupCode ? `\nRoom: ${groupName}\n${groupShareUrl(groupCode)}` : '\niq.on.recursiv.io';
   if (mode === 'world') {
     const label = status === 'practice' ? 'World IQ practice' : `World IQ ${localDayKey()}`;
-    return `${label}: ${score} reasoning | ${rank} | ${topLabel} | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}\niq.on.recursiv.io`;
+    return `${label}: ${score} reasoning | ${rank} | ${topLabel} | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
   if (mode === 'agi') {
-    return `AI Blind Spots: ${score} reasoning | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}\niq.on.recursiv.io`;
+    return `AI Blind Spots: ${score} reasoning | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
-  return `Daily Sprint: ${score} reasoning | ${rank} | ${correct}/${total}\n${sharePattern(answers)}\niq.on.recursiv.io`;
+  return `Daily Sprint: ${score} reasoning | ${rank} | ${correct}/${total}\n${sharePattern(answers)}${roomLine}`;
 }
 
 function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTile | null; selected?: boolean }) {
@@ -701,17 +801,84 @@ function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnl
   );
 }
 
+function SocialLeaderboard({
+  kicker,
+  title,
+  description,
+  entries,
+  empty,
+  cta,
+  onCta,
+}: {
+  kicker: string;
+  title: string;
+  description: string;
+  entries: SocialEntry[];
+  empty: string;
+  cta: string;
+  onCta: () => void;
+}) {
+  return (
+    <section className="leaderboard social-board">
+      <div className="section-head">
+        <div>
+          <p className="kicker">{kicker}</p>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+        <button className="secondary" onClick={onCta}>{cta}</button>
+      </div>
+      <div className="leaderboard-rows">
+        {entries.length > 0 ? (
+          entries.map((entry, index) => (
+            <div key={entry.id} className={`leaderboard-row ${index === 0 ? 'local' : ''}`}>
+              <div className="rank">#{index + 1}</div>
+              <div className="leader-copy">
+                <strong>{entry.displayName}</strong>
+                <span>{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {entry.beatAi} AI misses</span>
+              </div>
+              <div className="leader-score">
+                <strong>{entry.score}</strong>
+                <span>{entry.rank}</span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="empty-board">
+            <strong>{empty}</strong>
+            <span>Finish Today&apos;s World IQ to put the first verified score on this board.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function StatusRail({
   isPaid,
   usage,
   officialRank,
   officialHistory,
+  groupCode,
+  groupName,
+  playerName,
+  inviteState,
+  onCreateGroup,
+  onCopyInvite,
+  onPlayerNameChange,
   onUnlock,
 }: {
   isPaid: boolean;
   usage: PlayUsage;
   officialRank: OfficialRankRecord | null;
   officialHistory: OfficialRankRecord[];
+  groupCode: string | null;
+  groupName: string;
+  playerName: string;
+  inviteState: string;
+  onCreateGroup: () => void;
+  onCopyInvite: () => void;
+  onPlayerNameChange: (name: string) => void;
   onUnlock: () => void;
 }) {
   const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
@@ -733,6 +900,21 @@ function StatusRail({
         <span>{iqProfile.attempts > 0
           ? `${iqProfile.confidence} · ${iqProfile.attempts} official day${iqProfile.attempts === 1 ? '' : 's'} · ${formatTrend(iqProfile.trend)}`
           : 'Complete today\'s official attempt to start the profile.'}</span>
+      </section>
+
+      <section className="rail-panel friend-panel">
+        <p className="rail-label">Friend room</p>
+        <strong>{groupCode ? groupName : 'No room yet'}</strong>
+        <span>{groupCode ? `Room /g/${groupCode}. Scores land on the friend board after the official run.` : 'Create a room, share the link, and compete daily with one attempt each.'}</span>
+        {groupCode ? (
+          <label className="name-field">
+            <span>Your board name</span>
+            <input value={playerName} onChange={(event) => onPlayerNameChange(event.target.value)} maxLength={32} />
+          </label>
+        ) : null}
+        <button className="secondary full" onClick={groupCode ? onCopyInvite : onCreateGroup}>
+          {groupCode ? inviteState : 'Create room'}
+        </button>
       </section>
 
       <section className="rail-panel unlock-panel">
@@ -757,13 +939,17 @@ function Result({
   answers,
   onUnlock,
   onLeaderboard,
+  groupCode,
+  groupName,
 }: {
   mode: ModeKey;
   answers: AnswerRecord[];
   onUnlock: () => void;
-  onLeaderboard: (entry: LeaderboardEntry) => void;
+  onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
+  groupCode: string | null;
+  groupName: string;
 }) {
-  const [shareState, setShareState] = React.useState('Share result');
+  const [shareState, setShareState] = React.useState(groupCode ? 'Invite friends' : 'Share result');
   const [resultStatus, setResultStatus] = React.useState<'pending' | 'official' | 'practice' | 'daily' | 'lab'>('pending');
   const submittedRef = React.useRef(false);
   const correct = answers.filter((answer) => answer.correct).length;
@@ -773,7 +959,7 @@ function Result({
   const rank = formatRank(percentile);
   const beatAi = answers.filter((answer) => answer.correct && !answer.aiSolved).length;
   const officialWorldRun = mode === 'world' && total >= 6;
-  const shareText = buildShareText({ mode, score, rank, percentile, correct, total, beatAi, answers, status: resultStatus });
+  const shareText = buildShareText({ mode, score, rank, percentile, correct, total, beatAi, answers, status: resultStatus, groupCode, groupName });
 
   React.useEffect(() => {
     if (submittedRef.current) return;
@@ -815,13 +1001,22 @@ function Result({
       local: true,
     };
     saveLeaderboardEntry(entry);
-    onLeaderboard(entry);
+    onLeaderboard(entry, officialRank);
   }, [beatAi, correct, mode, officialWorldRun, onLeaderboard, percentile, rank, score, total]);
 
   async function share() {
     try {
+      if (navigator.share) {
+        await navigator.share({
+          title: groupCode ? `${groupName} on World IQ` : 'World IQ',
+          text: shareText,
+          url: groupShareUrl(groupCode),
+        });
+        setShareState('Shared');
+        return;
+      }
       await navigator.clipboard.writeText(shareText);
-      setShareState('Copied');
+      setShareState(groupCode ? 'Invite copied' : 'Copied');
     } catch {
       setShareState('Ready');
     }
@@ -902,13 +1097,17 @@ function Runner({
   onUnlock,
   onLeaderboard,
   onUsageChange,
+  groupCode,
+  groupName,
 }: {
   mode: ModeKey;
   startRequest: number;
   isPaid: boolean;
   onUnlock: () => void;
-  onLeaderboard: (entry: LeaderboardEntry) => void;
+  onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
   onUsageChange: (usage: PlayUsage) => void;
+  groupCode: string | null;
+  groupName: string;
 }) {
   const [started, setStarted] = React.useState(() => isPaid || playsRemaining(readPlayUsage()) > 0);
   const [step, setStep] = React.useState(0);
@@ -986,7 +1185,7 @@ function Runner({
     );
   }
 
-  if (complete) return <Result mode={mode} answers={answers} onUnlock={onUnlock} onLeaderboard={onLeaderboard} />;
+  if (complete) return <Result mode={mode} answers={answers} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
 
   return (
     <div className="runner-panel">
@@ -1019,7 +1218,7 @@ function Runner({
   );
 }
 
-export default function Home() {
+export default function Home({ initialGroupCode = '' }: { initialGroupCode?: string }) {
   const [mode, setMode] = React.useState<ModeKey>('world');
   const [view, setView] = React.useState<ViewKey>('test');
   const startRequest = 0;
@@ -1031,14 +1230,49 @@ export default function Home() {
   const [usageSnapshot, setUsageSnapshot] = React.useState<PlayUsage>(() => blankPlayUsage());
   const [officialSnapshot, setOfficialSnapshot] = React.useState<OfficialRankRecord | null>(null);
   const [officialHistory, setOfficialHistory] = React.useState<OfficialRankRecord[]>([]);
+  const [groupCode, setGroupCode] = React.useState<string>(() => readStoredGroupCode(initialGroupCode));
+  const [groupName, setGroupName] = React.useState<string>(() => groupNameFromCode(readStoredGroupCode(initialGroupCode)));
+  const [playerId, setPlayerId] = React.useState('');
+  const [playerName, setPlayerName] = React.useState('');
+  const [inviteState, setInviteState] = React.useState('Copy invite');
+  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [] });
 
   React.useEffect(() => {
+    const id = readPlayerId();
+    const code = readStoredGroupCode(initialGroupCode);
+    const name = readStoredGroupName(code);
     setLeaderboard(getLeaderboardEntries());
     setPaidAccess(readPaidAccess());
     setUsageSnapshot(readPlayUsage());
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
+    setPlayerId(id);
+    setPlayerName(readPlayerName(id));
+    setGroupCode(code);
+    setGroupName(name);
+    if (code) writeStoredGroup(code, name);
+  }, [initialGroupCode]);
+
+  const refreshSocialBoards = React.useCallback(async (code: string | null) => {
+    try {
+      const params = new URLSearchParams({ day: localDayKey() });
+      if (code) params.set('group', code);
+      const response = await fetch(`/api/leaderboards?${params.toString()}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => null);
+      if (response.ok && Array.isArray(data?.global)) {
+        setSocialBoards({
+          global: data.global,
+          group: Array.isArray(data.group) ? data.group : [],
+        });
+      }
+    } catch {
+      // Friend boards are additive; the test still works if the social endpoint is unavailable.
+    }
   }, []);
+
+  React.useEffect(() => {
+    refreshSocialBoards(groupCode || null);
+  }, [groupCode, refreshSocialBoards]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1107,15 +1341,87 @@ export default function Home() {
     setView('test');
   }
 
-  function handleLeaderboard() {
+  async function submitOfficialResult(record: OfficialRankRecord) {
+    const id = playerId || readPlayerId();
+    const displayName = (playerName || readPlayerName(id)).trim();
+    try {
+      const response = await fetch('/api/leaderboards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day: record.day,
+          playerId: id,
+          displayName,
+          groupCode: groupCode || null,
+          groupName: groupCode ? groupName : null,
+          score: record.score,
+          rank: record.rank,
+          percentile: record.percentile,
+          correct: record.correct,
+          total: record.total,
+          beatAi: record.beatAi,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (response.ok && Array.isArray(data?.global)) {
+        setSocialBoards({
+          global: data.global,
+          group: Array.isArray(data.group) ? data.group : [],
+        });
+      }
+    } catch {
+      // The local official result remains saved even if the social board cannot sync.
+    }
+  }
+
+  function handleLeaderboard(_entry?: LeaderboardEntry, officialRank?: OfficialRankRecord) {
     setLeaderboard(getLeaderboardEntries());
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
+    if (officialRank) void submitOfficialResult(officialRank);
   }
 
   const handleUsageChange = React.useCallback((usage: PlayUsage) => {
     setUsageSnapshot(usage);
   }, []);
+
+  function handlePlayerNameChange(name: string) {
+    const next = name.slice(0, 32);
+    setPlayerName(next);
+    writePlayerName(next);
+  }
+
+  function createGroup() {
+    const code = randomRoomCode();
+    const name = groupNameFromCode(code);
+    setGroupCode(code);
+    setGroupName(name);
+    setInviteState('Copy invite');
+    writeStoredGroup(code, name);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', `/g/${code}`);
+    }
+    void refreshSocialBoards(code);
+  }
+
+  async function copyInvite() {
+    if (!groupCode) {
+      createGroup();
+      return;
+    }
+    const inviteText = `Join ${groupName} on World IQ. One official attempt today: ${groupShareUrl(groupCode)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${groupName} on World IQ`, text: inviteText, url: groupShareUrl(groupCode) });
+        setInviteState('Shared');
+        return;
+      }
+      await navigator.clipboard.writeText(inviteText);
+      setInviteState('Copied');
+    } catch {
+      setInviteState('Copy invite');
+    }
+  }
 
   const checkoutHref = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '';
   const stripeCheckoutHref = getStripeCheckoutHref(checkoutHref);
@@ -1169,15 +1475,45 @@ export default function Home() {
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${modes[mode].label} test`}>
           <SignalSculpture />
-          <Runner key={mode} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} />
-          <StatusRail isPaid={paidAccess} usage={usageSnapshot} officialRank={officialSnapshot} officialHistory={officialHistory} onUnlock={() => setUnlockOpen(true)} />
+          <Runner key={mode} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
+          <StatusRail
+            isPaid={paidAccess}
+            usage={usageSnapshot}
+            officialRank={officialSnapshot}
+            officialHistory={officialHistory}
+            groupCode={groupCode || null}
+            groupName={groupName}
+            playerName={playerName}
+            inviteState={inviteState}
+            onCreateGroup={createGroup}
+            onCopyInvite={copyInvite}
+            onPlayerNameChange={handlePlayerNameChange}
+            onUnlock={() => setUnlockOpen(true)}
+          />
         </section>
       ) : null}
 
       {view === 'rankings' ? (
         <>
           <IqProfilePanel history={officialHistory} onUnlock={() => setUnlockOpen(true)} />
-          <Leaderboard entries={leaderboard} onUnlock={() => setUnlockOpen(true)} />
+          <SocialLeaderboard
+            kicker="Friend room"
+            title={groupCode ? `${groupName} daily board` : 'Create a private daily board.'}
+            description={groupCode ? 'One invite link. One official attempt each. The room resets daily and keeps the pressure local.' : 'Friend rooms are the fastest loop: create a link, send it to a group chat, and compare official scores today.'}
+            entries={socialBoards.group}
+            empty={groupCode ? 'No friends have locked today.' : 'No friend room yet.'}
+            cta={groupCode ? 'Invite friends' : 'Create room'}
+            onCta={groupCode ? copyInvite : createGroup}
+          />
+          <SocialLeaderboard
+            kicker="Global board"
+            title="The daily global World IQ board."
+            description="The highest official first attempts today, deduped by player. Friend-room results also qualify globally."
+            entries={socialBoards.global}
+            empty="No global results yet today."
+            cta={groupCode ? 'Invite friends' : 'Create room'}
+            onCta={groupCode ? copyInvite : createGroup}
+          />
         </>
       ) : null}
 
@@ -2002,6 +2338,44 @@ export default function Home() {
           font-size: 12px !important;
           letter-spacing: .06em;
         }
+        .friend-panel {
+          display: grid;
+          gap: 14px;
+        }
+        .friend-panel strong,
+        .friend-panel span {
+          margin-top: 0;
+        }
+        .name-field {
+          display: grid;
+          gap: 7px;
+        }
+        .name-field span {
+          margin: 0;
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .16em;
+          line-height: 1;
+          text-transform: uppercase;
+        }
+        .name-field input {
+          width: 100%;
+          min-height: 40px;
+          color: #f4f5f6;
+          background: rgba(255,255,255,.035);
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 3px;
+          padding: 0 12px;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 12px;
+          letter-spacing: .04em;
+          outline: none;
+        }
+        .name-field input:focus {
+          border-color: rgba(244,245,246,.54);
+        }
         .rail-price {
           display: flex;
           align-items: baseline;
@@ -2222,6 +2596,9 @@ export default function Home() {
           border-radius: 8px;
           overflow: hidden;
           gap: 0;
+        }
+        .social-board + .social-board {
+          margin-top: 20px;
         }
         .leaderboard-row,
         .empty-board,
