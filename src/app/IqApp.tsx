@@ -829,6 +829,8 @@ async function copyTextToClipboard(text: string) {
   textarea.style.position = 'fixed';
   textarea.style.top = '0';
   textarea.style.left = '-9999px';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
   textarea.style.opacity = '0';
 
   const selection = document.getSelection();
@@ -836,6 +838,7 @@ async function copyTextToClipboard(text: string) {
   document.body.appendChild(textarea);
   textarea.focus();
   textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
 
   const copied = document.execCommand('copy');
   document.body.removeChild(textarea);
@@ -1544,6 +1547,8 @@ function SocialLeaderboard({
   empty,
   cta,
   onCta,
+  variant = 'standard',
+  fallbackUrl = '',
 }: {
   locale: LocaleKey;
   kicker: string;
@@ -1553,19 +1558,23 @@ function SocialLeaderboard({
   empty: string;
   cta: string;
   onCta: () => void | Promise<void>;
+  variant?: 'standard' | 'primary';
+  fallbackUrl?: string;
 }) {
   const copy = (text: string) => translate(locale, text);
   const ctaCopied = cta === copy('Link copied');
+  const showFallbackUrl = Boolean(fallbackUrl && cta === copy('Link ready'));
   return (
-    <section className="leaderboard social-board">
+    <section className={`leaderboard social-board ${variant === 'primary' ? 'primary-board' : ''}`}>
       <div className="section-head">
         <div>
           <p className="kicker">{kicker}</p>
           <h2>{title}</h2>
           <p>{description}</p>
         </div>
-        <button className={`secondary ${ctaCopied ? 'copied' : ''}`} onClick={onCta}>{cta}</button>
+        <button className={`${variant === 'primary' ? 'primary copy-link' : 'secondary'} ${ctaCopied ? 'copied' : ''}`} onClick={onCta}>{cta}</button>
       </div>
+      {showFallbackUrl ? <code className="copy-fallback-link">{fallbackUrl}</code> : null}
       <div className="leaderboard-rows">
         {entries.length > 0 ? (
           entries.map((entry, index) => (
@@ -1598,6 +1607,7 @@ function SocialHub({
   groupCode,
   groupName,
   inviteState,
+  inviteFallbackUrl,
   groupEntries,
   globalEntries,
   messages,
@@ -1613,6 +1623,7 @@ function SocialHub({
   groupCode: string | null;
   groupName: string;
   inviteState: string;
+  inviteFallbackUrl: string;
   groupEntries: SocialEntry[];
   globalEntries: SocialEntry[];
   messages: RoomMessage[];
@@ -1626,6 +1637,7 @@ function SocialHub({
   const copy = (text: string) => translate(locale, text);
   const roomFeed = groupEntries.length > 0 ? groupEntries : globalEntries.slice(0, 6);
   const inviteCopied = inviteState === 'Link copied';
+  const showFallbackUrl = Boolean(inviteFallbackUrl && inviteState === 'Link ready');
 
   return (
     <section className="social-hub" aria-label={copy('Logged-in social layer')}>
@@ -1638,6 +1650,7 @@ function SocialHub({
         <div className="social-actions">
           <span>{copy('Connected as')} {account.email}</span>
           <button className={`secondary copy-link ${inviteCopied ? 'copied' : ''}`} onClick={groupCode ? onCopyInvite : onCreateGroup}>{copy(groupCode ? inviteState : 'Create & copy link')}</button>
+          {showFallbackUrl ? <code className="copy-fallback-link">{inviteFallbackUrl}</code> : null}
         </div>
       </div>
       <div className="social-hub-grid">
@@ -2415,6 +2428,7 @@ function StatusRail({
   reminderEmail,
   reminderState,
   inviteState,
+  inviteFallbackUrl,
   onCreateGroup,
   onCopyInvite,
   onPlayerNameChange,
@@ -2439,6 +2453,7 @@ function StatusRail({
   reminderEmail: string;
   reminderState: string;
   inviteState: string;
+  inviteFallbackUrl: string;
   onCreateGroup: () => void | Promise<void>;
   onCopyInvite: () => void | Promise<void>;
   onPlayerNameChange: (name: string) => void;
@@ -2455,6 +2470,7 @@ function StatusRail({
   const iqProfile = getIqProfile(officialHistory);
   const evidenceClass = scoreEvidenceClass(iqProfile.answers);
   const inviteCopied = inviteState === 'Link copied';
+  const showFallbackUrl = Boolean(inviteFallbackUrl && inviteState === 'Link ready');
 
   return (
     <aside className="status-rail" aria-label="IQ WARS session and subscription">
@@ -2501,6 +2517,7 @@ function StatusRail({
           {copy(groupCode ? inviteState : 'Create & copy link')}
         </button>
         {inviteCopied ? <span className="copy-confirmation" role="status" aria-live="polite">{copy('Group link copied')}</span> : null}
+        {showFallbackUrl ? <code className="copy-fallback-link">{inviteFallbackUrl}</code> : null}
       </section>
 
       <section className="rail-panel unlock-panel">
@@ -2527,6 +2544,7 @@ function Result({
   elapsedMs,
   onUnlock,
   onLeaderboard,
+  onRankings,
   groupCode,
   groupName,
 }: {
@@ -2536,6 +2554,7 @@ function Result({
   elapsedMs: number | null;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
+  onRankings: () => void;
   groupCode: string | null;
   groupName: string;
 }) {
@@ -2678,8 +2697,8 @@ function Result({
       <p className="trust-note">{copy('IQ WARS is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
       <div className="actions">
         <button className="primary" onClick={share}>{copy(shareState)}</button>
+        <button className="secondary" onClick={onRankings}>{copy(groupCode ? 'See room rankings' : 'See rankings')}</button>
         <button className="secondary" onClick={onUnlock}>{copy('Save rank')}</button>
-        <button className="secondary" onClick={onUnlock}>{copy('Unlock archive')}</button>
       </div>
     </div>
   );
@@ -2694,6 +2713,7 @@ function Runner({
   onSound,
   onUnlock,
   onLeaderboard,
+  onRankings,
   onUsageChange,
   groupCode,
   groupName,
@@ -2706,6 +2726,7 @@ function Runner({
   onSound: (kind: SoundKind) => void;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
+  onRankings: () => void;
   onUsageChange: (usage: PlayUsage) => void;
   groupCode: string | null;
   groupName: string;
@@ -2825,7 +2846,7 @@ function Runner({
     );
   }
 
-  if (complete) return <Result locale={locale} mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
+  if (complete) return <Result locale={locale} mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} onRankings={onRankings} groupCode={groupCode} groupName={groupName} />;
 
   return (
     <div className={`runner-panel ${feedback ? feedback.correct ? 'feedback-correct' : 'feedback-wrong' : ''}`}>
@@ -2942,6 +2963,7 @@ export default function Home({
   const [reminderEmail, setReminderEmail] = React.useState('');
   const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
   const [inviteState, setInviteState] = React.useState('Copy link');
+  const [inviteFallbackUrl, setInviteFallbackUrl] = React.useState('');
   const [recursivAccount, setRecursivAccount] = React.useState<RecursivAccountRecord | null>(null);
   const [authEmail, setAuthEmail] = React.useState('');
   const [authCode, setAuthCode] = React.useState('');
@@ -3287,6 +3309,7 @@ export default function Home({
     if (path && window.location.pathname !== path) {
       window.history.pushState({}, '', path);
     }
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   }
 
   function openBlogArticle(slug: string) {
@@ -3329,10 +3352,12 @@ export default function Home({
     playInteractionSound('tap');
   }, [playInteractionSound, settings.soundEnabled]);
 
-  async function submitOfficialResult(record: OfficialRankRecord) {
+  async function submitOfficialResult(record: OfficialRankRecord, targetRoom?: { groupCode: string | null; groupName?: string }) {
     const id = playerId || readPlayerId();
     const username = claimedUsername || readClaimedUsername();
     const displayName = (username ? `@${username}` : playerName || readPlayerName(id)).trim();
+    const submittedGroupCode = targetRoom?.groupCode ?? (groupCode || null);
+    const submittedGroupName = targetRoom?.groupName ?? groupName;
     try {
       const response = await fetch('/api/leaderboards', {
         method: 'POST',
@@ -3342,8 +3367,8 @@ export default function Home({
           playerId: id,
           displayName,
           username,
-          groupCode: groupCode || null,
-          groupName: groupCode ? groupName : null,
+          groupCode: submittedGroupCode || null,
+          groupName: submittedGroupCode ? submittedGroupName : null,
           score: record.score,
           rank: record.rank,
           percentile: record.percentile,
@@ -3377,7 +3402,14 @@ export default function Home({
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
     setUsageSnapshot(readPlayUsage());
-    if (officialRank) void submitOfficialResult(officialRank);
+    if (officialRank) {
+      void submitOfficialResult(officialRank).finally(() => {
+        setLeaderboard(getLeaderboardEntries());
+        setOfficialSnapshot(readOfficialRank());
+        setOfficialHistory(readOfficialHistory());
+        navigateView('rankings');
+      });
+    }
   }
 
   const handleUsageChange = React.useCallback((usage: PlayUsage) => {
@@ -3557,15 +3589,16 @@ export default function Home({
   const copyGroupLink = React.useCallback(async (code: string) => {
     const url = groupShareUrl(code);
     setInviteState('Copying link');
+    setInviteFallbackUrl('');
     try {
       await copyTextToClipboard(url);
       setInviteState('Link copied');
       playInteractionSound('success');
       resetInviteStateSoon('Link copied');
     } catch {
-      setInviteState('Copy failed');
-      playInteractionSound('error');
-      resetInviteStateSoon('Copy failed');
+      setInviteState('Link ready');
+      setInviteFallbackUrl(url);
+      playInteractionSound('tap');
     }
   }, [playInteractionSound, resetInviteStateSoon]);
 
@@ -3576,10 +3609,15 @@ export default function Home({
     setGroupName(name);
     setInviteState('Copying link');
     writeStoredGroup(code, name);
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && view === 'test') {
       window.history.replaceState({}, '', `/g/${code}`);
     }
-    void refreshSocialBoards(code);
+    const officialRank = readOfficialRank();
+    if (officialRank?.day === localDayKey()) {
+      void submitOfficialResult(officialRank, { groupCode: code, groupName: name }).finally(() => refreshSocialBoards(code));
+    } else {
+      void refreshSocialBoards(code);
+    }
     await copyGroupLink(code);
   }
 
@@ -3908,7 +3946,7 @@ export default function Home({
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${copy(modes[mode].label)} test`}>
           <SignalSculpture />
-	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
+	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onRankings={() => navigateView('rankings')} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
           <StatusRail
             locale={locale}
             isPaid={paidAccess}
@@ -3925,6 +3963,7 @@ export default function Home({
             reminderEmail={reminderEmail}
             reminderState={reminderState}
             inviteState={inviteState}
+            inviteFallbackUrl={inviteFallbackUrl}
             onCreateGroup={createGroup}
             onCopyInvite={copyInvite}
             onPlayerNameChange={handlePlayerNameChange}
@@ -3944,6 +3983,7 @@ export default function Home({
           groupCode={groupCode || null}
           groupName={groupName}
           inviteState={inviteState}
+          inviteFallbackUrl={inviteFallbackUrl}
           groupEntries={displayBoards.group}
           globalEntries={displayBoards.global}
           messages={roomMessages}
@@ -3958,18 +3998,19 @@ export default function Home({
 
       {view === 'rankings' ? (
         <>
-          <RankingsGlobeHero locale={locale} geography={displayBoards.geography} global={displayBoards.global} />
-          <IqProfilePanel history={officialHistory} onUnlock={() => setUnlockOpen(true)} locale={locale} />
           <SocialLeaderboard
             locale={locale}
-            kicker={copy('Friend room')}
-            title={groupCode ? `${groupName} ${copy('daily board')}` : copy('Create a private daily board.')}
-            description={groupCode ? copy('One invite link. One official attempt each. The room resets daily and keeps the pressure local.') : copy('Friend rooms are the fastest loop: create a link, send it to a group chat, and compare official scores today.')}
+            kicker={copy('Primary loop')}
+            title={groupCode ? `${groupName} ${copy('friend rankings')}` : copy('Create a friend room for today.')}
+            description={groupCode ? copy('This is the board that matters after a run: one invite link, one official attempt each, and the room ranked by today\'s score.') : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
             entries={displayBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
             cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
+            variant="primary"
+            fallbackUrl={groupCode ? inviteFallbackUrl : ''}
           />
+          <RankingsGlobeHero locale={locale} geography={displayBoards.geography} global={displayBoards.global} />
           <SocialLeaderboard
             locale={locale}
             kicker={copy('Global board')}
@@ -3979,8 +4020,10 @@ export default function Home({
             empty={copy('No global results yet today.')}
             cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
+            fallbackUrl={groupCode ? inviteFallbackUrl : ''}
           />
           <GeographyLeaderboard locale={locale} geography={displayBoards.geography} />
+          <IqProfilePanel history={officialHistory} onUnlock={() => setUnlockOpen(true)} locale={locale} />
         </>
       ) : null}
 
@@ -4308,6 +4351,22 @@ export default function Home({
           letter-spacing: .1em;
           text-transform: uppercase;
           text-align: center;
+        }
+        .copy-fallback-link {
+          display: block;
+          max-width: 100%;
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          background: rgba(255,255,250,.24);
+          color: var(--ink);
+          padding: 9px 10px;
+          font-family: "Courier New", ui-monospace, monospace;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: .04em;
+          line-height: 1.35;
+          overflow-wrap: anywhere;
+          user-select: all;
         }
         .primary {
           border: 1px solid var(--ink);
@@ -5483,6 +5542,15 @@ export default function Home({
           text-align: center;
           text-transform: uppercase;
         }
+        .copy-fallback-link {
+          border-color: rgba(255,255,255,.12);
+          border-radius: 4px;
+          background: rgba(255,255,255,.035);
+          color: #d7dadc;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-weight: 500;
+          letter-spacing: .08em;
+        }
         .auth-options {
           display: grid;
           gap: 8px;
@@ -6013,6 +6081,40 @@ export default function Home({
           border-radius: 8px;
           overflow: hidden;
           gap: 0;
+        }
+        .primary-board {
+          margin-top: clamp(18px, 4vh, 42px);
+          border-color: rgba(244,245,246,.16);
+          background:
+            linear-gradient(180deg, rgba(244,245,246,.045), rgba(244,245,246,.012)),
+            repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, transparent 1px 28px),
+            #07080a;
+          box-shadow: 0 34px 110px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.07);
+        }
+        .primary-board .section-head {
+          align-items: stretch;
+        }
+        .primary-board .section-head h2 {
+          max-width: 720px;
+          font-size: clamp(32px, 5vw, 56px);
+          letter-spacing: -.028em;
+        }
+        .primary-board .section-head p {
+          max-width: 680px;
+        }
+        .primary-board .section-head .primary {
+          min-width: min(240px, 100%);
+          min-height: 56px;
+          align-self: end;
+        }
+        .primary-board .leaderboard-rows {
+          margin-top: 24px;
+          border-color: rgba(244,245,246,.14);
+          box-shadow: 0 18px 60px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);
+        }
+        .primary-board .empty-board {
+          min-height: 116px;
+          align-content: center;
         }
         .geo-grid {
           gap: 14px;
