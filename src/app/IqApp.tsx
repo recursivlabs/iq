@@ -49,6 +49,7 @@ type SocialEntry = {
   day: string;
   playerId: string;
   displayName: string;
+  username: string | null;
   groupCode: string | null;
   groupName: string | null;
   score: number;
@@ -57,6 +58,8 @@ type SocialEntry = {
   correct: number;
   total: number;
   beatAi: number;
+  elapsedMs: number | null;
+  speedBonus: number | null;
   timestamp: number;
 };
 
@@ -85,6 +88,8 @@ type OfficialRankRecord = {
   correct: number;
   total: number;
   beatAi: number;
+  elapsedMs?: number | null;
+  speedBonus?: number | null;
   timestamp: number;
 };
 
@@ -108,8 +113,10 @@ const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
 const OFFICIAL_HISTORY_LIMIT = 60;
 const PLAYER_ID_STORAGE_KEY = 'world-iq-player-id';
 const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
+const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
 const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
 const GROUP_NAME_STORAGE_KEY = 'world-iq-group-name';
+const REMINDER_EMAIL_STORAGE_KEY = 'world-iq-reminder-email';
 
 const tones: Record<TileTone, string> = {
   ink: '#f4f5f6',
@@ -398,15 +405,73 @@ function writePlayerName(name: string) {
   window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim().slice(0, 32));
 }
 
+function readClaimedUsername() {
+  if (typeof window === 'undefined') return '';
+  return (window.localStorage.getItem(PLAYER_USERNAME_STORAGE_KEY) || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+function writeClaimedUsername(username: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PLAYER_USERNAME_STORAGE_KEY, username.trim().replace(/^@+/, '').toLowerCase());
+}
+
+function cleanUsernameInput(value: string) {
+  return value.toLowerCase().replace(/^@+/, '').replace(/[^a-z0-9_]+/g, '').slice(0, 20);
+}
+
+function readReminderEmail() {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(REMINDER_EMAIL_STORAGE_KEY) || '';
+}
+
+function writeReminderEmail(email: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(REMINDER_EMAIL_STORAGE_KEY, email.trim().slice(0, 120));
+}
+
 function todayPuzzle() {
   const day = Math.floor(Date.now() / 86_400_000);
   return dailyPuzzles[day % dailyPuzzles.length];
 }
 
+function tileSignature(pattern: PatternTile) {
+  return `${pattern.dots}:${pattern.bars}:${pattern.ring ? 1 : 0}:${pattern.tilt}:${pattern.tone}`;
+}
+
+function decoyTiles(puzzle: Puzzle): PatternTile[] {
+  const seed = puzzle.id.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
+  const tones: TileTone[] = ['ink', 'blue', 'green', 'rose', 'amber'];
+  const tilts = [0, 45, 90];
+  return Array.from({ length: 10 }, (_, index) => tile(
+    (seed + index * 2) % 7,
+    ((seed + index) % 3) + 1,
+    (seed + index) % 2 === 0,
+    tilts[(seed + index * 2) % tilts.length],
+    tones[(seed + index * 3) % tones.length],
+  ));
+}
+
+function withSixOptions(puzzle: Puzzle): Puzzle {
+  if (puzzle.options.length >= 6) return puzzle;
+  const used = new Set(puzzle.options.map(tileSignature));
+  const options = [...puzzle.options];
+  for (const decoy of decoyTiles(puzzle)) {
+    if (options.length >= 6) break;
+    const signature = tileSignature(decoy);
+    if (used.has(signature)) continue;
+    used.add(signature);
+    options.push(decoy);
+  }
+  return {
+    ...puzzle,
+    options,
+  };
+}
+
 function getQuestions(mode: ModeKey) {
-  if (mode === 'agi') return agiPuzzles;
-  if (mode === 'daily') return [todayPuzzle()];
-  return rankedWorldPuzzles;
+  if (mode === 'agi') return agiPuzzles.map(withSixOptions);
+  if (mode === 'daily') return [withSixOptions(todayPuzzle())];
+  return rankedWorldPuzzles.map(withSixOptions);
 }
 
 function percentileFromScore(correct: number, total: number) {
@@ -421,9 +486,24 @@ function percentileFromScore(correct: number, total: number) {
   return 37;
 }
 
-function worldIqScore(correct: number, total: number) {
+function speedBonusFromElapsed(elapsedMs: number | null | undefined, total: number) {
+  if (!elapsedMs || total <= 1) return 0;
+  const targetMs = total * 45_000;
+  const ratio = Math.max(0, Math.min(1, 1 - elapsedMs / targetMs));
+  return Math.round(ratio * 8);
+}
+
+function worldIqScore(correct: number, total: number, elapsedMs?: number | null) {
   if (total === 1) return correct ? 138 : 104;
-  return Math.round(92 + (correct / total) * 54);
+  return Math.round(90 + (correct / total) * 52 + speedBonusFromElapsed(elapsedMs, total));
+}
+
+function formatElapsedTime(ms: number | null | undefined) {
+  const safeMs = Math.max(0, Math.round(ms || 0));
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${`${seconds}`.padStart(2, '0')}`;
 }
 
 function formatRank(percentile: number) {
@@ -646,6 +726,8 @@ function buildShareText({
   correct,
   total,
   beatAi,
+  elapsedMs,
+  speedBonus,
   answers,
   status,
   groupCode,
@@ -658,6 +740,8 @@ function buildShareText({
   correct: number;
   total: number;
   beatAi: number;
+  elapsedMs: number | null;
+  speedBonus: number;
   answers: AnswerRecord[];
   status: 'official' | 'practice' | 'daily' | 'lab' | 'pending';
   groupCode: string | null;
@@ -665,14 +749,15 @@ function buildShareText({
 }) {
   const topLabel = percentile >= 99.9 ? 'top 0.1%' : `top ${(100 - percentile).toFixed(percentile >= 99 ? 1 : 0)}%`;
   const roomLine = groupCode ? `\nRoom: ${groupName}\n${groupShareUrl(groupCode)}` : '\niq.on.recursiv.io';
+  const timeLine = `${formatElapsedTime(elapsedMs)} · +${speedBonus} speed`;
   if (mode === 'world') {
     const label = status === 'practice' ? 'World IQ practice' : `World IQ ${localDayKey()}`;
-    return `${label}: ${score} reasoning | ${rank} | ${topLabel} | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
+    return `${label}: ${score} reasoning | ${rank} | ${topLabel} | ${correct}/${total} | ${timeLine} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
   if (mode === 'agi') {
-    return `AI Blind Spots: ${score} reasoning | ${correct}/${total} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
+    return `AI Blind Spots: ${score} reasoning | ${correct}/${total} | ${timeLine} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
-  return `Daily Sprint: ${score} reasoning | ${rank} | ${correct}/${total}\n${sharePattern(answers)}${roomLine}`;
+  return `Daily Sprint: ${score} reasoning | ${rank} | ${correct}/${total} | ${timeLine}\n${sharePattern(answers)}${roomLine}`;
 }
 
 function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTile | null; selected?: boolean }) {
@@ -834,8 +919,8 @@ function SocialLeaderboard({
             <div key={entry.id} className={`leaderboard-row ${index === 0 ? 'local' : ''}`}>
               <div className="rank">#{index + 1}</div>
               <div className="leader-copy">
-                <strong>{entry.displayName}</strong>
-                <span>{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {entry.beatAi} AI misses</span>
+                <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
+                <span>{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} AI misses</span>
               </div>
               <div className="leader-score">
                 <strong>{entry.score}</strong>
@@ -862,10 +947,18 @@ function StatusRail({
   groupCode,
   groupName,
   playerName,
+  usernameDraft,
+  usernameState,
+  reminderEmail,
+  reminderState,
   inviteState,
   onCreateGroup,
   onCopyInvite,
   onPlayerNameChange,
+  onUsernameChange,
+  onClaimUsername,
+  onReminderEmailChange,
+  onReminderSubmit,
   onUnlock,
 }: {
   isPaid: boolean;
@@ -875,10 +968,18 @@ function StatusRail({
   groupCode: string | null;
   groupName: string;
   playerName: string;
+  usernameDraft: string;
+  usernameState: string;
+  reminderEmail: string;
+  reminderState: string;
   inviteState: string;
   onCreateGroup: () => void;
   onCopyInvite: () => void;
   onPlayerNameChange: (name: string) => void;
+  onUsernameChange: (name: string) => void;
+  onClaimUsername: () => void;
+  onReminderEmailChange: (email: string) => void;
+  onReminderSubmit: () => void;
   onUnlock: () => void;
 }) {
   const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
@@ -907,10 +1008,22 @@ function StatusRail({
         <strong>{groupCode ? groupName : 'No room yet'}</strong>
         <span>{groupCode ? `Room /g/${groupCode}. Scores land on the friend board after the official run.` : 'Create a room, share the link, and compete daily with one attempt each.'}</span>
         {groupCode ? (
-          <label className="name-field">
-            <span>Your board name</span>
-            <input value={playerName} onChange={(event) => onPlayerNameChange(event.target.value)} maxLength={32} />
-          </label>
+          <>
+            <label className="name-field">
+              <span>Your board name</span>
+              <input value={playerName} onChange={(event) => onPlayerNameChange(event.target.value)} maxLength={32} />
+            </label>
+            <label className="name-field">
+              <span>Claim @username</span>
+              <input value={usernameDraft ? `@${usernameDraft}` : ''} onChange={(event) => onUsernameChange(event.target.value)} maxLength={21} placeholder="@handle" />
+            </label>
+            <button className="secondary full" onClick={onClaimUsername}>{usernameState}</button>
+            <label className="name-field">
+              <span>Daily reminder</span>
+              <input value={reminderEmail} onChange={(event) => onReminderEmailChange(event.target.value)} maxLength={120} placeholder="you@email.com" />
+            </label>
+            <button className="secondary full" onClick={onReminderSubmit}>{reminderState}</button>
+          </>
         ) : null}
         <button className="secondary full" onClick={groupCode ? onCopyInvite : onCreateGroup}>
           {groupCode ? inviteState : 'Create room'}
@@ -937,6 +1050,7 @@ function StatusRail({
 function Result({
   mode,
   answers,
+  elapsedMs,
   onUnlock,
   onLeaderboard,
   groupCode,
@@ -944,6 +1058,7 @@ function Result({
 }: {
   mode: ModeKey;
   answers: AnswerRecord[];
+  elapsedMs: number | null;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
   groupCode: string | null;
@@ -955,11 +1070,12 @@ function Result({
   const correct = answers.filter((answer) => answer.correct).length;
   const total = answers.length;
   const percentile = percentileFromScore(correct, total);
-  const score = worldIqScore(correct, total);
+  const speedBonus = speedBonusFromElapsed(elapsedMs, total);
+  const score = worldIqScore(correct, total, elapsedMs);
   const rank = formatRank(percentile);
   const beatAi = answers.filter((answer) => answer.correct && !answer.aiSolved).length;
   const officialWorldRun = mode === 'world' && total >= 6;
-  const shareText = buildShareText({ mode, score, rank, percentile, correct, total, beatAi, answers, status: resultStatus, groupCode, groupName });
+  const shareText = buildShareText({ mode, score, rank, percentile, correct, total, beatAi, elapsedMs, speedBonus, answers, status: resultStatus, groupCode, groupName });
 
   React.useEffect(() => {
     if (submittedRef.current) return;
@@ -984,6 +1100,8 @@ function Result({
       correct,
       total,
       beatAi,
+      elapsedMs,
+      speedBonus,
       timestamp: Date.now(),
     };
     writeOfficialRank(officialRank);
@@ -1002,7 +1120,7 @@ function Result({
     };
     saveLeaderboardEntry(entry);
     onLeaderboard(entry, officialRank);
-  }, [beatAi, correct, mode, officialWorldRun, onLeaderboard, percentile, rank, score, total]);
+  }, [beatAi, correct, elapsedMs, mode, officialWorldRun, onLeaderboard, percentile, rank, score, speedBonus, total]);
 
   async function share() {
     try {
@@ -1026,7 +1144,7 @@ function Result({
     ? {
       kicker: 'Official rank locked',
       title: 'Today updated your developing World IQ profile.',
-      body: `${score} reasoning score. ${rank} estimated daily rank. ${beatAi} AI blind-spot answers. Come back tomorrow to sharpen the rolling score.`,
+      body: `${score} reasoning score. ${formatElapsedTime(elapsedMs)} official time. ${rank} estimated daily rank. ${beatAi} AI blind-spot answers.`,
     }
     : resultStatus === 'practice'
       ? {
@@ -1061,8 +1179,8 @@ function Result({
       </div>
       <div className="stats three">
         <div><strong>{correct}/{total}</strong><span>correct</span></div>
-        <div><strong>{percentile}%</strong><span>percentile</span></div>
-        <div><strong>{beatAi}</strong><span>AI misses beaten</span></div>
+        <div><strong>{formatElapsedTime(elapsedMs)}</strong><span>official time</span></div>
+        <div><strong>+{speedBonus}</strong><span>speed bonus</span></div>
       </div>
       <div className="share-card">
         <div>
@@ -1115,6 +1233,9 @@ function Runner({
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
   const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => readPlayUsage());
   const [chargedAttempt, setChargedAttempt] = React.useState(false);
+  const [timerStartedAt, setTimerStartedAt] = React.useState(() => Date.now());
+  const [elapsedMs, setElapsedMs] = React.useState(0);
+  const [completedElapsedMs, setCompletedElapsedMs] = React.useState<number | null>(null);
   const questions = React.useMemo(() => getQuestions(mode), [mode]);
   const complete = started && step >= questions.length;
   const current = complete ? questions[questions.length - 1] : questions[step];
@@ -1135,7 +1256,18 @@ function Runner({
     setSelected(null);
     setAnswers([]);
     setChargedAttempt(false);
+    setTimerStartedAt(Date.now());
+    setElapsedMs(0);
+    setCompletedElapsedMs(null);
   }, [isPaid, mode, onUsageChange]);
+
+  React.useEffect(() => {
+    if (!started || complete) return undefined;
+    const tick = () => setElapsedMs(Date.now() - timerStartedAt);
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [complete, started, timerStartedAt]);
 
   function begin() {
     const usage = readPlayUsage();
@@ -1149,6 +1281,9 @@ function Runner({
     setSelected(null);
     setAnswers([]);
     setChargedAttempt(false);
+    setTimerStartedAt(Date.now());
+    setElapsedMs(0);
+    setCompletedElapsedMs(null);
   }
 
   React.useEffect(() => {
@@ -1158,6 +1293,7 @@ function Runner({
 
   function lockAnswer() {
     if (selected === null || complete || !current) return;
+    const finalElapsed = Date.now() - timerStartedAt;
     if (!isPaid && !chargedAttempt) {
       const nextUsage = consumePlay();
       setPlayUsage(nextUsage);
@@ -1171,6 +1307,10 @@ function Runner({
       aiSolved: current.aiSolved,
     }]);
     setSelected(null);
+    if (step + 1 >= questions.length) {
+      setElapsedMs(finalElapsed);
+      setCompletedElapsedMs(finalElapsed);
+    }
     setStep((value) => value + 1);
   }
 
@@ -1185,13 +1325,13 @@ function Runner({
     );
   }
 
-  if (complete) return <Result mode={mode} answers={answers} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
+  if (complete) return <Result mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
 
   return (
     <div className="runner-panel">
       <div className="progress-row">
         <p className="kicker">{modes[mode].label}</p>
-        <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used'}</span>
+        <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {formatElapsedTime(elapsedMs)} · {isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used'}</span>
       </div>
       <div className="track"><div style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
       <div className="question-head">
@@ -1234,6 +1374,11 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [groupName, setGroupName] = React.useState<string>(() => groupNameFromCode(readStoredGroupCode(initialGroupCode)));
   const [playerId, setPlayerId] = React.useState('');
   const [playerName, setPlayerName] = React.useState('');
+  const [usernameDraft, setUsernameDraft] = React.useState('');
+  const [claimedUsername, setClaimedUsername] = React.useState('');
+  const [usernameState, setUsernameState] = React.useState('Claim handle');
+  const [reminderEmail, setReminderEmail] = React.useState('');
+  const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
   const [inviteState, setInviteState] = React.useState('Copy invite');
   const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [] });
 
@@ -1248,6 +1393,11 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     setOfficialHistory(readOfficialHistory());
     setPlayerId(id);
     setPlayerName(readPlayerName(id));
+    const username = readClaimedUsername();
+    setClaimedUsername(username);
+    setUsernameDraft(username);
+    setUsernameState(username ? `@${username} claimed` : 'Claim handle');
+    setReminderEmail(readReminderEmail());
     setGroupCode(code);
     setGroupName(name);
     if (code) writeStoredGroup(code, name);
@@ -1343,7 +1493,8 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
 
   async function submitOfficialResult(record: OfficialRankRecord) {
     const id = playerId || readPlayerId();
-    const displayName = (playerName || readPlayerName(id)).trim();
+    const username = claimedUsername || readClaimedUsername();
+    const displayName = (username ? `@${username}` : playerName || readPlayerName(id)).trim();
     try {
       const response = await fetch('/api/leaderboards', {
         method: 'POST',
@@ -1352,6 +1503,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           day: record.day,
           playerId: id,
           displayName,
+          username,
           groupCode: groupCode || null,
           groupName: groupCode ? groupName : null,
           score: record.score,
@@ -1360,6 +1512,8 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           correct: record.correct,
           total: record.total,
           beatAi: record.beatAi,
+          elapsedMs: record.elapsedMs ?? null,
+          speedBonus: record.speedBonus ?? null,
         }),
       });
       const data = await response.json().catch(() => null);
@@ -1389,6 +1543,78 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
     const next = name.slice(0, 32);
     setPlayerName(next);
     writePlayerName(next);
+  }
+
+  function handleUsernameChange(value: string) {
+    const next = cleanUsernameInput(value);
+    setUsernameDraft(next);
+    setUsernameState(next && next === claimedUsername ? `@${next} claimed` : 'Claim handle');
+  }
+
+  async function claimUsername() {
+    const username = cleanUsernameInput(usernameDraft);
+    if (username.length < 3) {
+      setUsernameState('3+ chars');
+      return;
+    }
+    const id = playerId || readPlayerId();
+    setUsernameState('Claiming');
+    try {
+      const response = await fetch('/api/username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, playerId: id, displayName: playerName || `@${username}` }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setUsernameState(data?.error || 'Taken');
+        return;
+      }
+      setClaimedUsername(username);
+      setUsernameDraft(username);
+      writeClaimedUsername(username);
+      setUsernameState(`@${username} claimed`);
+      void refreshSocialBoards(groupCode || null);
+    } catch {
+      setUsernameState('Try again');
+    }
+  }
+
+  function handleReminderEmailChange(email: string) {
+    const next = email.slice(0, 120);
+    setReminderEmail(next);
+    writeReminderEmail(next);
+    setReminderState('Remind me tomorrow');
+  }
+
+  async function submitReminder() {
+    const email = reminderEmail.trim();
+    if (!email.includes('@')) {
+      setReminderState('Add email');
+      return;
+    }
+    setReminderState('Saving');
+    try {
+      const response = await fetch('/api/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          playerId: playerId || readPlayerId(),
+          groupCode: groupCode || null,
+          groupName: groupCode ? groupName : null,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setReminderState(data?.error || 'Try again');
+        return;
+      }
+      writeReminderEmail(email);
+      setReminderState(data?.confirmationSent ? 'Email sent' : 'Reminder saved');
+    } catch {
+      setReminderState('Try again');
+    }
   }
 
   function createGroup() {
@@ -1484,10 +1710,18 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             groupCode={groupCode || null}
             groupName={groupName}
             playerName={playerName}
+            usernameDraft={usernameDraft}
+            usernameState={usernameState}
+            reminderEmail={reminderEmail}
+            reminderState={reminderState}
             inviteState={inviteState}
             onCreateGroup={createGroup}
             onCopyInvite={copyInvite}
             onPlayerNameChange={handlePlayerNameChange}
+            onUsernameChange={handleUsernameChange}
+            onClaimUsername={claimUsername}
+            onReminderEmailChange={handleReminderEmailChange}
+            onReminderSubmit={submitReminder}
             onUnlock={() => setUnlockOpen(true)}
           />
         </section>
@@ -2239,12 +2473,15 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           box-shadow: 0 0 12px rgba(255,255,255,.18);
         }
         .options {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
           justify-content: flex-start;
           gap: clamp(10px, 1.4vw, 14px);
           margin-top: 26px;
         }
         .option {
-          width: clamp(84px, 16vw, 104px);
+          width: 100%;
+          min-width: 0;
           padding: 0;
           gap: 9px;
           border: 0;

@@ -1,6 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { NextResponse, type NextRequest } from 'next/server';
+import { readJsonStore, writeJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -10,6 +9,7 @@ type SocialEntry = {
   day: string;
   playerId: string;
   displayName: string;
+  username: string | null;
   groupCode: string | null;
   groupName: string | null;
   score: number;
@@ -18,6 +18,8 @@ type SocialEntry = {
   correct: number;
   total: number;
   beatAi: number;
+  elapsedMs: number | null;
+  speedBonus: number | null;
   timestamp: number;
 };
 
@@ -25,13 +27,10 @@ type LeaderboardStore = {
   entries: SocialEntry[];
 };
 
-const STORE_PATH = path.join('/tmp', 'world-iq-leaderboards.json');
+const STORE_KEY = 'world-iq:leaderboards:v2';
+const STORE_FILE = 'world-iq-leaderboards.json';
 const MAX_ENTRIES = 5000;
 const MAX_BOARD_ROWS = 50;
-
-const storeState = globalThis as typeof globalThis & {
-  __worldIqLeaderboardStore?: LeaderboardStore;
-};
 
 function emptyStore(): LeaderboardStore {
   return { entries: [] };
@@ -40,6 +39,11 @@ function emptyStore(): LeaderboardStore {
 function sanitizeGroupCode(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+}
+
+function sanitizeUsername(value: unknown) {
+  if (typeof value !== 'string') return '';
+  return value.toLowerCase().trim().replace(/^@+/, '').replace(/[^a-z0-9_]+/g, '').slice(0, 20);
 }
 
 function sanitizeText(value: unknown, fallback: string, max = 40) {
@@ -64,33 +68,20 @@ function isSocialEntry(value: unknown): value is SocialEntry {
 }
 
 async function readStore(): Promise<LeaderboardStore> {
-  if (storeState.__worldIqLeaderboardStore) return storeState.__worldIqLeaderboardStore;
-
-  try {
-    const raw = await readFile(STORE_PATH, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<LeaderboardStore>;
-    const store = {
-      entries: Array.isArray(parsed.entries) ? parsed.entries.filter(isSocialEntry).slice(-MAX_ENTRIES) : [],
-    };
-    storeState.__worldIqLeaderboardStore = store;
-    return store;
-  } catch {
-    const store = emptyStore();
-    storeState.__worldIqLeaderboardStore = store;
-    return store;
-  }
+  const parsed = await readJsonStore<Partial<LeaderboardStore>>(STORE_KEY, emptyStore(), STORE_FILE);
+  return {
+    entries: Array.isArray(parsed.entries) ? parsed.entries.filter(isSocialEntry).slice(-MAX_ENTRIES) : [],
+  };
 }
 
 async function writeStore(store: LeaderboardStore) {
   store.entries = store.entries.slice(-MAX_ENTRIES);
-  storeState.__worldIqLeaderboardStore = store;
-  await mkdir(path.dirname(STORE_PATH), { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(store), 'utf8');
+  await writeJsonStore(STORE_KEY, store, STORE_FILE);
 }
 
 function boardRows(entries: SocialEntry[]) {
   return [...entries]
-    .sort((a, b) => b.score - a.score || b.beatAi - a.beatAi || a.timestamp - b.timestamp)
+    .sort((a, b) => b.score - a.score || b.beatAi - a.beatAi || (a.elapsedMs ?? Number.MAX_SAFE_INTEGER) - (b.elapsedMs ?? Number.MAX_SAFE_INTEGER) || a.timestamp - b.timestamp)
     .slice(0, MAX_BOARD_ROWS);
 }
 
@@ -141,6 +132,8 @@ export async function POST(request: NextRequest) {
   const total = Number(body.total);
   const percentile = Number(body.percentile);
   const beatAi = Number(body.beatAi);
+  const elapsedMs = Number(body.elapsedMs);
+  const speedBonus = Number(body.speedBonus);
   if (![score, correct, total, percentile, beatAi].every(Number.isFinite)) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
@@ -152,6 +145,7 @@ export async function POST(request: NextRequest) {
     day,
     playerId,
     displayName: sanitizeText(body.displayName, 'Anonymous', 32),
+    username: sanitizeUsername(body.username) || null,
     groupCode,
     groupName,
     score: Math.max(0, Math.min(200, Math.round(score))),
@@ -160,6 +154,8 @@ export async function POST(request: NextRequest) {
     correct: Math.max(0, Math.min(99, Math.round(correct))),
     total: Math.max(1, Math.min(99, Math.round(total))),
     beatAi: Math.max(0, Math.min(99, Math.round(beatAi))),
+    elapsedMs: Number.isFinite(elapsedMs) ? Math.max(0, Math.min(86_400_000, Math.round(elapsedMs))) : null,
+    speedBonus: Number.isFinite(speedBonus) ? Math.max(0, Math.min(50, Math.round(speedBonus))) : null,
     timestamp: Date.now(),
   };
 
@@ -167,7 +163,7 @@ export async function POST(request: NextRequest) {
   const existingIndex = store.entries.findIndex((item) => item.id === entry.id);
   if (existingIndex >= 0) {
     entry.timestamp = store.entries[existingIndex].timestamp;
-    store.entries[existingIndex] = { ...store.entries[existingIndex], displayName: entry.displayName, groupName: entry.groupName };
+    store.entries[existingIndex] = { ...store.entries[existingIndex], displayName: entry.displayName, username: entry.username, groupName: entry.groupName };
   } else {
     store.entries.push(entry);
   }
