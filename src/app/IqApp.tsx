@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { detectBrowserLocale, localeLabel, translate, type LocaleKey } from './i18n';
 
 type ModeKey = 'world' | 'agi' | 'daily';
 type ViewKey = 'test' | 'rankings' | 'about';
@@ -719,6 +720,7 @@ function sharePattern(answers: AnswerRecord[]) {
 }
 
 function buildShareText({
+  locale,
   mode,
   score,
   rank,
@@ -733,6 +735,7 @@ function buildShareText({
   groupCode,
   groupName,
 }: {
+  locale: LocaleKey;
   mode: ModeKey;
   score: number;
   rank: string;
@@ -747,17 +750,18 @@ function buildShareText({
   groupCode: string | null;
   groupName: string;
 }) {
+  const copy = (text: string) => translate(locale, text);
   const topLabel = percentile >= 99.9 ? 'top 0.1%' : `top ${(100 - percentile).toFixed(percentile >= 99 ? 1 : 0)}%`;
-  const roomLine = groupCode ? `\nRoom: ${groupName}\n${groupShareUrl(groupCode)}` : '\niq.on.recursiv.io';
-  const timeLine = `${formatElapsedTime(elapsedMs)} · +${speedBonus} speed`;
+  const roomLine = groupCode ? `\n${copy('Room')}: ${groupName}\n${groupShareUrl(groupCode)}` : '\niq.on.recursiv.io';
+  const timeLine = `${formatElapsedTime(elapsedMs)} · +${speedBonus} ${copy('speed')}`;
   if (mode === 'world') {
-    const label = status === 'practice' ? 'World IQ practice' : `World IQ ${localDayKey()}`;
-    return `${label}: ${score} reasoning | ${rank} | ${topLabel} | ${correct}/${total} | ${timeLine} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
+    const label = status === 'practice' ? copy('World IQ practice') : `World IQ ${localDayKey()}`;
+    return `${label}: ${score} ${copy('reasoning')} | ${rank} | ${topLabel} | ${correct}/${total} | ${timeLine} | ${copy('AI misses')} ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
   if (mode === 'agi') {
-    return `AI Blind Spots: ${score} reasoning | ${correct}/${total} | ${timeLine} | AI misses ${beatAi}\n${sharePattern(answers)}${roomLine}`;
+    return `${copy('AI Blind Spots')}: ${score} ${copy('reasoning')} | ${correct}/${total} | ${timeLine} | ${copy('AI misses')} ${beatAi}\n${sharePattern(answers)}${roomLine}`;
   }
-  return `Daily Sprint: ${score} reasoning | ${rank} | ${correct}/${total} | ${timeLine}\n${sharePattern(answers)}${roomLine}`;
+  return `${copy('Daily Sprint')}: ${score} ${copy('reasoning')} | ${rank} | ${correct}/${total} | ${timeLine}\n${sharePattern(answers)}${roomLine}`;
 }
 
 function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTile | null; selected?: boolean }) {
@@ -804,31 +808,32 @@ function SignalSculpture() {
   );
 }
 
-function IqProfilePanel({ history, onUnlock }: { history: OfficialRankRecord[]; onUnlock: () => void }) {
+function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRecord[]; onUnlock: () => void; locale: LocaleKey }) {
+  const copy = (text: string) => translate(locale, text);
   const profile = getIqProfile(history);
   const recent = sortOfficialHistory(history).slice(0, 14).reverse();
 
   return (
-    <section className="profile-panel" aria-label="Developing World IQ profile">
+    <section className="profile-panel" aria-label={copy('Developing World IQ profile')}>
       <div className="section-head">
         <div>
-          <p className="kicker">Developing IQ</p>
-          <h2>{profile.score ? `${profile.score} rolling score` : 'Build your score over time.'}</h2>
+          <p className="kicker">{copy('Developing IQ')}</p>
+          <h2>{profile.score ? `${profile.score} ${copy('rolling score')}` : copy('Build your score over time.')}</h2>
           <p>{profile.attempts > 0
-            ? `${profile.confidence}. One official attempt per day keeps the score honest and lets the profile mature over time.`
-            : 'Your profile starts with the first official attempt. Each daily result becomes one signal in the rolling score.'}</p>
+            ? `${copy(profile.confidence)}. ${copy('One official attempt per day keeps the score honest and lets the profile mature over time.')}`
+            : copy('Your profile starts with the first official attempt. Each daily result becomes one signal in the rolling score.')}</p>
         </div>
-        <button className="secondary" onClick={onUnlock}>Save profile</button>
+        <button className="secondary" onClick={onUnlock}>{copy('Save profile')}</button>
       </div>
 
       <div className="profile-stats">
-        <div><strong>{profile.score ?? '---'}</strong><span>rolling IQ</span></div>
-        <div><strong>{profile.attempts}</strong><span>official days</span></div>
-        <div><strong>{profile.best ?? '---'}</strong><span>best score</span></div>
-        <div><strong>{formatTrend(profile.trend)}</strong><span>trajectory</span></div>
+        <div><strong>{profile.score ?? '---'}</strong><span>{copy('rolling IQ')}</span></div>
+        <div><strong>{profile.attempts}</strong><span>{copy('official days')}</span></div>
+        <div><strong>{profile.best ?? '---'}</strong><span>{copy('best score')}</span></div>
+        <div><strong>{copy(formatTrend(profile.trend))}</strong><span>{copy('trajectory')}</span></div>
       </div>
 
-      <div className="history-strip" aria-label="Recent official score history">
+      <div className="history-strip" aria-label={copy('Recent official score history')}>
         {recent.length ? (
           recent.map((entry) => (
             <div key={entry.day} className="history-day">
@@ -839,8 +844,8 @@ function IqProfilePanel({ history, onUnlock }: { history: OfficialRankRecord[]; 
           ))
         ) : (
           <div className="empty-board">
-            <strong>No official days yet.</strong>
-            <span>Take today&apos;s one official attempt to create the first point in the score history.</span>
+            <strong>{copy('No official days yet.')}</strong>
+            <span>{copy('Take today\'s one official attempt to create the first point in the score history.')}</span>
           </div>
         )}
       </div>
@@ -887,6 +892,7 @@ function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnl
 }
 
 function SocialLeaderboard({
+  locale,
   kicker,
   title,
   description,
@@ -895,6 +901,7 @@ function SocialLeaderboard({
   cta,
   onCta,
 }: {
+  locale: LocaleKey;
   kicker: string;
   title: string;
   description: string;
@@ -903,6 +910,7 @@ function SocialLeaderboard({
   cta: string;
   onCta: () => void;
 }) {
+  const copy = (text: string) => translate(locale, text);
   return (
     <section className="leaderboard social-board">
       <div className="section-head">
@@ -920,7 +928,7 @@ function SocialLeaderboard({
               <div className="rank">#{index + 1}</div>
               <div className="leader-copy">
                 <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
-                <span>{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} AI misses</span>
+                <span>{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} {copy('AI misses')}</span>
               </div>
               <div className="leader-score">
                 <strong>{entry.score}</strong>
@@ -931,7 +939,7 @@ function SocialLeaderboard({
         ) : (
           <div className="empty-board">
             <strong>{empty}</strong>
-            <span>Finish Today&apos;s World IQ to put the first verified score on this board.</span>
+            <span>{copy('Finish Today\'s World IQ to put the first verified score on this board.')}</span>
           </div>
         )}
       </div>
@@ -940,6 +948,7 @@ function SocialLeaderboard({
 }
 
 function StatusRail({
+  locale,
   isPaid,
   usage,
   officialRank,
@@ -961,6 +970,7 @@ function StatusRail({
   onReminderSubmit,
   onUnlock,
 }: {
+  locale: LocaleKey;
   isPaid: boolean;
   usage: PlayUsage;
   officialRank: OfficialRankRecord | null;
@@ -982,6 +992,8 @@ function StatusRail({
   onReminderSubmit: () => void;
   onUnlock: () => void;
 }) {
+  const copy = (text: string) => translate(locale, text);
+  const stateCopy = (text: string) => text.startsWith('@') ? text : copy(text);
   const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
   const remaining = Math.max(0, DAILY_PLAY_LIMIT - usedToday);
   const iqProfile = getIqProfile(officialHistory);
@@ -989,65 +1001,66 @@ function StatusRail({
   return (
     <aside className="status-rail" aria-label="World IQ session and subscription">
       <section className="rail-panel">
-        <p className="rail-label">Session</p>
-        <strong>{isPaid ? 'Paid profile' : remaining > 0 ? '1 / 1 attempt left' : '0 / 1 · used'}</strong>
-        <span>{isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One official Today\'s World IQ attempt today.' : 'Your official attempt is locked for today.'}</span>
+        <p className="rail-label">{copy('Session')}</p>
+        <strong>{copy(isPaid ? 'Paid profile' : remaining > 0 ? '1 / 1 attempt left' : '0 / 1 · used')}</strong>
+        <span>{copy(isPaid ? 'Archive, reports, and extra practice are active.' : remaining > 0 ? 'One official Today\'s World IQ attempt today.' : 'Your official attempt is locked for today.')}</span>
         <div className="rail-rule" />
-        <p className="rail-label">Official rank</p>
-        <span className="rail-mono">{officialRank ? `Locked · ${officialRank.score} · ${officialRank.rank}` : 'Not yet locked today.'}</span>
+        <p className="rail-label">{copy('Official rank')}</p>
+        <span className="rail-mono">{officialRank ? `${copy('Locked')} · ${officialRank.score} · ${officialRank.rank}` : copy('Not yet locked today.')}</span>
         <div className="rail-rule" />
-        <p className="rail-label">Developing IQ</p>
-        <strong>{iqProfile.score ?? 'Unrated'}</strong>
+        <p className="rail-label">{copy('Developing IQ')}</p>
+        <strong>{iqProfile.score ?? copy('Unrated')}</strong>
         <span>{iqProfile.attempts > 0
-          ? `${iqProfile.confidence} · ${iqProfile.attempts} official day${iqProfile.attempts === 1 ? '' : 's'} · ${formatTrend(iqProfile.trend)}`
-          : 'Complete today\'s official attempt to start the profile.'}</span>
+          ? `${copy(iqProfile.confidence)} · ${iqProfile.attempts} ${copy('official days')} · ${copy(formatTrend(iqProfile.trend))}`
+          : copy('Complete today\'s official attempt to start the profile.')}</span>
       </section>
 
       <section className="rail-panel friend-panel">
-        <p className="rail-label">Friend room</p>
-        <strong>{groupCode ? groupName : 'No room yet'}</strong>
-        <span>{groupCode ? `Room /g/${groupCode}. Scores land on the friend board after the official run.` : 'Create a room, share the link, and compete daily with one attempt each.'}</span>
+        <p className="rail-label">{copy('Friend room')}</p>
+        <strong>{groupCode ? groupName : copy('No room yet')}</strong>
+        <span>{groupCode ? `${copy('Room')} /g/${groupCode}. ${copy('Scores land on the friend board after the official run.')}` : copy('Create a room, share the link, and compete daily with one attempt each.')}</span>
         {groupCode ? (
           <>
             <label className="name-field">
-              <span>Your board name</span>
+              <span>{copy('Your board name')}</span>
               <input value={playerName} onChange={(event) => onPlayerNameChange(event.target.value)} maxLength={32} />
             </label>
             <label className="name-field">
-              <span>Claim @username</span>
+              <span>{copy('Claim @username')}</span>
               <input value={usernameDraft ? `@${usernameDraft}` : ''} onChange={(event) => onUsernameChange(event.target.value)} maxLength={21} placeholder="@handle" />
             </label>
-            <button className="secondary full" onClick={onClaimUsername}>{usernameState}</button>
+            <button className="secondary full" onClick={onClaimUsername}>{stateCopy(usernameState)}</button>
             <label className="name-field">
-              <span>Daily reminder</span>
+              <span>{copy('Daily reminder')}</span>
               <input value={reminderEmail} onChange={(event) => onReminderEmailChange(event.target.value)} maxLength={120} placeholder="you@email.com" />
             </label>
-            <button className="secondary full" onClick={onReminderSubmit}>{reminderState}</button>
+            <button className="secondary full" onClick={onReminderSubmit}>{stateCopy(reminderState)}</button>
           </>
         ) : null}
         <button className="secondary full" onClick={groupCode ? onCopyInvite : onCreateGroup}>
-          {groupCode ? inviteState : 'Create room'}
+          {copy(groupCode ? inviteState : 'Create room')}
         </button>
       </section>
 
       <section className="rail-panel unlock-panel">
         <div className="rail-price">
-          <p className="rail-label">Unlock</p>
+          <p className="rail-label">{copy('Unlock')}</p>
           <strong>{UNLIMITED_PRICE_LABEL}</strong>
         </div>
         <ul>
-          <li>Full archive access</li>
-          <li>Saved history</li>
-          <li>Private reasoning reports</li>
-          <li>Extra practice</li>
+          <li>{copy('Full archive access')}</li>
+          <li>{copy('Saved history')}</li>
+          <li>{copy('Private reasoning reports')}</li>
+          <li>{copy('Extra practice')}</li>
         </ul>
-        <button className="secondary full" onClick={onUnlock}>Unlock profile</button>
+        <button className="secondary full" onClick={onUnlock}>{copy('Unlock profile')}</button>
       </section>
     </aside>
   );
 }
 
 function Result({
+  locale,
   mode,
   answers,
   elapsedMs,
@@ -1056,6 +1069,7 @@ function Result({
   groupCode,
   groupName,
 }: {
+  locale: LocaleKey;
   mode: ModeKey;
   answers: AnswerRecord[];
   elapsedMs: number | null;
@@ -1064,6 +1078,7 @@ function Result({
   groupCode: string | null;
   groupName: string;
 }) {
+  const copy = (text: string) => translate(locale, text);
   const [shareState, setShareState] = React.useState(groupCode ? 'Invite friends' : 'Share result');
   const [resultStatus, setResultStatus] = React.useState<'pending' | 'official' | 'practice' | 'daily' | 'lab'>('pending');
   const submittedRef = React.useRef(false);
@@ -1075,7 +1090,7 @@ function Result({
   const rank = formatRank(percentile);
   const beatAi = answers.filter((answer) => answer.correct && !answer.aiSolved).length;
   const officialWorldRun = mode === 'world' && total >= 6;
-  const shareText = buildShareText({ mode, score, rank, percentile, correct, total, beatAi, elapsedMs, speedBonus, answers, status: resultStatus, groupCode, groupName });
+  const shareText = buildShareText({ locale, mode, score, rank, percentile, correct, total, beatAi, elapsedMs, speedBonus, answers, status: resultStatus, groupCode, groupName });
 
   React.useEffect(() => {
     if (submittedRef.current) return;
@@ -1112,15 +1127,15 @@ function Result({
       id: `official-${localDayKey()}`,
       name: 'You',
       score,
-      mode: 'Today\'s World IQ',
+      mode: copy('Today\'s World IQ'),
       accuracy: `${correct}/${total}`,
-      qualifier: beatAi > 0 ? `${beatAi} AI misses beaten` : 'official daily rank',
+      qualifier: beatAi > 0 ? `${beatAi} ${copy('AI misses')}` : copy('official daily rank'),
       timestamp: Date.now(),
       local: true,
     };
     saveLeaderboardEntry(entry);
     onLeaderboard(entry, officialRank);
-  }, [beatAi, correct, elapsedMs, mode, officialWorldRun, onLeaderboard, percentile, rank, score, speedBonus, total]);
+  }, [beatAi, correct, elapsedMs, locale, mode, officialWorldRun, onLeaderboard, percentile, rank, score, speedBonus, total]);
 
   async function share() {
     try {
@@ -1144,7 +1159,7 @@ function Result({
     ? {
       kicker: 'Official rank locked',
       title: 'Today updated your developing World IQ profile.',
-      body: `${score} reasoning score. ${formatElapsedTime(elapsedMs)} official time. ${rank} estimated daily rank. ${beatAi} AI blind-spot answers.`,
+      body: `${score} ${copy('Reasoning score')}. ${formatElapsedTime(elapsedMs)} ${copy('official time')}. ${rank} ${copy('estimated rank')}. ${beatAi} ${copy('AI misses')}.`,
     }
     : resultStatus === 'practice'
       ? {
@@ -1159,33 +1174,33 @@ function Result({
           body: 'Daily Sprint builds the habit. Complete Today\'s World IQ to update the official profile.',
         }
         : {
-          kicker: 'AI lab complete',
-          title: 'Blind-spot run complete.',
-          body: `${beatAi} answers landed on puzzles current model baselines often miss.`,
-        };
+        kicker: 'AI lab complete',
+        title: 'Blind-spot run complete.',
+        body: `${beatAi} ${copy('answers landed on puzzles current model baselines often miss.')}`,
+      };
 
   return (
     <div className="runner-panel result">
-      <p className="kicker">{statusCopy.kicker}</p>
+      <p className="kicker">{copy(statusCopy.kicker)}</p>
       <div className="result-top">
         <div>
           <strong className="score">{score}</strong>
-          <span>Reasoning score</span>
+          <span>{copy('Reasoning score')}</span>
         </div>
         <div className="rank-card">
           <strong>{rank}</strong>
-          <span>estimated rank</span>
+          <span>{copy('estimated rank')}</span>
         </div>
       </div>
       <div className="stats three">
-        <div><strong>{correct}/{total}</strong><span>correct</span></div>
-        <div><strong>{formatElapsedTime(elapsedMs)}</strong><span>official time</span></div>
-        <div><strong>+{speedBonus}</strong><span>speed bonus</span></div>
+        <div><strong>{correct}/{total}</strong><span>{copy('correct')}</span></div>
+        <div><strong>{formatElapsedTime(elapsedMs)}</strong><span>{copy('official time')}</span></div>
+        <div><strong>+{speedBonus}</strong><span>{copy('speed bonus')}</span></div>
       </div>
       <div className="share-card">
         <div>
-          <strong>{mode === 'world' ? `World IQ ${localDayKey()}` : modes[mode].label}</strong>
-          <span>{correct}/{total} correct · {beatAi} AI misses</span>
+          <strong>{mode === 'world' ? `World IQ ${localDayKey()}` : copy(modes[mode].label)}</strong>
+          <span>{correct}/{total} {copy('correct')} · {beatAi} {copy('AI misses')}</span>
         </div>
         <div className="share-pattern" aria-label="Result pattern" style={{ gridTemplateColumns: `repeat(${answers.length}, 1fr)` }}>
           {answers.map((answer) => (
@@ -1195,20 +1210,21 @@ function Result({
         <p>{shareText}</p>
       </div>
       <div className={`qualification ${resultStatus === 'official' ? 'qualified' : ''}`}>
-        <strong>{statusCopy.title}</strong>
-        <span>{statusCopy.body}</span>
+        <strong>{copy(statusCopy.title)}</strong>
+        <span>{copy(statusCopy.body)}</span>
       </div>
-      <p className="trust-note">World IQ is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.</p>
+      <p className="trust-note">{copy('World IQ is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
       <div className="actions">
-        <button className="primary" onClick={share}>{shareState}</button>
-        <button className="secondary" onClick={onUnlock}>Save rank</button>
-        <button className="secondary" onClick={onUnlock}>Unlock archive</button>
+        <button className="primary" onClick={share}>{copy(shareState)}</button>
+        <button className="secondary" onClick={onUnlock}>{copy('Save rank')}</button>
+        <button className="secondary" onClick={onUnlock}>{copy('Unlock archive')}</button>
       </div>
     </div>
   );
 }
 
 function Runner({
+  locale,
   mode,
   startRequest,
   isPaid,
@@ -1218,6 +1234,7 @@ function Runner({
   groupCode,
   groupName,
 }: {
+  locale: LocaleKey;
   mode: ModeKey;
   startRequest: number;
   isPaid: boolean;
@@ -1227,6 +1244,7 @@ function Runner({
   groupCode: string | null;
   groupName: string;
 }) {
+  const copy = (text: string) => translate(locale, text);
   const [started, setStarted] = React.useState(() => isPaid || playsRemaining(readPlayUsage()) > 0);
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
@@ -1317,42 +1335,42 @@ function Runner({
   if (!isPaid && !started) {
     return (
       <div className="runner-panel gate">
-        <p className="kicker">{modes[mode].label}</p>
-        <h2>Your one official attempt today is locked.</h2>
-        <p className="free-note">Free players get 1 official Today&apos;s World IQ attempt per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.</p>
-        <button className="primary full" onClick={onUnlock}>Unlock profile</button>
+        <p className="kicker">{copy(modes[mode].label)}</p>
+        <h2>{copy('Your one official attempt today is locked.')}</h2>
+        <p className="free-note">{copy('Free players get 1 official Today\'s World IQ attempt per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.')}</p>
+        <button className="primary full" onClick={onUnlock}>{copy('Unlock profile')}</button>
       </div>
     );
   }
 
-  if (complete) return <Result mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
+  if (complete) return <Result locale={locale} mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} groupCode={groupCode} groupName={groupName} />;
 
   return (
     <div className="runner-panel">
       <div className="progress-row">
-        <p className="kicker">{modes[mode].label}</p>
-        <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {formatElapsedTime(elapsedMs)} · {isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used'}</span>
+        <p className="kicker">{copy(modes[mode].label)}</p>
+        <span>{String(step + 1).padStart(3, '0')} / {String(questions.length).padStart(2, '0')} · {formatElapsedTime(elapsedMs)} · {copy(isPaid ? 'Paid profile' : remainingToday > 0 ? '1 / 1 left' : '0 / 1 used')}</span>
       </div>
       <div className="track"><div style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
       <div className="question-head">
-        <h2>{current.title}</h2>
-        <span>{current.difficulty}</span>
+        <h2>{copy(current.title)}</h2>
+        <span>{copy(current.difficulty)}</span>
       </div>
-      <p className="prompt">{current.prompt}</p>
+      <p className="prompt">{copy(current.prompt)}</p>
       <div className="matrix">
         {current.matrix.map((item, index) => <PatternTileView key={`${current.id}-${index}`} tile={item} />)}
       </div>
       <div className="options">
         {current.options.map((item, index) => (
-          <button key={`${current.id}-${index}`} aria-label={`Answer ${index + 1}`} className={`option ${selected === index ? 'active' : ''}`} onClick={() => setSelected(index)}>
+          <button key={`${current.id}-${index}`} aria-label={`${copy('Answer')} ${index + 1}`} className={`option ${selected === index ? 'active' : ''}`} onClick={() => setSelected(index)}>
             <PatternTileView tile={item} selected={selected === index} />
             <span>{String.fromCharCode(65 + index)}</span>
           </button>
         ))}
       </div>
       <div className="answer-footer">
-        <p>{current.aiSolved ? 'Frontier models usually solve this.' : 'Frontier models often miss this pattern.'}</p>
-        <button className="primary" disabled={selected === null} onClick={lockAnswer}>Lock answer</button>
+        <p>{copy(current.aiSolved ? 'Frontier models usually solve this.' : 'Frontier models often miss this pattern.')}</p>
+        <button className="primary" disabled={selected === null} onClick={lockAnswer}>{copy('Lock answer')}</button>
       </div>
     </div>
   );
@@ -1361,6 +1379,7 @@ function Runner({
 export default function Home({ initialGroupCode = '' }: { initialGroupCode?: string }) {
   const [mode, setMode] = React.useState<ModeKey>('world');
   const [view, setView] = React.useState<ViewKey>('test');
+  const [locale, setLocale] = React.useState<LocaleKey>('en');
   const startRequest = 0;
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardEntry[]>(seededLeaderboard);
   const [unlockOpen, setUnlockOpen] = React.useState(false);
@@ -1381,6 +1400,14 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
   const [inviteState, setInviteState] = React.useState('Copy invite');
   const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [] });
+  const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
+
+  React.useEffect(() => {
+    const detected = detectBrowserLocale();
+    setLocale(detected);
+    document.documentElement.lang = detected;
+    document.documentElement.dataset.locale = detected;
+  }, []);
 
   React.useEffect(() => {
     const id = readPlayerId();
@@ -1635,7 +1662,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
       createGroup();
       return;
     }
-    const inviteText = `Join ${groupName} on World IQ. One official attempt today: ${groupShareUrl(groupCode)}`;
+    const inviteText = `${copy('Join')} ${groupName} ${copy('on World IQ. One official attempt today:')} ${groupShareUrl(groupCode)}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: `${groupName} on World IQ`, text: inviteText, url: groupShareUrl(groupCode) });
@@ -1680,7 +1707,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
   }
 
   return (
-    <main>
+    <main lang={locale} data-locale={locale}>
       <nav>
         <button className="brand" onClick={() => {
           setMode('world');
@@ -1689,20 +1716,22 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           <strong>World IQ</strong>
         </button>
         <div>
-          <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>Today</button>
-          <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>AI</button>
-          <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>Sprint</button>
-          <button className={view === 'rankings' ? 'active' : ''} onClick={() => setView('rankings')}>Rankings</button>
-          <button className={view === 'about' ? 'active' : ''} onClick={() => setView('about')}>About</button>
-          <button className="nav-cta" onClick={() => setUnlockOpen(true)}>Account</button>
+          <span className="language-pill" aria-label={`${copy('Auto')} ${localeLabel(locale)}`}>{copy('Auto')} · {localeLabel(locale)}</span>
+          <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
+          <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button>
+          <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button>
+          <button className={view === 'rankings' ? 'active' : ''} onClick={() => setView('rankings')}>{copy('Rankings')}</button>
+          <button className={view === 'about' ? 'active' : ''} onClick={() => setView('about')}>{copy('About')}</button>
+          <button className="nav-cta" onClick={() => setUnlockOpen(true)}>{copy('Account')}</button>
         </div>
       </nav>
 
       {view === 'test' ? (
-        <section className="test-surface" aria-label={`${modes[mode].label} test`}>
+        <section className="test-surface" aria-label={`${copy(modes[mode].label)} test`}>
           <SignalSculpture />
-          <Runner key={mode} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
+          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
           <StatusRail
+            locale={locale}
             isPaid={paidAccess}
             usage={usageSnapshot}
             officialRank={officialSnapshot}
@@ -1729,23 +1758,25 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
 
       {view === 'rankings' ? (
         <>
-          <IqProfilePanel history={officialHistory} onUnlock={() => setUnlockOpen(true)} />
+          <IqProfilePanel history={officialHistory} onUnlock={() => setUnlockOpen(true)} locale={locale} />
           <SocialLeaderboard
-            kicker="Friend room"
-            title={groupCode ? `${groupName} daily board` : 'Create a private daily board.'}
-            description={groupCode ? 'One invite link. One official attempt each. The room resets daily and keeps the pressure local.' : 'Friend rooms are the fastest loop: create a link, send it to a group chat, and compare official scores today.'}
+            locale={locale}
+            kicker={copy('Friend room')}
+            title={groupCode ? `${groupName} ${copy('daily board')}` : copy('Create a private daily board.')}
+            description={groupCode ? copy('One invite link. One official attempt each. The room resets daily and keeps the pressure local.') : copy('Friend rooms are the fastest loop: create a link, send it to a group chat, and compare official scores today.')}
             entries={socialBoards.group}
-            empty={groupCode ? 'No friends have locked today.' : 'No friend room yet.'}
-            cta={groupCode ? 'Invite friends' : 'Create room'}
+            empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
+            cta={copy(groupCode ? 'Invite friends' : 'Create room')}
             onCta={groupCode ? copyInvite : createGroup}
           />
           <SocialLeaderboard
-            kicker="Global board"
-            title="The daily global World IQ board."
-            description="The highest official first attempts today, deduped by player. Friend-room results also qualify globally."
+            locale={locale}
+            kicker={copy('Global board')}
+            title={copy('The daily global World IQ board.')}
+            description={copy('The highest official first attempts today, deduped by player. Friend-room results also qualify globally.')}
             entries={socialBoards.global}
-            empty="No global results yet today."
-            cta={groupCode ? 'Invite friends' : 'Create room'}
+            empty={copy('No global results yet today.')}
+            cta={copy(groupCode ? 'Invite friends' : 'Create room')}
             onCta={groupCode ? copyInvite : createGroup}
           />
         </>
@@ -1755,54 +1786,54 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         <section className="features">
           <div className="section-head">
             <div>
-              <p className="kicker">World IQ by Recursiv</p>
-              <h2>The daily reasoning rank for humans and AI.</h2>
-              <p>A competitive visual reasoning game. One official attempt per day updates a score profile that develops over time.</p>
+              <p className="kicker">{copy('World IQ by Recursiv')}</p>
+              <h2>{copy('The daily reasoning rank for humans and AI.')}</h2>
+              <p>{copy('A competitive visual reasoning game. One official attempt per day updates a score profile that develops over time.')}</p>
             </div>
           </div>
           <div className="feature-grid">
-            <article><strong>Today&apos;s World IQ</strong><p>A 12-question reasoning run that starts hard and allows one official daily submission.</p></article>
-            <article><strong>AI Blind Spots</strong><p>Lab puzzles selected because current model baselines often miss the abstraction.</p></article>
-            <article><strong>Developing score</strong><p>Your rolling IQ score gets more confident as official daily results accumulate.</p></article>
+            <article><strong>{copy('Today\'s World IQ')}</strong><p>{copy('A 12-question reasoning run that starts hard and allows one official daily submission.')}</p></article>
+            <article><strong>{copy('AI Blind Spots')}</strong><p>{copy('Lab puzzles selected because current model baselines often miss the abstraction.')}</p></article>
+            <article><strong>{copy('Developing score')}</strong><p>{copy('Your rolling IQ score gets more confident as official daily results accumulate.')}</p></article>
           </div>
           <div className="monetization">
-            <div><strong>World IQ Unlimited</strong><p>Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.</p></div>
-            <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
+            <div><strong>{copy('World IQ Unlimited')}</strong><p>{copy('Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.')}</p></div>
+            <button className="secondary" onClick={() => setUnlockOpen(true)}>{copy('Save profile')}</button>
           </div>
-          <p className="trust-note">World IQ is not a clinical IQ test, admission test, or supervised psychometric assessment.</p>
+          <p className="trust-note">{copy('World IQ is not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
         </section>
       ) : null}
 
       {unlockOpen ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Unlock World IQ archive access">
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={copy('Unlock World IQ archive access')}>
           <div className="modal">
-            <button className="close" onClick={() => setUnlockOpen(false)} aria-label="Close">×</button>
-            <p className="kicker">World IQ account</p>
-            <h2>{paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.'}</h2>
+            <button className="close" onClick={() => setUnlockOpen(false)} aria-label={copy('Close')}>×</button>
+            <p className="kicker">{copy('World IQ account')}</p>
+            <h2>{copy(paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.')}</h2>
             <p>{paidAccess
-              ? 'Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.'
-              : 'Free visitors get 1 official attempt per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access, score history, and private reports.'}</p>
+              ? copy('Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.')
+              : copy('Free visitors get 1 official attempt per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access, score history, and private reports.')}</p>
             <div className="plans">
-              <div><strong>Free</strong><span>1 official attempt / day</span></div>
-              <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>archive + reports + extra practice</span></div>
+              <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
+              <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>{copy('archive + reports + extra practice')}</span></div>
             </div>
             {paidAccess ? (
-              <button className="primary full" onClick={() => setUnlockOpen(false)}>Continue playing</button>
+              <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
             ) : (
               <div className="stacked-actions">
-                <a className="secondary full center-link" href={RECURSIV_SIGNUP_URL}>Create Recursiv account</a>
+                <a className="secondary full center-link" href={RECURSIV_SIGNUP_URL}>{copy('Create Recursiv account')}</a>
                 <button className="primary full" disabled={checkoutBusy} onClick={startCheckout}>
-                  {checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout'}
+                  {copy(checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout')}
                 </button>
               </div>
             )}
             <span className="fine-print">
               {paidAccess
-                ? 'Archive access and extra practice are enabled.'
-                : `Games-style pricing at ${UNLIMITED_PRICE_LABEL}. Checkout is created securely with Stripe.`}
+                ? copy('Archive access and extra practice are enabled.')
+                : `${copy('Games-style pricing at')} ${UNLIMITED_PRICE_LABEL}. ${copy('Checkout is created securely with Stripe.')}`}
             </span>
-            {checkoutError ? <span className="fine-print error">{checkoutError}</span> : null}
-            {checkoutState === 'active' ? <span className="fine-print success">Payment verified. Unlimited is active.</span> : null}
+            {checkoutError ? <span className="fine-print error">{copy(checkoutError)}</span> : null}
+            {checkoutState === 'active' ? <span className="fine-print success">{copy('Payment verified. Unlimited is active.')}</span> : null}
           </div>
         </div>
       ) : null}
@@ -1889,6 +1920,19 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         }
         nav .brand { padding: 0; color: var(--ink); border-radius: 0; }
         nav .nav-cta { min-height: 36px; padding: 7px 12px; }
+        .language-pill {
+          display: inline-flex;
+          align-items: center;
+          min-height: 30px;
+          padding: 0 8px;
+          border: 1px solid var(--line);
+          color: var(--muted);
+          font-family: "Courier New", ui-monospace, monospace;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: .08em;
+          text-transform: uppercase;
+        }
         nav button:not(.brand)::after { content: " ↗"; font-size: 12px; }
         nav button.active { color: var(--ink); background: transparent; box-shadow: inset 0 -1px 0 var(--ink); }
         .nav-cta, .secondary {
@@ -2302,6 +2346,18 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           border: 1px solid rgba(255,255,255,.18);
           border-radius: 3px;
           background: rgba(255,255,255,.03);
+        }
+        .language-pill {
+          min-height: 28px;
+          padding: 0 9px;
+          border-color: rgba(255,255,255,.12);
+          border-radius: 3px;
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .18em;
+          text-transform: uppercase;
         }
         .test-surface {
           display: grid;
