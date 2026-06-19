@@ -1,0 +1,477 @@
+html {
+  background: #060708;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  background: #060708;
+  color: #e9ebec;
+  font-family: "Space Grotesk", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+a,
+input {
+  font: inherit;
+}
+
+main {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: clamp(16px, 3vw, 30px) clamp(16px, 4vw, 40px) 72px;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(130% 90% at 50% -12%, #16181b 0%, #0b0c0e 44%, #060708 100%);
+  color: #e9ebec;
+}
+
+main::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .018) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(120% 90% at 50% 30%, #000 40%, transparent 78%);
+  z-index: 0;
+}
+
+nav,
+.test-surface,
+.leaderboard,
+.features,
+.profile-panel {
+  position: relative;
+  z-index: 2;
+  width: min(1200px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+nav {
+  padding: 0 0 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  border: 0;
+  background: transparent;
+  color: #f4f5f6;
+  display: grid;
+  gap: 0;
+  padding: 0;
+  text-align: left;
+}
+
+nav strong {
+  color: #f4f5f6;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+nav span,
+.language-pill,
+.kicker,
+.progress-row span,
+.question-head span,
+.answer-footer p,
+.fine-print {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+nav span {
+  color: #5c6166;
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+nav > div:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(10px, 1.6vw, 20px);
+  flex-wrap: wrap;
+}
+
+nav button,
+.language-pill {
+  min-height: 28px;
+  color: #9fa4a8;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 1px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+nav .nav-cta,
+.primary,
+.secondary {
+  border-radius: 3px;
+  min-height: 48px;
+  padding: 0 24px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+nav .nav-cta,
+.secondary {
+  color: #e9ebec;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, .18);
+}
+
+.primary {
+  color: #0a0b0c;
+  background: #f4f5f6;
+  border: 0;
+}
+
+.full {
+  width: 100%;
+}
+
+.center-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.test-surface {
+  display: grid;
+  grid-template-columns: minmax(360px, 600px) minmax(248px, 320px);
+  justify-content: space-between;
+  align-items: start;
+  gap: clamp(20px, 3vw, 40px);
+  margin-top: clamp(28px, 5vh, 56px);
+  padding: 0;
+}
+
+.test-surface .runner-panel,
+.runner-panel,
+.leaderboard,
+.features,
+.profile-panel,
+.rail-panel {
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  background: linear-gradient(160deg, rgba(20, 22, 25, .86), rgba(11, 12, 14, .86));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .05);
+  color: #e9ebec;
+}
+
+.test-surface .runner-panel,
+.runner-panel {
+  width: 100%;
+  padding: clamp(20px, 3vw, 32px);
+  overflow: hidden;
+}
+
+.status-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.rail-panel {
+  padding: 22px;
+}
+
+.kicker,
+.rail-label {
+  color: #9fa4a8;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+}
+
+.progress-row,
+.question-head,
+.answer-footer,
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.question-head h2,
+.section-head h2,
+.features h2,
+.leaderboard h2,
+.gate h2,
+.modal h2 {
+  color: #f4f5f6;
+  font-size: clamp(22px, 3.4vw, 30px);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  margin: 0;
+}
+
+.prompt,
+.free-note,
+.section-head p,
+.feature-grid p,
+.monetization p,
+.qualification span,
+.modal p:not(.kicker) {
+  color: #969ba0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.prompt {
+  margin-top: 10px;
+  font-weight: 400;
+}
+
+.rail-panel strong {
+  display: block;
+  margin-top: 12px;
+  color: #f4f5f6;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.rail-panel span {
+  display: block;
+  margin-top: 10px;
+  color: #8f959a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.rail-rule {
+  height: 1px;
+  margin: 20px 0;
+  background: rgba(255, 255, 255, .08);
+}
+
+.friend-panel,
+.name-field {
+  display: grid;
+  gap: 14px;
+}
+
+.friend-panel strong,
+.friend-panel span,
+.name-field span {
+  margin-top: 0;
+}
+
+.name-field {
+  gap: 7px;
+}
+
+.name-field span {
+  color: #5c6166;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.name-field input {
+  width: 100%;
+  min-height: 40px;
+  color: #f4f5f6;
+  background: rgba(255, 255, 255, .035);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 3px;
+  padding: 0 12px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: .04em;
+  outline: none;
+}
+
+.rail-price {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rail-price strong {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.unlock-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0;
+  display: grid;
+  gap: 11px;
+}
+
+.unlock-panel li {
+  color: #b9bec2;
+  font-size: 12.5px;
+  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.unlock-panel li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  background: #6c7176;
+}
+
+.matrix {
+  max-width: 360px;
+  margin: 24px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .02);
+}
+
+.tile {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 3px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .015));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025), inset 0 -18px 30px rgba(0, 0, 0, .24);
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(10px, 1.4vw, 14px);
+  margin-top: 26px;
+}
+
+.option {
+  width: 100%;
+  min-width: 0;
+  color: #5c6166;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .16em;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 50;
+  background: rgba(6, 7, 8, .74);
+  backdrop-filter: blur(12px);
+}
+
+.modal {
+  width: min(440px, 100%);
+  color: #e9ebec;
+  background: linear-gradient(160deg, #16181b, #0c0d0f);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  padding: clamp(24px, 4vw, 34px);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, .7);
+}
+
+.plans,
+.feature-grid,
+.leaderboard-rows {
+  gap: 1px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .08);
+}
+
+.plans div,
+.feature-grid article,
+.leaderboard-row,
+.empty-board {
+  border: 0;
+  border-radius: 0;
+  background: #0e1012;
+  box-shadow: none;
+}
+
+.plans div {
+  padding: 12px;
+}
+
+@media (max-width: 940px) {
+  .test-surface {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  main {
+    padding: 18px 14px 46px;
+  }
+
+  nav > div:last-child {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .test-surface .runner-panel,
+  .runner-panel,
+  .rail-panel,
+  .leaderboard,
+  .features,
+  .profile-panel {
+    padding: 20px;
+  }
+
+  .options {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

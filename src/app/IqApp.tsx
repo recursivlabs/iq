@@ -104,7 +104,9 @@ type IqProfile = {
 
 const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
-const RECURSIV_SIGNUP_URL = 'https://recursiv.io/register';
+const RECURSIV_AUTH_URL = 'https://recursiv.io/auth';
+const RECURSIV_GOOGLE_SIGNUP_URL = RECURSIV_AUTH_URL;
+const RECURSIV_EMAIL_SIGNUP_URL = RECURSIV_AUTH_URL;
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
@@ -1812,7 +1814,7 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
             <h2>{copy(paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.')}</h2>
             <p>{paidAccess
               ? copy('Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.')
-              : copy('Free visitors get 1 official attempt per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access, score history, and private reports.')}</p>
+              : copy('Free visitors get 1 official attempt per day. Create a Recursiv account with Google or email for the platform profile, or continue to Stripe for archive access, score history, and private reports.')}</p>
             <div className="plans">
               <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
               <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>{copy('archive + reports + extra practice')}</span></div>
@@ -1821,7 +1823,13 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
               <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
             ) : (
               <div className="stacked-actions">
-                <a className="secondary full center-link" href={RECURSIV_SIGNUP_URL}>{copy('Create Recursiv account')}</a>
+                <div className="auth-options" aria-label={copy('Recursiv signup options')}>
+                  <a className="secondary full center-link google-auth" href={RECURSIV_GOOGLE_SIGNUP_URL}>
+                    <span className="google-mark" aria-hidden="true">G</span>
+                    {copy('Continue with Google')}
+                  </a>
+                  <a className="secondary full center-link" href={RECURSIV_EMAIL_SIGNUP_URL}>{copy('Continue with email')}</a>
+                </div>
                 <button className="primary full" disabled={checkoutBusy} onClick={startCheckout}>
                   {copy(checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout')}
                 </button>
@@ -2212,6 +2220,9 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
         .plans span, .fine-print { font-size: 11px; font-weight: 750; }
         .fine-print { display: block; margin-top: 10px; text-align: center; }
         .stacked-actions { display: grid; gap: 10px; }
+        .auth-options { display: grid; gap: 8px; }
+        .google-auth { gap: 10px; border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.035); }
+        .google-mark { width: 18px; height: 18px; display: inline-grid; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: #f4f5f6; font-family: "Space Grotesk", system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0; }
         .fine-print.error { color: #6f2727; }
         .fine-print.success { color: #244f37; }
         @media (max-width: 940px) {
@@ -2592,6 +2603,28 @@ export default function Home({ initialGroupCode = '' }: { initialGroupCode?: str
           color: #e9ebec;
           background: transparent;
           border: 1px solid rgba(255,255,255,.18);
+        }
+        .auth-options {
+          display: grid;
+          gap: 8px;
+        }
+        .google-auth {
+          gap: 10px;
+          border-color: rgba(255,255,255,.28);
+          background: rgba(255,255,255,.035);
+        }
+        .google-mark {
+          width: 18px;
+          height: 18px;
+          display: inline-grid;
+          place-items: center;
+          border: 1px solid rgba(255,255,255,.24);
+          border-radius: 999px;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0;
         }
         .full {
           width: 100%;
