@@ -67,6 +67,14 @@ type OfficialRankRecord = {
   timestamp: number;
 };
 
+type IqProfile = {
+  attempts: number;
+  score: number | null;
+  best: number | null;
+  trend: number | null;
+  confidence: string;
+};
+
 const DAILY_PLAY_LIMIT = 1;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const RECURSIV_SIGNUP_URL = 'https://recursiv.io/register';
@@ -75,6 +83,8 @@ const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
 const PAID_ACCESS_STORAGE_KEY = 'world-iq-paid-access';
 const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
+const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
+const OFFICIAL_HISTORY_LIMIT = 60;
 
 const tones: Record<TileTone, string> = {
   ink: '#f4f5f6',
@@ -88,7 +98,7 @@ const modes: Record<ModeKey, { label: string; title: string; body: string; cta: 
   world: {
     label: 'Today\'s World IQ',
     title: 'Lock today\'s reasoning rank.',
-    body: 'A daily 12-question visual reasoning game. Your first completed World run is the official rank.',
+    body: 'One official attempt per day. Each completed day updates a developing IQ profile instead of resetting the player.',
     cta: 'Start today',
   },
   agi: {
@@ -99,9 +109,9 @@ const modes: Record<ModeKey, { label: string; title: string; body: string; cta: 
   },
   daily: {
     label: 'Daily Sprint',
-    title: 'One puzzle. One warmup.',
-    body: 'A fast puzzle for streaks and group chats. World IQ is the official ranked mode.',
-    cta: 'Warm up',
+    title: 'One hard puzzle. No ramp.',
+    body: 'A pressure puzzle for streaks and group chats. World IQ is the official ranked mode.',
+    cta: 'Sprint',
   },
 };
 
@@ -260,10 +270,34 @@ const agiPuzzles: Puzzle[] = ['world-07', 'world-09', 'world-10', 'world-11', 'w
   });
 
 const dailyPuzzles: Puzzle[] = [
-  { ...worldPuzzles[3], id: 'daily-01', mode: 'daily', title: 'Daily diagonal', difficulty: 'Today', prompt: 'One puzzle for today. Lock your answer.' },
-  { ...worldPuzzles[6], id: 'daily-02', mode: 'daily', title: 'Daily conservation', difficulty: 'Today', prompt: 'One puzzle for today. Lock your answer.' },
-  { ...worldPuzzles[8], id: 'daily-03', mode: 'daily', title: 'Daily dual axis', difficulty: 'Today', prompt: 'One puzzle for today. Lock your answer.' },
+  { ...worldPuzzles[8], id: 'daily-01', mode: 'daily', title: 'Daily dual axis', difficulty: 'Hard', prompt: 'One hard puzzle for today. Lock your answer.' },
+  { ...worldPuzzles[10], id: 'daily-02', mode: 'daily', title: 'Daily nested logic', difficulty: 'Hard', prompt: 'One hard puzzle for today. Lock your answer.' },
+  { ...worldPuzzles[11], id: 'daily-03', mode: 'daily', title: 'Daily synthesis', difficulty: 'Elite', prompt: 'One hard puzzle for today. Lock your answer.' },
 ];
+
+const rankedWorldPuzzleIds = [
+  'world-09',
+  'world-10',
+  'world-11',
+  'world-12',
+  'world-07',
+  'world-08',
+  'world-06',
+  'world-05',
+  'world-04',
+  'world-03',
+  'world-02',
+  'world-01',
+];
+
+const rankedWorldPuzzles: Puzzle[] = rankedWorldPuzzleIds.map((id, index) => {
+  const source = worldPuzzles.find((puzzle) => puzzle.id === id)!;
+  return {
+    ...source,
+    difficulty: index < 4 ? 'Frontier' : index < 8 ? 'Hard' : 'Advanced',
+    prompt: index === 0 ? 'Track two axes from the first move.' : source.prompt,
+  };
+});
 
 function localDayKey(date = new Date()) {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
@@ -277,7 +311,7 @@ function todayPuzzle() {
 function getQuestions(mode: ModeKey) {
   if (mode === 'agi') return agiPuzzles;
   if (mode === 'daily') return [todayPuzzle()];
-  return worldPuzzles;
+  return rankedWorldPuzzles;
 }
 
 function percentileFromScore(correct: number, total: number) {
@@ -400,6 +434,75 @@ function writeOfficialRank(record: OfficialRankRecord) {
   window.localStorage.setItem(OFFICIAL_RANK_STORAGE_KEY, JSON.stringify(record));
 }
 
+function isOfficialRankRecord(value: unknown): value is OfficialRankRecord {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Partial<OfficialRankRecord>;
+  return typeof record.day === 'string'
+    && typeof record.score === 'number'
+    && typeof record.rank === 'string'
+    && typeof record.percentile === 'number'
+    && typeof record.correct === 'number'
+    && typeof record.total === 'number'
+    && typeof record.beatAi === 'number'
+    && typeof record.timestamp === 'number';
+}
+
+function sortOfficialHistory(history: OfficialRankRecord[]) {
+  return [...history].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+function readOfficialHistory(): OfficialRankRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(OFFICIAL_HISTORY_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const history = Array.isArray(parsed) ? parsed.filter(isOfficialRankRecord) : [];
+    const today = readOfficialRank();
+    const merged = today && !history.some((entry) => entry.day === today.day) ? [today, ...history] : history;
+    return sortOfficialHistory(merged).slice(0, OFFICIAL_HISTORY_LIMIT);
+  } catch {
+    const today = readOfficialRank();
+    return today ? [today] : [];
+  }
+}
+
+function writeOfficialHistory(history: OfficialRankRecord[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(OFFICIAL_HISTORY_STORAGE_KEY, JSON.stringify(sortOfficialHistory(history).slice(0, OFFICIAL_HISTORY_LIMIT)));
+}
+
+function saveOfficialHistory(record: OfficialRankRecord) {
+  const existing = readOfficialHistory().filter((entry) => entry.day !== record.day);
+  writeOfficialHistory([record, ...existing]);
+}
+
+function getIqProfile(history: OfficialRankRecord[]): IqProfile {
+  if (!history.length) {
+    return { attempts: 0, score: null, best: null, trend: null, confidence: 'Unrated' };
+  }
+
+  const chronological = [...history].sort((a, b) => a.timestamp - b.timestamp);
+  const recent = chronological.slice(-14);
+  const weighted = recent.reduce((total, entry, index) => total + entry.score * (index + 1), 0);
+  const weights = recent.reduce((total, _entry, index) => total + index + 1, 0);
+  const latest = chronological[chronological.length - 1];
+  const previous = chronological[chronological.length - 2];
+
+  return {
+    attempts: chronological.length,
+    score: Math.round(weighted / weights),
+    best: Math.max(...chronological.map((entry) => entry.score)),
+    trend: previous ? latest.score - previous.score : null,
+    confidence: chronological.length >= 14 ? 'Stable profile' : chronological.length >= 7 ? 'Emerging profile' : 'Calibrating',
+  };
+}
+
+function formatTrend(trend: number | null) {
+  if (trend === null) return 'first official day';
+  if (trend === 0) return 'even vs previous day';
+  return `${trend > 0 ? '+' : ''}${trend} vs previous day`;
+}
+
 function readPaidAccess() {
   if (typeof window === 'undefined') return false;
   try {
@@ -516,6 +619,50 @@ function SignalSculpture() {
   );
 }
 
+function IqProfilePanel({ history, onUnlock }: { history: OfficialRankRecord[]; onUnlock: () => void }) {
+  const profile = getIqProfile(history);
+  const recent = sortOfficialHistory(history).slice(0, 14).reverse();
+
+  return (
+    <section className="profile-panel" aria-label="Developing World IQ profile">
+      <div className="section-head">
+        <div>
+          <p className="kicker">Developing IQ</p>
+          <h2>{profile.score ? `${profile.score} rolling score` : 'Build your score over time.'}</h2>
+          <p>{profile.attempts > 0
+            ? `${profile.confidence}. One official attempt per day keeps the score honest and lets the profile mature over time.`
+            : 'Your profile starts with the first official attempt. Each daily result becomes one signal in the rolling score.'}</p>
+        </div>
+        <button className="secondary" onClick={onUnlock}>Save profile</button>
+      </div>
+
+      <div className="profile-stats">
+        <div><strong>{profile.score ?? '---'}</strong><span>rolling IQ</span></div>
+        <div><strong>{profile.attempts}</strong><span>official days</span></div>
+        <div><strong>{profile.best ?? '---'}</strong><span>best score</span></div>
+        <div><strong>{formatTrend(profile.trend)}</strong><span>trajectory</span></div>
+      </div>
+
+      <div className="history-strip" aria-label="Recent official score history">
+        {recent.length ? (
+          recent.map((entry) => (
+            <div key={entry.day} className="history-day">
+              <span>{entry.day.slice(5).replace('-', '/')}</span>
+              <i style={{ height: `${Math.max(18, Math.min(84, (entry.score - 90) * 1.45))}px` }} />
+              <strong>{entry.score}</strong>
+            </div>
+          ))
+        ) : (
+          <div className="empty-board">
+            <strong>No official days yet.</strong>
+            <span>Take today&apos;s one official attempt to create the first point in the score history.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function Leaderboard({ entries, onUnlock }: { entries: LeaderboardEntry[]; onUnlock: () => void }) {
   return (
     <section className="leaderboard" id="rankings">
@@ -558,15 +705,18 @@ function StatusRail({
   isPaid,
   usage,
   officialRank,
+  officialHistory,
   onUnlock,
 }: {
   isPaid: boolean;
   usage: PlayUsage;
   officialRank: OfficialRankRecord | null;
+  officialHistory: OfficialRankRecord[];
   onUnlock: () => void;
 }) {
   const usedToday = usage.day === localDayKey() ? Math.min(DAILY_PLAY_LIMIT, usage.count) : 0;
   const remaining = Math.max(0, DAILY_PLAY_LIMIT - usedToday);
+  const iqProfile = getIqProfile(officialHistory);
 
   return (
     <aside className="status-rail" aria-label="World IQ session and subscription">
@@ -577,6 +727,12 @@ function StatusRail({
         <div className="rail-rule" />
         <p className="rail-label">Official rank</p>
         <span className="rail-mono">{officialRank ? `Locked · ${officialRank.score} · ${officialRank.rank}` : 'Not yet locked today.'}</span>
+        <div className="rail-rule" />
+        <p className="rail-label">Developing IQ</p>
+        <strong>{iqProfile.score ?? 'Unrated'}</strong>
+        <span>{iqProfile.attempts > 0
+          ? `${iqProfile.confidence} · ${iqProfile.attempts} official day${iqProfile.attempts === 1 ? '' : 's'} · ${formatTrend(iqProfile.trend)}`
+          : 'Complete today\'s official attempt to start the profile.'}</span>
       </section>
 
       <section className="rail-panel unlock-panel">
@@ -645,6 +801,7 @@ function Result({
       timestamp: Date.now(),
     };
     writeOfficialRank(officialRank);
+    saveOfficialHistory(officialRank);
     setResultStatus('official');
 
     const entry: LeaderboardEntry = {
@@ -673,8 +830,8 @@ function Result({
   const statusCopy = resultStatus === 'official'
     ? {
       kicker: 'Official rank locked',
-      title: 'Your first World IQ result today is on the founding board.',
-      body: `${score} reasoning score. ${rank} estimated daily rank. ${beatAi} AI blind-spot answers.`,
+      title: 'Today updated your developing World IQ profile.',
+      body: `${score} reasoning score. ${rank} estimated daily rank. ${beatAi} AI blind-spot answers. Come back tomorrow to sharpen the rolling score.`,
     }
     : resultStatus === 'practice'
       ? {
@@ -685,8 +842,8 @@ function Result({
       : resultStatus === 'daily'
         ? {
           kicker: 'Daily sprint logged',
-          title: 'Warmup complete.',
-          body: 'Daily Sprint builds the habit. Complete Today\'s World IQ to lock an official rank.',
+          title: 'Sprint complete.',
+          body: 'Daily Sprint builds the habit. Complete Today\'s World IQ to update the official profile.',
         }
         : {
           kicker: 'AI lab complete',
@@ -873,12 +1030,14 @@ export default function Home() {
   const [checkoutError, setCheckoutError] = React.useState('');
   const [usageSnapshot, setUsageSnapshot] = React.useState<PlayUsage>(() => blankPlayUsage());
   const [officialSnapshot, setOfficialSnapshot] = React.useState<OfficialRankRecord | null>(null);
+  const [officialHistory, setOfficialHistory] = React.useState<OfficialRankRecord[]>([]);
 
   React.useEffect(() => {
     setLeaderboard(getLeaderboardEntries());
     setPaidAccess(readPaidAccess());
     setUsageSnapshot(readPlayUsage());
     setOfficialSnapshot(readOfficialRank());
+    setOfficialHistory(readOfficialHistory());
   }, []);
 
   React.useEffect(() => {
@@ -951,6 +1110,7 @@ export default function Home() {
   function handleLeaderboard() {
     setLeaderboard(getLeaderboardEntries());
     setOfficialSnapshot(readOfficialRank());
+    setOfficialHistory(readOfficialHistory());
   }
 
   const handleUsageChange = React.useCallback((usage: PlayUsage) => {
@@ -1010,12 +1170,15 @@ export default function Home() {
         <section className="test-surface" aria-label={`${modes[mode].label} test`}>
           <SignalSculpture />
           <Runner key={mode} mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onUsageChange={handleUsageChange} />
-          <StatusRail isPaid={paidAccess} usage={usageSnapshot} officialRank={officialSnapshot} onUnlock={() => setUnlockOpen(true)} />
+          <StatusRail isPaid={paidAccess} usage={usageSnapshot} officialRank={officialSnapshot} officialHistory={officialHistory} onUnlock={() => setUnlockOpen(true)} />
         </section>
       ) : null}
 
       {view === 'rankings' ? (
-        <Leaderboard entries={leaderboard} onUnlock={() => setUnlockOpen(true)} />
+        <>
+          <IqProfilePanel history={officialHistory} onUnlock={() => setUnlockOpen(true)} />
+          <Leaderboard entries={leaderboard} onUnlock={() => setUnlockOpen(true)} />
+        </>
       ) : null}
 
       {view === 'about' ? (
@@ -1024,16 +1187,16 @@ export default function Home() {
             <div>
               <p className="kicker">World IQ by Recursiv</p>
               <h2>The daily reasoning rank for humans and AI.</h2>
-              <p>A competitive visual reasoning game. Your first completed World IQ run each day creates the official rank and share card.</p>
+              <p>A competitive visual reasoning game. One official attempt per day updates a score profile that develops over time.</p>
             </div>
           </div>
           <div className="feature-grid">
-            <article><strong>Today&apos;s World IQ</strong><p>A 12-question reasoning run with one official daily submission and a clean share card.</p></article>
+            <article><strong>Today&apos;s World IQ</strong><p>A 12-question reasoning run that starts hard and allows one official daily submission.</p></article>
             <article><strong>AI Blind Spots</strong><p>Lab puzzles selected because current model baselines often miss the abstraction.</p></article>
-            <article><strong>Daily Sprint</strong><p>A one-puzzle warmup for streaks and group chats before the ranked run.</p></article>
+            <article><strong>Developing score</strong><p>Your rolling IQ score gets more confident as official daily results accumulate.</p></article>
           </div>
           <div className="monetization">
-            <div><strong>World IQ Unlimited</strong><p>Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra practice.</p></div>
+            <div><strong>World IQ Unlimited</strong><p>Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>Save profile</button>
           </div>
           <p className="trust-note">World IQ is not a clinical IQ test, admission test, or supervised psychometric assessment.</p>
@@ -1048,7 +1211,7 @@ export default function Home() {
             <h2>{paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock the archive.'}</h2>
             <p>{paidAccess
               ? 'Your paid World IQ access is active on this device. Keep building history, practicing, and saving rank cards.'
-              : 'Free visitors get 1 official attempt per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access and private reports.'}</p>
+              : 'Free visitors get 1 official attempt per day. Create a Recursiv account for the platform profile, or continue to Stripe for archive access, score history, and private reports.'}</p>
             <div className="plans">
               <div><strong>Free</strong><span>1 official attempt / day</span></div>
               <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>archive + reports + extra practice</span></div>
@@ -1354,7 +1517,7 @@ export default function Home() {
         .founding-stats div, .stats div { border: 1px solid var(--line); background: rgba(255,255,250,.22); border-radius: 18px; padding: 12px 14px; min-width: 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
         .founding-stats strong, .stats strong { display: block; font-size: 23px; line-height: 1.1; letter-spacing: .04em; }
         .founding-stats span, .stats span { display: block; color: var(--muted); font-size: 10px; font-weight: 700; margin-top: 4px; letter-spacing: .08em; text-transform: uppercase; }
-        .runner-panel, .leaderboard, .features { border: 1px solid var(--line-strong); border-radius: 26px; background: rgba(244,244,238,.58); padding: 24px; box-shadow: 0 24px 70px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.42); }
+        .runner-panel, .leaderboard, .features, .profile-panel { border: 1px solid var(--line-strong); border-radius: 26px; background: rgba(244,244,238,.58); padding: 24px; box-shadow: 0 24px 70px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.42); }
         .mode-row { display: flex; flex-wrap: wrap; gap: 8px; }
         .mode-button { flex: 1; min-width: 124px; border: 1px solid var(--line); background: rgba(255,255,250,.22); border-radius: 999px; padding: 10px 11px; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
         .mode-button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -1410,7 +1573,7 @@ export default function Home() {
         .qualification.qualified { border-color: rgba(90,90,86,.34); background: rgba(255,255,250,.28); }
         .qualification span { color: var(--muted); font-size: 12px; line-height: 18px; font-weight: 700; }
         .trust-note { margin: 12px 0 0; color: #676b6d; font-size: 11px; line-height: 18px; font-weight: 700; }
-        .leaderboard, .features { max-width: 1180px; margin: 16px auto 0; }
+        .leaderboard, .features, .profile-panel { max-width: 1180px; margin: 16px auto 0; }
         .section-head p { color: var(--muted); max-width: 720px; line-height: 24px; }
         .leaderboard-rows { display: grid; gap: 8px; margin-top: 18px; }
         .leaderboard-row { border: 1px solid var(--line); border-radius: 18px; padding: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 70px; align-items: center; gap: 12px; background: rgba(255,255,250,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); }
@@ -1511,7 +1674,8 @@ export default function Home() {
         nav,
         .test-surface,
         .leaderboard,
-        .features {
+        .features,
+        .profile-panel {
           position: relative;
           z-index: 2;
           width: min(1200px, 100%);
@@ -1583,6 +1747,7 @@ export default function Home() {
         .runner-panel,
         .leaderboard,
         .features,
+        .profile-panel,
         .rail-panel {
           border: 1px solid rgba(255,255,255,.08);
           border-radius: 8px;
@@ -1983,9 +2148,74 @@ export default function Home() {
           line-height: 1.6;
         }
         .leaderboard,
-        .features {
+        .features,
+        .profile-panel {
           margin-top: clamp(28px, 5vh, 56px);
           padding: clamp(24px, 4vw, 40px);
+        }
+        .profile-stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 1px;
+          margin-top: 28px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .profile-stats div {
+          min-width: 0;
+          padding: 18px;
+          background: #0e1012;
+        }
+        .profile-stats strong {
+          display: block;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: clamp(20px, 3vw, 32px);
+          font-weight: 500;
+          letter-spacing: -.015em;
+          line-height: 1;
+        }
+        .profile-stats span,
+        .history-day span,
+        .history-day strong {
+          display: block;
+          color: #5c6166;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: .16em;
+          line-height: 1.35;
+          text-transform: uppercase;
+        }
+        .history-strip {
+          display: flex;
+          align-items: end;
+          gap: 10px;
+          min-height: 150px;
+          margin-top: 26px;
+          padding-top: 24px;
+          border-top: 1px solid rgba(255,255,255,.08);
+          overflow-x: auto;
+        }
+        .history-day {
+          min-width: 54px;
+          display: grid;
+          justify-items: center;
+          gap: 8px;
+        }
+        .history-day i {
+          width: 100%;
+          min-height: 18px;
+          display: block;
+          border: 1px solid rgba(255,255,255,.12);
+          background: linear-gradient(180deg, rgba(244,245,246,.55), rgba(244,245,246,.08));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+        }
+        .history-day strong {
+          color: #e9ebec;
+          letter-spacing: .08em;
         }
         .leaderboard-rows {
           border: 1px solid rgba(255,255,255,.08);
@@ -2225,7 +2455,8 @@ export default function Home() {
           .runner-panel,
           .rail-panel,
           .leaderboard,
-          .features {
+          .features,
+          .profile-panel {
             padding: 20px;
           }
           .progress-row,
@@ -2255,6 +2486,7 @@ export default function Home() {
             width: 100%;
           }
           .stats,
+          .profile-stats,
           .plans {
             grid-template-columns: 1fr;
           }
