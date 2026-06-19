@@ -15,6 +15,12 @@ type PatternTile = {
   tone: TileTone;
 };
 
+type SolutionProof = {
+  lay: string;
+  formal: string;
+  checksum: string;
+};
+
 type Puzzle = {
   id: string;
   mode: ModeKey;
@@ -22,6 +28,7 @@ type Puzzle = {
   difficulty: string;
   prompt: string;
   explanation: string;
+  solutionProof: SolutionProof;
   matrix: Array<PatternTile | null>;
   options: PatternTile[];
   answerIndex: number;
@@ -309,7 +316,25 @@ function tile(dots: number, bars: number, ring: boolean, tilt: number, tone: Til
   return { dots, bars, ring, tilt, tone };
 }
 
-const worldPuzzles: Puzzle[] = [
+function proofTileSignature(item: PatternTile) {
+  return `dots=${item.dots}; bars=${item.bars}; ring=${item.ring ? 'on' : 'off'}; tilt=${item.tilt}; tone=${item.tone}`;
+}
+
+function proof(lay: string, formal: string, expected: PatternTile): SolutionProof {
+  return { lay, formal, checksum: proofTileSignature(expected) };
+}
+
+function withProofChecks(puzzles: Puzzle[]): Puzzle[] {
+  for (const puzzle of puzzles) {
+    const expected = proofTileSignature(puzzle.options[puzzle.answerIndex]);
+    if (puzzle.solutionProof.checksum !== expected) {
+      throw new Error(`Puzzle proof checksum mismatch for ${puzzle.id}: ${puzzle.solutionProof.checksum} !== ${expected}`);
+    }
+  }
+  return puzzles;
+}
+
+const worldPuzzles: Puzzle[] = withProofChecks([
   {
     id: 'world-01',
     mode: 'world',
@@ -317,6 +342,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Calibration',
     prompt: 'Complete the count pattern. No trick: read rows and columns.',
     explanation: 'Dots increase by one across each row and down each column, so the missing tile has five dots.',
+    solutionProof: proof('Read either the last row or the last column: 3, 4, then 5. No other attribute changes.', 'With zero-indexed row r and column c, dots = r + c + 1, bars = 0, ring = false, tilt = 0. Missing cell (2,2) gives dots = 5.', tile(5, 0, false, 0, 'ink')),
     matrix: [tile(1, 0, false, 0, 'ink'), tile(2, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(2, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(4, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(4, 0, false, 0, 'ink'), null],
     options: [tile(2, 1, false, 0, 'ink'), tile(5, 0, false, 0, 'ink'), tile(4, 1, false, 0, 'ink'), tile(1, 2, false, 0, 'ink')],
     answerIndex: 1,
@@ -329,6 +355,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Foundation',
     prompt: 'Track the bar rotation left to right while the dot count rises by row.',
     explanation: 'Each row rotates 0, 45, then 90 degrees. The last row keeps three dots, so the missing tile is three dots at 90 degrees.',
+    solutionProof: proof('Rows set the dot count: 1, 2, 3. Columns set rotation: 0, 45, 90 degrees. The missing corner combines row 3 with column 3.', 'dots = r + 1, bars = 1, ring = false, tilt = [0,45,90][c]. Missing cell (2,2) gives dots = 3 and tilt = 90.', tile(3, 1, false, 90, 'blue')),
     matrix: [tile(1, 1, false, 0, 'blue'), tile(1, 1, false, 45, 'blue'), tile(1, 1, false, 90, 'blue'), tile(2, 1, false, 0, 'blue'), tile(2, 1, false, 45, 'blue'), tile(2, 1, false, 90, 'blue'), tile(3, 1, false, 0, 'blue'), tile(3, 1, false, 45, 'blue'), null],
     options: [tile(3, 1, false, 90, 'blue'), tile(1, 3, false, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(4, 0, true, 0, 'blue')],
     answerIndex: 0,
@@ -341,6 +368,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Basic',
     prompt: 'The ring flips on and off while the count and bars stay orderly.',
     explanation: 'The ring alternates across the grid. The final position returns to ring-on with three dots and two bars.',
+    solutionProof: proof('Dots come from the column, bars come from the row, and the ring switches on every other square like a checkerboard.', 'dots = c + 1, bars = r, ring = (r + c) % 2 === 0, tilt = 0. Missing cell (2,2) gives dots = 3, bars = 2, ring = true.', tile(3, 2, true, 0, 'green')),
     matrix: [tile(1, 0, true, 0, 'green'), tile(2, 0, false, 0, 'green'), tile(3, 0, true, 0, 'green'), tile(1, 1, false, 0, 'green'), tile(2, 1, true, 0, 'green'), tile(3, 1, false, 0, 'green'), tile(1, 2, true, 0, 'green'), tile(2, 2, false, 0, 'green'), null],
     options: [tile(3, 2, true, 0, 'green'), tile(2, 2, true, 0, 'green'), tile(3, 1, true, 0, 'green'), tile(1, 2, false, 0, 'green')],
     answerIndex: 0,
@@ -353,6 +381,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Basic',
     prompt: 'Follow the diagonal highlight and preserve the row structure.',
     explanation: 'The emphasized ring sits on the main diagonal. The missing bottom-right tile is the final diagonal ring at 90 degrees.',
+    solutionProof: proof('Only the main diagonal has rings. The bottom row is the 90-degree row, and the rightmost shape repeats the two-dot, one-bar column pattern.', 'ring = r === c, tilt = 45 * r, dots/bars by column = [(2,1),(1,2),(2,1)]. Missing cell (2,2) gives (2 dots, 1 bar, ring on, 90 degrees).', tile(2, 1, true, 90, 'rose')),
     matrix: [tile(2, 1, true, 0, 'rose'), tile(1, 2, false, 0, 'rose'), tile(2, 1, false, 0, 'rose'), tile(1, 2, false, 45, 'rose'), tile(2, 1, true, 45, 'rose'), tile(1, 2, false, 45, 'rose'), tile(2, 1, false, 90, 'rose'), tile(1, 2, false, 90, 'rose'), null],
     options: [tile(2, 1, true, 90, 'rose'), tile(1, 2, true, 90, 'rose'), tile(2, 2, false, 90, 'rose'), tile(3, 1, true, 45, 'rose')],
     answerIndex: 0,
@@ -364,9 +393,10 @@ const worldPuzzles: Puzzle[] = [
     title: 'Column sum',
     difficulty: 'Core',
     prompt: 'The bottom row combines the two above it.',
-    explanation: 'The final cell adds the dot and bar structure from the two cells above, producing three dots, two bars, and the ring.',
+    explanation: 'The final cell adds the dot and bar structure from the two cells above, producing three dots, three bars, and the ring.',
+    solutionProof: proof('In each column, the bottom tile is the sum of the two tiles above it. In the last column, 1 + 2 dots and 2 + 1 bars both make 3.', 'bottom.dots = top.dots + middle.dots, bottom.bars = top.bars + middle.bars, bottom.ring = true, tilt = 0. Last column gives dots = 1 + 2 = 3 and bars = 2 + 1 = 3.', tile(3, 3, true, 0, 'amber')),
     matrix: [tile(1, 1, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(1, 2, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(1, 1, false, 0, 'amber'), tile(2, 1, false, 0, 'amber'), tile(3, 1, true, 0, 'amber'), tile(3, 1, true, 0, 'amber'), null],
-    options: [tile(3, 2, true, 0, 'amber'), tile(2, 3, false, 0, 'amber'), tile(4, 1, true, 0, 'amber'), tile(1, 3, true, 0, 'amber')],
+    options: [tile(3, 3, true, 0, 'amber'), tile(2, 3, false, 0, 'amber'), tile(4, 1, true, 0, 'amber'), tile(1, 3, true, 0, 'amber')],
     answerIndex: 0,
     aiSolved: true,
   },
@@ -377,6 +407,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Core',
     prompt: 'Keep the row progression clean: dots rise, bars fall, and tilt advances.',
     explanation: 'Each row adds one dot, removes one bar, and keeps the row tilt. The final tile needs five dots, zero bars, and 90 degrees.',
+    solutionProof: proof('Moving right adds dots and removes bars; moving down adds one more dot and rotates the row. The final corner is the largest dot count with no bars.', 'dots = r + c + 1, bars = 2 - c, ring = c === 1, tilt = 45 * r. Missing cell (2,2) gives dots = 5, bars = 0, ring = false, tilt = 90.', tile(5, 0, false, 90, 'blue')),
     matrix: [tile(1, 2, false, 0, 'blue'), tile(2, 1, true, 0, 'blue'), tile(3, 0, false, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(3, 1, true, 45, 'blue'), tile(4, 0, false, 45, 'blue'), tile(3, 2, false, 90, 'blue'), tile(4, 1, true, 90, 'blue'), null],
     options: [tile(5, 0, false, 90, 'blue'), tile(4, 0, true, 90, 'blue'), tile(5, 1, false, 45, 'blue'), tile(3, 0, false, 90, 'blue')],
     answerIndex: 0,
@@ -388,9 +419,10 @@ const worldPuzzles: Puzzle[] = [
     title: 'Shape conservation',
     difficulty: 'Core+',
     prompt: 'Preserve the row totals while the ring state stays balanced.',
-    explanation: 'The row keeps its total shape count. The missing tile must conserve the remaining count with the ring still active.',
+    explanation: 'Each row contains nine total marks. The final row already has six, so the missing tile contributes three bars with the ring still active.',
+    solutionProof: proof('Count dots plus bars across each row. The first two rows total 9 marks. The last row has 4 marks, then 2 marks, so the missing tile must add 3 marks and keep the on-off-on ring rhythm.', 'For each row, sum(dots + bars) = 9. Row 3 known sum = (2+2) + (2+0) = 6, so missing dots + bars = 3. Row ring pattern is true,false,true and tilt = 90, so expected tile is 0 dots, 3 bars, ring true.', tile(0, 3, true, 90, 'green')),
     matrix: [tile(4, 0, true, 0, 'green'), tile(2, 1, false, 0, 'green'), tile(0, 2, true, 0, 'green'), tile(3, 1, true, 45, 'green'), tile(1, 2, false, 45, 'green'), tile(1, 1, true, 45, 'green'), tile(2, 2, true, 90, 'green'), tile(2, 0, false, 90, 'green'), null],
-    options: [tile(0, 1, true, 90, 'green'), tile(1, 2, true, 90, 'green'), tile(3, 0, false, 90, 'green'), tile(0, 2, false, 90, 'green')],
+    options: [tile(0, 3, true, 90, 'green'), tile(1, 2, true, 90, 'green'), tile(3, 0, false, 90, 'green'), tile(0, 2, false, 90, 'green')],
     answerIndex: 0,
     aiSolved: false,
   },
@@ -401,6 +433,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Core+',
     prompt: 'The middle column transforms; the right column mirrors the left.',
     explanation: 'The right column mirrors the left column after the central transform, so the last tile returns to the left pattern at 90 degrees.',
+    solutionProof: proof('The right column repeats the left column count pattern, but rotated to 90 degrees. The bottom left tile has 3 dots and 1 bar, so the bottom right mirrors it.', 'For every row r, right.dots = left.dots, right.bars = left.bars, right.ring = left.ring, right.tilt = 90. Missing cell mirrors row 3 left: dots = 3, bars = 1, ring = false, tilt = 90.', tile(3, 1, false, 90, 'rose')),
     matrix: [tile(1, 1, false, 0, 'rose'), tile(2, 1, true, 45, 'rose'), tile(1, 1, false, 90, 'rose'), tile(2, 2, false, 0, 'rose'), tile(3, 2, true, 45, 'rose'), tile(2, 2, false, 90, 'rose'), tile(3, 1, false, 0, 'rose'), tile(4, 1, true, 45, 'rose'), null],
     options: [tile(3, 1, false, 90, 'rose'), tile(4, 1, false, 90, 'rose'), tile(3, 2, true, 90, 'rose'), tile(2, 1, false, 45, 'rose')],
     answerIndex: 0,
@@ -413,6 +446,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Hard',
     prompt: 'Track count vertically and rotation horizontally at the same time.',
     explanation: 'Dots rise by row while bar count and rotation move across columns. The missing tile is three dots, two bars, no ring, at 45 degrees.',
+    solutionProof: proof('Rows decide dots, columns decide bars, and rotation advances one step each time you move right or down. The last corner lands on 45 degrees.', 'dots = r + 1, bars = c, ring = r === 1, tilt = [0,45,90][(r + c) % 3]. Missing cell (2,2) gives dots = 3, bars = 2, ring = false, tilt = 45.', tile(3, 2, false, 45, 'amber')),
     matrix: [tile(1, 0, false, 0, 'amber'), tile(1, 1, false, 45, 'amber'), tile(1, 2, false, 90, 'amber'), tile(2, 0, true, 45, 'amber'), tile(2, 1, true, 90, 'amber'), tile(2, 2, true, 0, 'amber'), tile(3, 0, false, 90, 'amber'), tile(3, 1, false, 0, 'amber'), null],
     options: [tile(3, 2, false, 45, 'amber'), tile(3, 2, true, 45, 'amber'), tile(2, 2, false, 0, 'amber'), tile(4, 1, false, 45, 'amber')],
     answerIndex: 0,
@@ -425,6 +459,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Hard',
     prompt: 'Invert count pressure while the rotation locks to the row.',
     explanation: 'The sequence increases dots as bars fall, with the final row at 90 degrees. The missing tile completes the inversion with six dots and one bar.',
+    solutionProof: proof('Dots climb by two across columns and by one down rows. Bars step down across columns. The last cell therefore reaches 6 dots while staying in the one-bar column.', 'dots = r + 2c, bars = 3 - c, ring = (r + c) % 2 === 0, tilt = 45 * r. Missing cell (2,2) gives dots = 6, bars = 1, ring = true, tilt = 90.', tile(6, 1, true, 90, 'ink')),
     matrix: [tile(0, 3, true, 0, 'ink'), tile(2, 2, false, 0, 'ink'), tile(4, 1, true, 0, 'ink'), tile(1, 3, false, 45, 'ink'), tile(3, 2, true, 45, 'ink'), tile(5, 1, false, 45, 'ink'), tile(2, 3, true, 90, 'ink'), tile(4, 2, false, 90, 'ink'), null],
     options: [tile(6, 1, true, 90, 'ink'), tile(5, 2, true, 90, 'ink'), tile(6, 0, false, 90, 'ink'), tile(4, 1, true, 45, 'ink')],
     answerIndex: 0,
@@ -437,6 +472,7 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Hard',
     prompt: 'Combine count, ring, color family, and tilt into one rule.',
     explanation: 'Each step advances count, bar state, and tilt together while ring state alternates. The missing tile is the next rose-family synthesis.',
+    solutionProof: proof('Every diagonal step advances dots, bars, ring, and rotation together. The bottom row stays rose, so the missing tile is the next rose-family step.', 'dots = r + c + 1, bars = (r + c + 1) % 3, ring = (r + c) % 2 === 0, tilt = [0,45,90][(r + c) % 3], tone = rowTone[r]. Missing cell (2,2) gives dots = 5, bars = 2, ring = true, tilt = 45, tone = rose.', tile(5, 2, true, 45, 'rose')),
     matrix: [tile(1, 1, true, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(3, 0, true, 90, 'blue'), tile(2, 2, false, 45, 'green'), tile(3, 0, true, 90, 'green'), tile(4, 1, false, 0, 'green'), tile(3, 0, true, 90, 'rose'), tile(4, 1, false, 0, 'rose'), null],
     options: [tile(5, 2, true, 45, 'rose'), tile(4, 2, true, 45, 'rose'), tile(5, 1, false, 45, 'rose'), tile(3, 2, true, 0, 'rose')],
     answerIndex: 0,
@@ -449,12 +485,13 @@ const worldPuzzles: Puzzle[] = [
     difficulty: 'Elite',
     prompt: 'Finish the complete reasoning matrix. Every attribute matters.',
     explanation: 'The final cell synthesizes the row and column transformations: maximum count, three bars, ring-on, and the diagonal tilt.',
+    solutionProof: proof('In the last column, dots and bars rise by one each row: 3/1, 4/2, then 5/3. The ring alternates back on, and the rotation sequence 90, 0, 45 completes the diagonal.', 'Column 3 uses dots = r + 3 and bars = r + 1; ring = (r + c) % 2 === 0; tilt = [0,45,90][(r + c) % 3]; tone follows green, rose, amber. Missing cell (2,2) gives dots = 5, bars = 3, ring = true, tilt = 45, tone = amber.', tile(5, 3, true, 45, 'amber')),
     matrix: [tile(2, 0, true, 0, 'amber'), tile(1, 1, false, 45, 'blue'), tile(3, 1, true, 90, 'green'), tile(3, 1, false, 45, 'blue'), tile(2, 2, true, 90, 'green'), tile(4, 2, false, 0, 'rose'), tile(4, 2, true, 90, 'green'), tile(3, 3, false, 0, 'rose'), null],
     options: [tile(5, 3, true, 45, 'amber'), tile(4, 3, true, 45, 'amber'), tile(5, 2, false, 45, 'amber'), tile(6, 3, true, 90, 'amber')],
     answerIndex: 0,
     aiSolved: false,
   },
-];
+]);
 
 const agiPuzzles: Puzzle[] = ['world-07', 'world-09', 'world-10', 'world-11', 'world-12', 'world-08']
   .map((id, index) => {
@@ -2765,8 +2802,21 @@ function Runner({
       </div>
       {feedback ? (
         <div className={`answer-feedback ${feedback.correct ? 'correct' : 'wrong'}`} aria-live="polite">
-          <strong>{copy(feedback.correct ? 'Correct' : 'Not quite')}</strong>
-          <span>{copy(feedback.correct ? 'Clean read.' : `Correct answer: ${String.fromCharCode(65 + current.answerIndex)}.`)} {copy(current.explanation)}</span>
+          <div className="feedback-topline">
+            <strong>{copy(feedback.correct ? 'Correct' : 'Not quite')}</strong>
+            <span className="proof-pill" tabIndex={0} aria-label={copy('Verified proof detail')}>
+              {copy('Proof')}
+              <span className="proof-popover" role="tooltip">
+                <b>{copy('Visual proof')}</b>
+                <span>{copy(current.solutionProof.lay)}</span>
+                <b>{copy('Formal proof')}</b>
+                <code>{current.solutionProof.formal}</code>
+                <b>{copy('Answer checksum')}</b>
+                <code>{current.solutionProof.checksum}</code>
+              </span>
+            </span>
+          </div>
+          <p>{copy(feedback.correct ? 'Clean read.' : `Correct answer: ${String.fromCharCode(65 + current.answerIndex)}.`)} {copy(current.solutionProof.lay)}</p>
         </div>
       ) : null}
       <div className="answer-footer">
@@ -3715,6 +3765,7 @@ export default function Home({
             <article><strong>{copy('Country rankings')}</strong><p>{copy('The geography board asks a simple public question: which countries, cities, towns, and regions produce the strongest daily reasoning scores?')}</p></article>
             <article><strong>{copy('Individual rankings')}</strong><p>{copy('Each player gets one full official test per day, creating a rolling profile that improves as more daily data accumulates.')}</p></article>
             <article><strong>{copy('Academic framing')}</strong><p>{copy('The puzzles emphasize matrix reasoning, abstraction, symbolic transformation, timing, and AI-resistant pattern discovery. Results are comparative game signals, not clinical IQ diagnoses.')}</p></article>
+            <article><strong>{copy('Proofed answer key')}</strong><p>{copy('Every official matrix item stores a human-readable proof, a formal rule over dots, bars, rings, rotation, and color, and a computed checksum tied to the configured answer option. After each lock, the short proof is visible and the formal proof is available on hover or keyboard focus.')}</p></article>
           </div>
           <div className="monetization">
             <div><strong>{copy('Social layer')}</strong><p>{copy('Logged-in players can build profiles, friend rooms, score feeds, and private competitive groups. Public visitors see the daily test first; social features unlock after account connection.')}</p></div>
@@ -4645,6 +4696,7 @@ export default function Home({
           padding: 9px 10px;
           display: grid;
           gap: 3px;
+          position: relative;
         }
         .answer-feedback.correct {
           border-color: rgba(186,245,207,.28);
@@ -4666,15 +4718,88 @@ export default function Home({
         .answer-feedback.wrong strong {
           color: #ffb5b5;
         }
-        .answer-feedback span {
+        .feedback-topline {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .answer-feedback p {
           color: #a8adb1;
           font-size: 12px;
           line-height: 1.45;
+          margin: 0;
+        }
+        .answer-feedback .proof-pill {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 23px;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 999px;
+          background: rgba(255,255,255,.045);
+          color: #f4f5f6;
+          cursor: help;
+          font-family: var(--font-mono), "SFMono-Regular", ui-monospace, monospace;
+          font-size: 9px;
+          letter-spacing: .16em;
+          line-height: 1;
+          padding: 0 9px;
+          text-transform: uppercase;
+        }
+        .proof-popover {
+          position: absolute;
+          right: 0;
+          bottom: calc(100% + 8px);
+          z-index: 40;
+          width: min(360px, 78vw);
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 8px;
+          background: rgba(12,13,14,.98);
+          box-shadow: 0 22px 70px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.04);
+          color: #d8dcdf;
+          display: grid;
+          gap: 6px;
+          opacity: 0;
+          padding: 12px;
+          pointer-events: none;
+          text-align: left;
+          text-transform: none;
+          transform: translateY(-4px);
+          transition: opacity .16s ease, transform .16s ease;
+        }
+        .proof-pill:hover .proof-popover,
+        .proof-pill:focus-visible .proof-popover {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .proof-popover b {
+          color: #f4f5f6;
+          font-size: 10px;
+          letter-spacing: .12em;
+          text-transform: uppercase;
+        }
+        .proof-popover span,
+        .proof-popover code {
+          color: #aeb4b8;
+          font-size: 11px;
+          letter-spacing: 0;
+          line-height: 1.45;
+          white-space: normal;
+        }
+        .proof-popover code {
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          background: rgba(255,255,255,.035);
+          display: block;
+          font-family: var(--font-mono), "SFMono-Regular", ui-monospace, monospace;
+          padding: 7px;
         }
         .runner-panel.feedback-correct .answer-footer,
         .runner-panel.feedback-wrong .answer-footer {
-          margin-top: 6px;
-          padding-top: 8px;
+          margin-top: 4px;
+          padding-top: 6px;
         }
         .runner-panel.feedback-correct .answer-footer p,
         .runner-panel.feedback-wrong .answer-footer p {
@@ -4696,6 +4821,10 @@ export default function Home({
         }
         .answer-footer .primary {
           min-height: 42px;
+        }
+        .runner-panel.feedback-correct .answer-footer .primary,
+        .runner-panel.feedback-wrong .answer-footer .primary {
+          min-height: 38px;
         }
         .primary,
         .secondary {
@@ -5990,9 +6119,23 @@ export default function Home({
           .answer-feedback strong {
             font-size: 9.5px;
           }
-          .answer-feedback span {
+          .answer-feedback p {
             font-size: 10.5px;
             line-height: 1.25;
+          }
+          .answer-feedback .proof-pill {
+            min-height: 21px;
+            padding: 0 7px;
+          }
+          .proof-popover {
+            bottom: calc(env(safe-area-inset-bottom) + 280px);
+            left: 12px;
+            max-height: 48svh;
+            overflow: auto;
+            position: fixed;
+            right: 12px;
+            top: auto;
+            width: auto;
           }
           .answer-footer {
             position: sticky;
@@ -6059,7 +6202,7 @@ export default function Home({
               max-height: 48px;
               overflow: hidden;
             }
-            .answer-feedback span {
+            .answer-feedback p {
               font-size: 10px;
             }
             .answer-footer .primary {
