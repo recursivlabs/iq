@@ -2853,29 +2853,31 @@ function Runner({
         <span>{copy(current.difficulty)}</span>
       </div>
       <p className="prompt">{copy(current.prompt)}</p>
-      <div className="matrix">
-        {current.matrix.map((item, index) => <PatternTileView key={`${current.id}-${index}`} tile={item} />)}
-      </div>
-      <div className="options">
-        {current.options.map((item, index) => (
-          <button
-            key={`${current.id}-${index}`}
-            aria-label={`${copy('Answer')} ${index + 1}`}
-            className={[
-              'option',
-              selected === index ? 'active' : '',
-              feedback && index === current.answerIndex ? 'result-correct' : '',
-              feedback && index === feedback.selected && !feedback.correct ? 'result-wrong' : '',
-            ].filter(Boolean).join(' ')}
-            disabled={Boolean(feedback)}
-            onClick={() => {
-              if (!feedback) setSelected(index);
-            }}
-          >
-            <PatternTileView tile={item} selected={selected === index || Boolean(feedback && index === current.answerIndex)} />
-            <span>{String.fromCharCode(65 + index)}</span>
-          </button>
-        ))}
+      <div className="question-pad">
+        <div className="matrix">
+          {current.matrix.map((item, index) => <PatternTileView key={`${current.id}-${index}`} tile={item} />)}
+        </div>
+        <div className="options">
+          {current.options.map((item, index) => (
+            <button
+              key={`${current.id}-${index}`}
+              aria-label={`${copy('Answer')} ${index + 1}`}
+              className={[
+                'option',
+                selected === index ? 'active' : '',
+                feedback && index === current.answerIndex ? 'result-correct' : '',
+                feedback && index === feedback.selected && !feedback.correct ? 'result-wrong' : '',
+              ].filter(Boolean).join(' ')}
+              disabled={Boolean(feedback)}
+              onClick={() => {
+                if (!feedback) setSelected(index);
+              }}
+            >
+              <PatternTileView tile={item} selected={selected === index || Boolean(feedback && index === current.answerIndex)} />
+              <span>{String.fromCharCode(65 + index)}</span>
+            </button>
+          ))}
+        </div>
       </div>
       {feedback ? (
         <div className={`answer-feedback ${feedback.correct ? 'correct' : 'wrong'}`} aria-live="polite">
@@ -5095,15 +5097,42 @@ export default function Home({
           margin-top: 5px;
           font-weight: 400;
         }
+        .question-pad {
+          width: min(392px, 100%);
+          margin: 12px auto 0;
+          padding: 12px;
+          border: 1px solid rgba(255,255,255,.075);
+          border-radius: 8px;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012)),
+            repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, transparent 1px 16px),
+            repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 16px);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -18px 42px rgba(0,0,0,.22);
+          position: relative;
+        }
+        .question-pad::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          pointer-events: none;
+          background: radial-gradient(78% 48% at 50% 0%, rgba(255,255,255,.07), transparent 70%);
+          opacity: .7;
+        }
         .matrix {
           max-width: min(306px, 100%);
-          margin: 10px 0 0;
+          margin: 0 auto;
           gap: 6px;
           padding: 8px;
           border: 1px solid rgba(255,255,255,.08);
           border-radius: 6px;
-          background: rgba(255,255,255,.02);
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.035), rgba(255,255,255,.008)),
+            rgba(255,255,255,.018);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 14px 32px rgba(0,0,0,.18);
           perspective: none;
+          position: relative;
+          z-index: 1;
         }
         .tile {
           width: 100%;
@@ -5111,8 +5140,14 @@ export default function Home({
           aspect-ratio: 1;
           border: 1px solid rgba(255,255,255,.12);
           border-radius: 3px;
-          background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.065), rgba(255,255,255,.014)),
+            repeating-linear-gradient(135deg, rgba(255,255,255,.018) 0 1px, transparent 1px 12px);
           box-shadow: inset 0 0 0 1px rgba(255,255,255,.025), inset 0 -18px 30px rgba(0,0,0,.24);
+          display: grid;
+          place-items: center;
+          overflow: hidden;
+          position: relative;
         }
         .tile.selected,
         .option.active .tile {
@@ -5182,31 +5217,71 @@ export default function Home({
         .options {
           display: grid;
           grid-template-columns: repeat(6, minmax(0, 1fr));
-          justify-content: flex-start;
+          justify-content: center;
           gap: clamp(7px, 1vw, 10px);
-          margin-top: 9px;
+          margin: 10px auto 0;
+          position: relative;
+          z-index: 1;
         }
         .option {
           width: 100%;
           min-width: 0;
-          padding: 0;
+          min-height: 64px;
+          padding: 5px;
           gap: 5px;
-          border: 0;
-          border-radius: 0;
+          border: 1px solid rgba(255,255,255,.09);
+          border-radius: 5px;
           color: #5c6166;
-          background: transparent;
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.014)),
+            repeating-linear-gradient(135deg, rgba(255,255,255,.014) 0 1px, transparent 1px 10px);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.055), inset 0 -16px 28px rgba(0,0,0,.24), 0 12px 24px rgba(0,0,0,.18);
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
           font-size: 11px;
           font-weight: 500;
           letter-spacing: .16em;
+          align-content: center;
+          display: grid;
+          justify-items: center;
+          overflow: hidden;
+          position: relative;
+          touch-action: manipulation;
+          transition: border-color .14s ease, box-shadow .14s ease, color .14s ease, transform .14s ease;
+        }
+        .option::before {
+          content: "";
+          position: absolute;
+          inset: 1px;
+          border-radius: 4px;
+          background: linear-gradient(145deg, rgba(255,255,255,.08), transparent 42%, rgba(0,0,0,.20));
+          pointer-events: none;
+        }
+        .option:hover,
+        .option:focus-visible {
+          border-color: rgba(244,245,246,.34);
+          color: #d6d9db;
+          outline: none;
+        }
+        .option:active {
+          transform: translateY(1px);
+          box-shadow: inset 0 1px 8px rgba(0,0,0,.34), inset 0 -10px 22px rgba(0,0,0,.22);
         }
         .option .tile {
           width: 100%;
+          position: relative;
+          z-index: 1;
+        }
+        .option span {
+          position: relative;
+          z-index: 1;
         }
         .option.active {
           color: #f4f5f6;
-          border: 0;
-          background: transparent;
+          border-color: rgba(244,245,246,.54);
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.11), rgba(255,255,255,.028)),
+            repeating-linear-gradient(135deg, rgba(255,255,255,.02) 0 1px, transparent 1px 10px);
+          box-shadow: 0 0 0 1px rgba(244,245,246,.13), 0 18px 32px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.10);
         }
         .option:disabled {
           cursor: default;
@@ -6760,26 +6835,44 @@ export default function Home({
             align-items: flex-start;
           }
           .question-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            justify-content: stretch;
+            justify-items: center;
             margin-top: 7px;
-            gap: 8px;
+            gap: 4px;
+            text-align: center;
           }
           .question-head h2 {
             font-size: 21px;
             line-height: 1;
+            width: 100%;
+            text-align: center;
           }
           .question-head span {
             font-size: 8.5px;
             letter-spacing: .12em;
+            width: 100%;
+            text-align: center;
           }
           .prompt {
+            max-width: 38ch;
+            margin-left: auto;
+            margin-right: auto;
             margin-top: 4px;
             font-size: 10.5px;
             line-height: 1.25;
+            text-align: center;
+          }
+          .question-pad {
+            width: min(342px, 100%);
+            margin-top: 8px;
+            padding: 9px;
+            border-radius: 9px;
           }
           .matrix {
-            width: clamp(176px, 31svh, 244px);
-            max-width: 82%;
-            margin: 6px auto 0;
+            width: clamp(170px, 29svh, 226px);
+            max-width: 76vw;
             padding: 6px;
             gap: 4px;
             flex: 0 0 auto;
@@ -6802,9 +6895,10 @@ export default function Home({
           }
           .options {
             display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
-            gap: 5px;
-            margin-top: 6px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 7px;
+            margin-top: 8px;
+            max-width: 286px;
             flex: 0 0 auto;
           }
           .option,
@@ -6812,12 +6906,18 @@ export default function Home({
             width: 100%;
           }
           .option {
-            font-size: 8px;
+            min-height: 58px;
+            padding: 6px 5px 5px;
+            border-radius: 6px;
+            font-size: 8.5px;
             letter-spacing: .08em;
             gap: 3px;
           }
+          .option::before {
+            border-radius: 5px;
+          }
           .option .tile {
-            max-width: 48px;
+            max-width: 44px;
             justify-self: center;
           }
           .answer-feedback {
@@ -6896,14 +6996,25 @@ export default function Home({
               max-height: 26px;
               overflow: hidden;
             }
+            .question-pad {
+              margin-top: 5px;
+              padding: 7px;
+            }
             .matrix {
-              width: clamp(156px, 28svh, 198px);
+              width: clamp(150px, 25svh, 178px);
               padding: 5px;
             }
+            .options {
+              gap: 5px;
+              margin-top: 6px;
+              max-width: 260px;
+            }
             .option .tile {
-              max-width: 38px;
+              max-width: 34px;
             }
             .option {
+              min-height: 48px;
+              padding: 4px;
               font-size: 7.5px;
             }
             .answer-feedback {
