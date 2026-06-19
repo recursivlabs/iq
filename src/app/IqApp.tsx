@@ -49,11 +49,20 @@ type PlayUsage = {
   count: number;
 };
 
+type PaidAccessRecord = {
+  active: boolean;
+  sessionId?: string;
+  subscriptionId?: string | null;
+  updatedAt: number;
+};
+
 const DAILY_PLAY_LIMIT = 6;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
+const RECURSIV_SIGNUP_URL = 'https://recursiv.io/register';
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
+const PAID_ACCESS_STORAGE_KEY = 'world-iq-paid-access';
 
 const tones: Record<TileTone, string> = {
   ink: '#111111',
@@ -367,6 +376,30 @@ function saveLeaderboardEntry(entry: LeaderboardEntry) {
   window.localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(sortEntries([entry, ...saved]).slice(0, 6)));
 }
 
+function readPaidAccess() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = window.localStorage.getItem(PAID_ACCESS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Partial<PaidAccessRecord> : null;
+    return Boolean(parsed?.active);
+  } catch {
+    return false;
+  }
+}
+
+function savePaidAccess(record: Omit<PaidAccessRecord, 'updatedAt'>) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PAID_ACCESS_STORAGE_KEY, JSON.stringify({ ...record, updatedAt: Date.now() }));
+}
+
+function clearCheckoutQuery() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('checkout');
+  url.searchParams.delete('session_id');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 function getStripeCheckoutHref(href: string) {
   if (!href) return '';
   try {
@@ -541,11 +574,13 @@ function Result({
 function Runner({
   mode,
   startRequest,
+  isPaid,
   onUnlock,
   onLeaderboard,
 }: {
   mode: ModeKey;
   startRequest: number;
+  isPaid: boolean;
   onUnlock: () => void;
   onLeaderboard: (entry: LeaderboardEntry) => void;
 }) {
@@ -563,22 +598,22 @@ function Runner({
   React.useEffect(() => {
     const usage = readPlayUsage();
     setPlayUsage(usage);
-    setStarted(playsRemaining(usage) > 0);
-  }, []);
+    setStarted(isPaid || playsRemaining(usage) > 0);
+  }, [isPaid]);
   React.useEffect(() => {
     const usage = readPlayUsage();
     setPlayUsage(usage);
-    setStarted(playsRemaining(usage) > 0);
+    setStarted(isPaid || playsRemaining(usage) > 0);
     setStep(0);
     setSelected(null);
     setAnswers([]);
     setChargedAttempt(false);
-  }, [mode]);
+  }, [isPaid, mode]);
 
   function begin() {
     const usage = readPlayUsage();
     setPlayUsage(usage);
-    if (playsRemaining(usage) <= 0) {
+    if (!isPaid && playsRemaining(usage) <= 0) {
       onUnlock();
       return;
     }
@@ -596,7 +631,7 @@ function Runner({
 
   function lockAnswer() {
     if (selected === null || complete || !current) return;
-    if (!chargedAttempt) {
+    if (!isPaid && !chargedAttempt) {
       setPlayUsage(consumePlay());
       setChargedAttempt(true);
     }
@@ -610,7 +645,7 @@ function Runner({
     setStep((value) => value + 1);
   }
 
-  if (!started) {
+  if (!isPaid && !started) {
     return (
       <div className="runner-panel gate">
         <p className="kicker">{modes[mode].label}</p>
@@ -627,7 +662,7 @@ function Runner({
     <div className="runner-panel">
       <div className="progress-row">
         <p className="kicker">{modes[mode].label}</p>
-        <span>{step + 1}/{questions.length} · {remainingToday}/{DAILY_PLAY_LIMIT} left</span>
+        <span>{step + 1}/{questions.length} · {isPaid ? 'Unlimited' : `${remainingToday}/${DAILY_PLAY_LIMIT} left`}</span>
       </div>
       <div className="track"><div style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
       <div className="question-head">
@@ -660,8 +695,76 @@ export default function Home() {
   const startRequest = 0;
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardEntry[]>(seededLeaderboard);
   const [unlockOpen, setUnlockOpen] = React.useState(false);
+  const [paidAccess, setPaidAccess] = React.useState(false);
+  const [checkoutState, setCheckoutState] = React.useState<'idle' | 'opening' | 'verifying' | 'active' | 'error'>('idle');
+  const [checkoutError, setCheckoutError] = React.useState('');
 
-  React.useEffect(() => setLeaderboard(getLeaderboardEntries()), []);
+  React.useEffect(() => {
+    setLeaderboard(getLeaderboardEntries());
+    setPaidAccess(readPaidAccess());
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function refreshAccess() {
+      try {
+        const response = await fetch('/api/access', { cache: 'no-store' });
+        const data = await response.json().catch(() => null);
+        if (!cancelled && response.ok && data?.active) {
+          setPaidAccess(true);
+          savePaidAccess({ active: true, subscriptionId: data.subscriptionId ?? null });
+        }
+      } catch {
+        // Local saved access still keeps the player moving if the read endpoint is unavailable.
+      }
+    }
+
+    refreshAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
+    const sessionId = params.get('session_id');
+
+    async function verifyCheckout(session: string) {
+      setUnlockOpen(true);
+      setCheckoutState('verifying');
+      setCheckoutError('');
+      try {
+        const response = await fetch(`/api/checkout-status?session_id=${encodeURIComponent(session)}`, { cache: 'no-store' });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.active) {
+          throw new Error(data?.error || 'Payment could not be verified yet.');
+        }
+        savePaidAccess({ active: true, sessionId: session, subscriptionId: data.subscriptionId ?? null });
+        setPaidAccess(true);
+        setCheckoutState('active');
+      } catch (error) {
+        setCheckoutState('error');
+        setCheckoutError(error instanceof Error ? error.message : 'Payment could not be verified yet.');
+      } finally {
+        clearCheckoutQuery();
+      }
+    }
+
+    if (checkout === 'success' && sessionId) {
+      verifyCheckout(sessionId);
+      return;
+    }
+
+    if (checkout === 'cancelled') {
+      setUnlockOpen(true);
+      setCheckoutState('idle');
+      setCheckoutError('Checkout was cancelled. You can restart it when ready.');
+      clearCheckoutQuery();
+    }
+  }, []);
 
   function openMode(nextMode: ModeKey) {
     setMode(nextMode);
@@ -674,6 +777,33 @@ export default function Home() {
 
   const checkoutHref = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK || '';
   const stripeCheckoutHref = getStripeCheckoutHref(checkoutHref);
+  const checkoutBusy = checkoutState === 'opening' || checkoutState === 'verifying';
+
+  async function startCheckout() {
+    if (checkoutBusy) return;
+    setCheckoutState('opening');
+    setCheckoutError('');
+    try {
+      const returnUrl = `${window.location.origin}${window.location.pathname}`;
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnUrl }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || typeof data?.url !== 'string') {
+        throw new Error(data?.error || 'Could not open Stripe checkout.');
+      }
+      window.location.assign(data.url);
+    } catch (error) {
+      if (stripeCheckoutHref) {
+        window.location.assign(stripeCheckoutHref);
+        return;
+      }
+      setCheckoutState('error');
+      setCheckoutError(error instanceof Error ? error.message : 'Could not open Stripe checkout.');
+    }
+  }
 
   return (
     <main>
@@ -698,7 +828,7 @@ export default function Home() {
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${modes[mode].label} test`}>
           <SignalSculpture />
-          <Runner mode={mode} startRequest={startRequest} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} />
+          <Runner mode={mode} startRequest={startRequest} isPaid={paidAccess} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} />
           <aside className="mission-card" aria-label="World IQ subscription">
             <div>
               <span className="edition">( A )</span>
@@ -739,22 +869,31 @@ export default function Home() {
           <div className="modal">
             <button className="close" onClick={() => setUnlockOpen(false)} aria-label="Close">×</button>
             <p className="kicker">World IQ account</p>
-            <h2>Unlock unlimited attempts.</h2>
-            <p>Free visitors get six games per day. Paid World IQ profiles unlock unlimited attempts, saved ranks, AI-stumper history, and daily streaks.</p>
+            <h2>{paidAccess ? 'Unlimited is active.' : 'Create an account, then unlock unlimited.'}</h2>
+            <p>{paidAccess
+              ? 'Your paid World IQ access is active on this device. Keep playing, saving rank cards, and building a daily reasoning record.'
+              : 'Free visitors get six games per day. Create a Recursiv account for the platform profile, or continue to Stripe for World IQ Unlimited.'}</p>
             <div className="plans">
               <div><strong>Free</strong><span>6 games per day</span></div>
               <div><strong>{UNLIMITED_PRICE_LABEL}</strong><span>unlimited attempts + deep report</span></div>
             </div>
-            {stripeCheckoutHref ? (
-              <a className="primary full" href={stripeCheckoutHref}>Continue to Stripe</a>
+            {paidAccess ? (
+              <button className="primary full" onClick={() => setUnlockOpen(false)}>Continue playing</button>
             ) : (
-              <button className="primary full" disabled>Stripe checkout being connected</button>
+              <div className="stacked-actions">
+                <a className="secondary full center-link" href={RECURSIV_SIGNUP_URL}>Create Recursiv account</a>
+                <button className="primary full" disabled={checkoutBusy} onClick={startCheckout}>
+                  {checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout'}
+                </button>
+              </div>
             )}
             <span className="fine-print">
-              {stripeCheckoutHref
-                ? `Games-style pricing at ${UNLIMITED_PRICE_LABEL}. Stripe opens in a new tab.`
-                : 'The current billing URL is not a Stripe checkout link yet.'}
+              {paidAccess
+                ? 'Unlimited attempts are enabled.'
+                : `Games-style pricing at ${UNLIMITED_PRICE_LABEL}. Checkout is created securely by IQ using Recursiv Stripe.`}
             </span>
+            {checkoutError ? <span className="fine-print error">{checkoutError}</span> : null}
+            {checkoutState === 'active' ? <span className="fine-print success">Payment verified. Unlimited is active.</span> : null}
           </div>
         </div>
       ) : null}
@@ -872,6 +1011,7 @@ export default function Home() {
           box-shadow: 0 16px 34px rgba(0,0,0,.22);
         }
         .full { width: 100%; }
+        .center-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
         .test-surface {
           min-height: 650px;
           margin: 0;
@@ -1109,6 +1249,9 @@ export default function Home() {
         .plans div { border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,250,.28); padding: 12px; display: grid; gap: 2px; }
         .plans span, .fine-print { font-size: 11px; font-weight: 750; }
         .fine-print { display: block; margin-top: 10px; text-align: center; }
+        .stacked-actions { display: grid; gap: 10px; }
+        .fine-print.error { color: #6f2727; }
+        .fine-print.success { color: #244f37; }
         @media (max-width: 940px) {
           .hero { grid-template-columns: 1fr; min-height: 0; }
           .hero-tool { max-width: 520px; }
