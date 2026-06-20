@@ -77,6 +77,13 @@ type SocialEntry = {
   geo?: GeoSnapshot | null;
 };
 
+type GroupRecord = {
+  code: string;
+  name: string;
+  createdAt: number;
+  lastActiveAt: number;
+};
+
 type RoomMessage = {
   id: string;
   groupCode: string;
@@ -230,6 +237,7 @@ const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
 const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
 const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
 const GROUP_NAME_STORAGE_KEY = 'world-iq-group-name';
+const GROUP_LIST_STORAGE_KEY = 'world-iq-groups';
 const REMINDER_EMAIL_STORAGE_KEY = 'world-iq-reminder-email';
 const RECURSIV_ACCOUNT_STORAGE_KEY = 'world-iq-recursiv-account';
 const X_VERIFICATION_STORAGE_KEY = 'world-iq-x-verification';
@@ -582,9 +590,14 @@ function groupNameFromCode(code: string) {
   return code.split('-').filter(Boolean).map((part) => part.slice(0, 1).toUpperCase() + part.slice(1)).join(' ');
 }
 
-function randomRoomCode() {
-  const chunk = Math.random().toString(36).slice(2, 8);
-  return `room-${chunk}`;
+function randomRoomCode(existingCodes: string[] = []) {
+  const existing = new Set(existingCodes.map((code) => cleanGroupCode(code)).filter(Boolean));
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const chunk = `${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 8)}`.slice(0, 10);
+    const code = cleanGroupCode(`room-${chunk}`);
+    if (code && !existing.has(code)) return code;
+  }
+  return `room-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
 }
 
 function currentOrigin() {
@@ -925,15 +938,74 @@ function readStoredGroupCode(initialGroupCode?: string) {
   return cleanGroupCode(window.localStorage.getItem(GROUP_CODE_STORAGE_KEY) || '');
 }
 
+function normalizeGroupRecord(value: unknown): GroupRecord | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Partial<GroupRecord>;
+  const code = cleanGroupCode(record.code);
+  if (!code) return null;
+  const now = Date.now();
+  const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim().slice(0, 48) : groupNameFromCode(code);
+  return {
+    code,
+    name,
+    createdAt: typeof record.createdAt === 'number' ? record.createdAt : now,
+    lastActiveAt: typeof record.lastActiveAt === 'number' ? record.lastActiveAt : now,
+  };
+}
+
+function sortGroupRecords(groups: GroupRecord[]) {
+  return [...groups].sort((a, b) => b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt || a.name.localeCompare(b.name)).slice(0, 24);
+}
+
+function readStoredGroups(): GroupRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GROUP_LIST_STORAGE_KEY) || '[]') as unknown;
+    const records = Array.isArray(parsed) ? parsed.map(normalizeGroupRecord).filter((record): record is GroupRecord => Boolean(record)) : [];
+    const unique = new Map<string, GroupRecord>();
+    for (const record of records) {
+      const existing = unique.get(record.code);
+      unique.set(record.code, existing ? { ...existing, ...record, createdAt: Math.min(existing.createdAt, record.createdAt), lastActiveAt: Math.max(existing.lastActiveAt, record.lastActiveAt) } : record);
+    }
+    return sortGroupRecords([...unique.values()]);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredGroups(groups: GroupRecord[]) {
+  if (typeof window === 'undefined') return sortGroupRecords(groups);
+  const sorted = sortGroupRecords(groups);
+  window.localStorage.setItem(GROUP_LIST_STORAGE_KEY, JSON.stringify(sorted));
+  return sorted;
+}
+
 function writeStoredGroup(code: string, name?: string) {
-  if (typeof window === 'undefined' || !code) return;
-  window.localStorage.setItem(GROUP_CODE_STORAGE_KEY, code);
-  window.localStorage.setItem(GROUP_NAME_STORAGE_KEY, name || groupNameFromCode(code));
+  const cleaned = cleanGroupCode(code);
+  if (typeof window === 'undefined' || !cleaned) return [];
+  const now = Date.now();
+  const displayName = name?.trim() || groupNameFromCode(cleaned);
+  window.localStorage.setItem(GROUP_CODE_STORAGE_KEY, cleaned);
+  window.localStorage.setItem(GROUP_NAME_STORAGE_KEY, displayName);
+  const existing = readStoredGroups();
+  const previous = existing.find((group) => group.code === cleaned);
+  return writeStoredGroups([
+    {
+      code: cleaned,
+      name: displayName,
+      createdAt: previous?.createdAt || now,
+      lastActiveAt: now,
+    },
+    ...existing.filter((group) => group.code !== cleaned),
+  ]);
 }
 
 function readStoredGroupName(code: string) {
   if (!code) return '';
   if (typeof window === 'undefined') return groupNameFromCode(code);
+  const fromList = readStoredGroups().find((group) => group.code === cleanGroupCode(code));
+  if (fromList?.name) return fromList.name;
+  if (cleanGroupCode(window.localStorage.getItem(GROUP_CODE_STORAGE_KEY) || '') !== cleanGroupCode(code)) return groupNameFromCode(code);
   const saved = window.localStorage.getItem(GROUP_NAME_STORAGE_KEY);
   return saved?.trim() || groupNameFromCode(code);
 }
@@ -1635,7 +1707,7 @@ function SocialHub({
   onCopyInvite: () => void | Promise<void>;
 }) {
   const copy = (text: string) => translate(locale, text);
-  const roomFeed = groupEntries.length > 0 ? groupEntries : globalEntries.slice(0, 6);
+  const roomFeed = groupCode ? groupEntries : globalEntries.slice(0, 6);
   const inviteCopied = inviteState === 'Link copied';
   const showFallbackUrl = Boolean(inviteFallbackUrl && inviteState === 'Link ready');
 
@@ -2955,6 +3027,7 @@ export default function Home({
   const initialRouteGroupCode = cleanGroupCode(initialGroupCode);
   const [groupCode, setGroupCode] = React.useState<string>(initialRouteGroupCode);
   const [groupName, setGroupName] = React.useState<string>(() => initialRouteGroupCode ? groupNameFromCode(initialRouteGroupCode) : '');
+  const [groupRecords, setGroupRecords] = React.useState<GroupRecord[]>([]);
   const [playerId, setPlayerId] = React.useState('');
   const [playerName, setPlayerName] = React.useState('');
   const [usernameDraft, setUsernameDraft] = React.useState('');
@@ -3027,8 +3100,21 @@ export default function Home({
     setXState(xRecord?.status === 'verified' ? 'X badge active' : xRecord?.proofToken ? 'Post pending verification' : '');
     setGroupCode(code);
     setGroupName(name);
-    if (code) writeStoredGroup(code, name);
+    setGroupRecords(code ? writeStoredGroup(code, name) : readStoredGroups());
   }, [initialGroupCode]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const queryGroup = cleanGroupCode(new URLSearchParams(window.location.search).get('g'));
+    if (!queryGroup) return;
+    const name = readStoredGroupName(queryGroup);
+    setGroupCode(queryGroup);
+    setGroupName(name);
+    setGroupRecords(writeStoredGroup(queryGroup, name));
+    void refreshSocialBoards(queryGroup);
+    void refreshRoomMessages(queryGroup);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     setView(initialView);
@@ -3602,13 +3688,31 @@ export default function Home({
     }
   }, [playInteractionSound, resetInviteStateSoon]);
 
+  function openGroup(code: string, name?: string) {
+    const cleaned = cleanGroupCode(code);
+    if (!cleaned) return;
+    const displayName = name?.trim() || groupNameFromCode(cleaned);
+    setGroupCode(cleaned);
+    setGroupName(displayName);
+    setInviteState('Copy link');
+    setInviteFallbackUrl('');
+    setRoomMessageDraft('');
+    setRoomMessageState('Post');
+    setGroupRecords(writeStoredGroup(cleaned, displayName));
+    void refreshSocialBoards(cleaned);
+    void refreshRoomMessages(cleaned);
+    navigateView('rankings');
+  }
+
   async function createGroup() {
-    const code = randomRoomCode();
+    const knownCodes = readStoredGroups().map((group) => group.code);
+    const code = randomRoomCode(knownCodes);
     const name = groupNameFromCode(code);
     setGroupCode(code);
     setGroupName(name);
     setInviteState('Copying link');
-    writeStoredGroup(code, name);
+    setInviteFallbackUrl('');
+    setGroupRecords(writeStoredGroup(code, name));
     if (typeof window !== 'undefined' && view === 'test') {
       window.history.replaceState({}, '', `/g/${code}`);
     }
@@ -3865,8 +3969,13 @@ export default function Home({
   }
 
   const displayBoards = React.useMemo(() => {
-    if (settings.showAgentActivity) return socialBoards;
     const notAgent = (entry: SocialEntry) => !entry.playerId.startsWith('agent-');
+    if (settings.showAgentActivity) {
+      return {
+        ...socialBoards,
+        group: socialBoards.group.filter(notAgent),
+      };
+    }
     return {
       ...socialBoards,
       global: socialBoards.global.filter(notAgent),
@@ -3913,7 +4022,13 @@ export default function Home({
           </button>
         </div>
         {navOpen ? (
-          <div className="command-panel" role="menu" aria-label={copy('IQ WARS command center')}>
+          <>
+          <button className="command-backdrop" aria-label={copy('Close command center')} onClick={() => setNavOpen(false)} />
+          <aside className="command-panel" role="dialog" aria-label={copy('IQ WARS command center')}>
+            <div className="command-panel-head">
+              <span>{copy('Command')}</span>
+              <button className="close-command" onClick={() => setNavOpen(false)} aria-label={copy('Close command center')}>X</button>
+            </div>
             <div className="command-profile">
               <span className={`account-light ${recursivAccount ? 'on' : ''}`} aria-hidden="true" />
               <div>
@@ -3932,6 +4047,25 @@ export default function Home({
               {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
               {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
             </div>
+            <div className="command-groups">
+              <div className="command-section-head">
+                <span>{copy('Groups')}</span>
+                <button onClick={createGroup}>{copy('New')}</button>
+              </div>
+              <div className="command-group-list">
+                {groupRecords.length > 0 ? groupRecords.map((group) => (
+                  <button key={group.code} className={group.code === groupCode ? 'active' : ''} onClick={() => openGroup(group.code, group.name)}>
+                    <strong>{group.name}</strong>
+                    <span>/g/{group.code}</span>
+                  </button>
+                )) : (
+                  <div className="command-empty">
+                    <strong>{copy('No groups yet.')}</strong>
+                    <span>{copy('Create one link for each friend circle.')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="command-actions">
               <button className="nav-cta" onClick={() => {
                 setNavOpen(false);
@@ -3939,7 +4073,8 @@ export default function Home({
               }}>{copy(recursivAccount ? 'Account' : 'Connect account')}</button>
               {recursivAccount ? <button className="secondary logout-action" onClick={logoutAccount}>{copy('Logout')}</button> : null}
             </div>
-          </div>
+          </aside>
+          </>
         ) : null}
       </nav>
 
@@ -4914,25 +5049,66 @@ export default function Home({
           text-transform: uppercase;
         }
         .command-panel {
-          display: block;
-          position: absolute;
-          right: 0;
-          top: calc(100% + 12px);
-          z-index: 9;
-          width: min(380px, calc(100vw - 32px));
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          z-index: 31;
+          width: min(390px, calc(100vw - 26px));
           border: 1px solid rgba(255,255,255,.12);
-          border-radius: 8px;
-          background: rgba(8,9,10,.96);
-          box-shadow: 0 32px 90px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.06);
-          backdrop-filter: blur(18px);
-          padding: 12px;
+          border-left: 0;
+          border-radius: 0 10px 10px 0;
+          background: rgba(7,8,10,.98);
+          box-shadow: 34px 0 100px rgba(0,0,0,.68), inset 1px 0 0 rgba(255,255,255,.06);
+          backdrop-filter: blur(22px);
+          padding: 14px;
+          display: grid;
+          grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+          gap: 12px;
+          overflow: hidden;
+        }
+        .command-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 30;
+          min-height: 0;
+          padding: 0;
+          border: 0;
+          border-radius: 0;
+          background: rgba(0,0,0,.48);
+          backdrop-filter: blur(4px);
+        }
+        .command-panel-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-height: 42px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid rgba(255,255,255,.08);
+          color: #777d82;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+        }
+        .close-command {
+          width: 38px;
+          min-height: 38px;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 4px;
+          background: rgba(255,255,255,.035);
+          color: #f4f5f6;
+          display: grid;
+          place-items: center;
+          padding: 0;
         }
         .command-profile {
           display: grid;
           grid-template-columns: 10px minmax(0, 1fr);
           gap: 12px;
           align-items: center;
-          padding: 8px 6px 14px;
+          padding: 8px 6px;
           border-bottom: 1px solid rgba(255,255,255,.08);
         }
         .account-light {
@@ -4963,29 +5139,103 @@ export default function Home({
         }
         .command-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: 1fr;
           gap: 8px;
-          padding-top: 12px;
         }
         .command-grid button,
-        .command-actions button {
+        .command-actions button,
+        .command-group-list button,
+        .command-section-head button {
           min-height: 46px;
           border: 1px solid rgba(255,255,255,.10);
           border-radius: 4px;
           background: rgba(255,255,255,.025);
           padding: 0 12px;
           text-align: left;
+          color: #d9dcde;
+          width: 100%;
         }
-        .command-grid button.active {
+        .command-grid button.active,
+        .command-group-list button.active {
           border-color: rgba(255,255,255,.36);
           background: rgba(255,255,255,.08);
           color: #f4f5f6;
+        }
+        .command-groups {
+          min-height: 0;
+          display: grid;
+          grid-template-rows: auto minmax(0, 1fr);
+          gap: 9px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255,255,255,.08);
+        }
+        .command-section-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          color: #777d82;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+        }
+        .command-section-head button {
+          width: auto;
+          min-height: 34px;
+          padding: 0 11px;
+          color: #f4f5f6;
+        }
+        .command-group-list {
+          min-height: 0;
+          overflow-y: auto;
+          display: grid;
+          align-content: start;
+          gap: 8px;
+          padding-right: 2px;
+        }
+        .command-group-list button {
+          min-height: 58px;
+          display: grid;
+          gap: 4px;
+          align-content: center;
+        }
+        .command-group-list strong,
+        .command-empty strong {
+          overflow: hidden;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          letter-spacing: .04em;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .command-group-list span,
+        .command-empty span {
+          overflow: hidden;
+          color: #777d82;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9.5px;
+          letter-spacing: .1em;
+          text-overflow: ellipsis;
+          text-transform: none;
+          white-space: nowrap;
+        }
+        .command-empty {
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 4px;
+          background: rgba(255,255,255,.025);
+          padding: 14px 12px;
+          display: grid;
+          gap: 5px;
         }
         .command-actions {
           display: grid;
           grid-template-columns: 1fr auto;
           gap: 8px;
-          padding-top: 10px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255,255,255,.08);
         }
         .command-actions .nav-cta,
         .command-actions .logout-action {
@@ -6869,11 +7119,11 @@ export default function Home({
             font-size: 8px;
           }
           .command-panel {
-            top: calc(100% + 8px);
-            width: calc(100vw - 20px);
+            width: min(360px, calc(100vw - 18px));
           }
           .command-grid button,
-          .command-actions button {
+          .command-actions button,
+          .command-group-list button {
             min-height: 44px;
           }
           nav button {

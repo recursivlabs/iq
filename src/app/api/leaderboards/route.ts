@@ -253,7 +253,7 @@ function globalRows(entries: SocialEntry[], day: string) {
 }
 
 function groupRows(entries: SocialEntry[], day: string, groupCode: string) {
-  return boardRows(entries.filter((entry) => entry.day === day && entry.groupCode === groupCode));
+  return boardRows(entries.filter((entry) => entry.day === day && entry.groupCode === groupCode && !entry.playerId.startsWith('agent-')));
 }
 
 export async function GET(request: NextRequest) {
