@@ -5937,12 +5937,13 @@ export default function Home({
           min-height: 0;
           display: grid;
           grid-template-rows: auto auto minmax(0, 1fr);
-          gap: 12px;
+          gap: 14px;
         }
         .command-section-head {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
+          flex-wrap: wrap;
           gap: 10px;
           color: #777d82;
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -5950,8 +5951,14 @@ export default function Home({
           letter-spacing: .18em;
           text-transform: uppercase;
         }
+        .command-section-head span {
+          min-width: 0;
+          overflow-wrap: anywhere;
+          line-height: 1.45;
+        }
         .command-section-head button {
           width: auto;
+          flex: 0 0 auto;
           min-height: 40px;
           padding: 0 13px;
           color: #f4f5f6;
@@ -5987,13 +5994,12 @@ export default function Home({
           white-space: nowrap;
         }
         .command-room-card code {
-          overflow: hidden;
           color: #b7bdc1;
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
           font-size: 10px;
           letter-spacing: .08em;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          overflow-wrap: anywhere;
+          white-space: normal;
         }
         .command-room-card p {
           margin: 0;
@@ -6013,20 +6019,23 @@ export default function Home({
           min-height: 0;
           display: grid;
           align-content: start;
-          gap: 1px;
-          border: 1px solid rgba(255,255,255,.08);
-          border-radius: 8px;
+          gap: 10px;
+          border: 0;
+          border-radius: 0;
           overflow-y: auto;
-          background: rgba(255,255,255,.08);
+          background: transparent;
         }
         .command-group-item {
-          min-height: 154px;
+          min-height: 152px;
           display: grid;
-          gap: 9px;
-          align-content: center;
-          padding: 14px;
-          background: #0e1012;
-          border: 1px solid transparent;
+          gap: 10px;
+          align-content: start;
+          padding: 15px;
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.014)),
+            #0e1012;
+          border: 1px solid rgba(255,255,255,.085);
+          border-radius: 8px;
         }
         .group-row-top {
           min-width: 0;
@@ -6070,7 +6079,8 @@ export default function Home({
         .command-group-list code {
           color: #aeb4b8;
           letter-spacing: .08em;
-          white-space: nowrap;
+          overflow-wrap: anywhere;
+          white-space: normal;
         }
         .group-room-tag {
           color: #aeb4b8;
@@ -6082,7 +6092,7 @@ export default function Home({
           margin-top: 3px;
         }
         .command-group-actions button {
-          min-height: 40px;
+          min-height: 44px;
           padding: 0 10px;
           border: 1px solid rgba(255,255,255,.12);
           border-radius: 4px;
@@ -8000,10 +8010,11 @@ export default function Home({
           }
           .command-scroll {
             padding: 14px;
-            gap: 14px;
+            gap: 15px;
           }
           .command-group-item {
-            min-height: 148px;
+            min-height: 156px;
+            padding: 14px;
           }
           nav button {
             white-space: nowrap;

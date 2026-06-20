@@ -372,7 +372,7 @@ nav .nav-cta,
 
 .command-grid button,
 .command-actions button,
-.command-group-list button,
+.command-group-actions button,
 .command-section-head button {
   min-height: 58px;
   border: 0;
@@ -384,7 +384,7 @@ nav .nav-cta,
 }
 
 .command-grid button.active,
-.command-group-list button.active {
+.command-group-item.active {
   border-color: rgba(255, 255, 255, .36);
   background: rgba(255, 255, 255, .08);
   color: #f4f5f6;
@@ -423,13 +423,14 @@ nav .command-grid button::after {
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 14px;
 }
 
 .command-section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   color: #777d82;
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -438,8 +439,15 @@ nav .command-grid button::after {
   text-transform: uppercase;
 }
 
+.command-section-head span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
 .command-section-head button {
   width: auto;
+  flex: 0 0 auto;
   min-height: 40px;
   padding: 0 13px;
   border: 1px solid rgba(255, 255, 255, .14);
@@ -478,13 +486,12 @@ nav .command-grid button::after {
 }
 
 .command-room-card code {
-  overflow: hidden;
   color: #b7bdc1;
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 10px;
   letter-spacing: .08em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .command-room-card p {
@@ -507,18 +514,24 @@ nav .command-grid button::after {
   min-height: 0;
   display: grid;
   align-content: start;
-  gap: 1px;
-  border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 8px;
+  gap: 10px;
+  border: 0;
+  border-radius: 0;
   overflow-y: auto;
-  background: rgba(255, 255, 255, .08);
+  background: transparent;
 }
 
-.command-group-list button {
-  min-height: 134px;
+.command-group-item {
+  min-height: 152px;
   display: grid;
-  align-content: center;
-  gap: 8px;
+  gap: 10px;
+  align-content: start;
+  padding: 15px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .014)),
+    #0e1012;
+  border: 1px solid rgba(255, 255, 255, .085);
+  border-radius: 8px;
 }
 
 .group-row-top {
@@ -565,11 +578,37 @@ nav .command-grid button::after {
 .command-group-list code {
   color: #aeb4b8;
   letter-spacing: .08em;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .group-room-tag {
   color: #aeb4b8;
+}
+
+.command-group-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.command-group-actions button {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .035);
+  color: #dfe2e4;
+  font-size: 9px;
+  letter-spacing: .14em;
+  justify-content: center;
+  text-align: center;
+}
+
+.command-group-actions .copy-link {
+  color: #f4f5f6;
+  background: rgba(255, 255, 255, .06);
 }
 
 .full {
@@ -1366,7 +1405,7 @@ nav .command-grid button::after {
 
   .command-grid button,
   .command-actions button,
-  .command-group-list button {
+  .command-group-actions button {
     min-height: 54px;
   }
 
@@ -1375,8 +1414,9 @@ nav .command-grid button::after {
     padding: 14px;
   }
 
-  .command-group-list button {
-    min-height: 128px;
+  .command-group-item {
+    min-height: 156px;
+    padding: 14px;
   }
 
   nav button {
