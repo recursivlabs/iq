@@ -368,6 +368,8 @@ async function sourceAudit() {
 
   assert(username.includes('isValidUsername') && username.includes('status: 409'), 'Username API validates format and rejects claims owned by another player.');
   assert(profiles.includes('publicProfile(profile)') && profiles.includes('profilePublic'), 'Profile API applies public/privacy controls before returning profiles.');
+  assert(profiles.includes('MAX_PROFILE_ATTEMPTS') && profiles.includes('MAX_PROFILE_ANSWERS') && profiles.includes('MAX_PROFILE_SCORE'), 'Profile API clamps public score/history metadata to the supported daily-history range.');
+  assert(profiles.includes('xVerified: false') && !profiles.includes('Boolean(value.xVerified)') && profiles.includes('normalizeProfile(profile as Record<string, unknown>)'), 'Profile API does not trust client-submitted X badges or legacy stored profile flags.');
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
   assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
   assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
@@ -442,6 +444,7 @@ async function liveAudit() {
   const playerId = `audit-player-${randomUUID()}`;
   const username = `audit_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const profileSlug = `${username}_profile`;
+  const spoofProfileSlug = `${username}_spoof_profile`;
   const roomBody = `audit message ${randomUUID().slice(0, 8)}`;
   const day = utcDayKey();
   const invalidFutureDay = '2099-12-31';
@@ -537,6 +540,46 @@ async function liveAudit() {
   assert(profilePost.response.ok && profilePost.data.profile?.slug === profileSlug, 'Live profile API accepts a public audit profile.');
   const profileGet = await requestJson(`${origin}/api/profiles?slug=${profileSlug}`);
   assert(profileGet.response.ok && profileGet.data.profile?.score === 137 && profileGet.data.profile?.city === 'New York', 'Live profile API reads the submitted public profile with visible location.');
+
+  const spoofProfilePost = await requestJson(`${origin}/api/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: `${playerId}-spoof`,
+      slug: spoofProfileSlug,
+      username: `${username}_spoof`,
+      displayName: 'Spoof Audit',
+      bio: 'Spoof profile should be normalized',
+      city: 'New York',
+      country: 'United States',
+      xHandle: 'audit_x',
+      xVerified: true,
+      score: 999,
+      best: 1000,
+      rank: 'not-a-rank',
+      attempts: 9999,
+      answers: 999999,
+      profilePublic: true,
+      showLocation: true,
+      showXBadge: true,
+      showHistory: true,
+      agent: true,
+    }),
+  });
+  assert(spoofProfilePost.response.ok, 'Live profile API accepts but sanitizes a spoofed profile payload.');
+  const spoofProfileGet = await requestJson(`${origin}/api/profiles?slug=${spoofProfileSlug}`);
+  const spoofProfile = spoofProfileGet.data?.profile || {};
+  assert(
+    spoofProfileGet.response.ok
+    && spoofProfile.xVerified === false
+    && spoofProfile.agent !== true
+    && spoofProfile.score <= 155
+    && spoofProfile.best <= 155
+    && spoofProfile.attempts <= 60
+    && spoofProfile.answers <= 720
+    && spoofProfile.rank === null,
+    'Live profile API strips spoofed badges/agent flags and clamps impossible score history.'
+  );
 
   const roomMissing = await requestJson(`${origin}/api/rooms/messages`);
   assert(roomMissing.response.status === 400, 'Live room message API rejects missing room reads.');

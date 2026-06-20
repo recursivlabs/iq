@@ -34,6 +34,10 @@ type ProfileStore = {
 const STORE_KEY = 'world-iq:profiles:v1';
 const STORE_FILE = 'world-iq-profiles.json';
 const MAX_PROFILES = 5000;
+const MAX_PROFILE_ATTEMPTS = 60;
+const MAX_PROFILE_ANSWERS = MAX_PROFILE_ATTEMPTS * 12;
+const MIN_PROFILE_SCORE = 70;
+const MAX_PROFILE_SCORE = 155;
 
 const SEEDED_AGENT_PROFILES: PublicProfile[] = [
   { id: 'agent-euclid', slug: 'agent_euclid', username: 'agent_euclid', displayName: 'Agent Euclid', bio: 'Seeded test profile. Pattern speed, geometry, and clean-room reasoning.', city: 'New York', country: 'United States', xHandle: null, xVerified: false, score: 142, best: 142, rank: '#8,210', attempts: 18, answers: 216, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
@@ -71,11 +75,23 @@ function cleanNumber(value: unknown, min: number, max: number) {
   return Number.isFinite(next) ? Math.max(min, Math.min(max, Math.round(next))) : null;
 }
 
+function cleanRank(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const rank = value.replace(/\s+/g, '').trim().slice(0, 24);
+  return /^#[0-9,]+$/.test(rank) ? rank : null;
+}
+
 function normalizeProfile(value: Record<string, unknown>): PublicProfile | null {
   const id = cleanText(value.id, '', 100);
   const username = cleanSlug(value.username);
   const slug = cleanSlug(value.slug) || username || cleanSlug(id);
   if (!id || !slug) return null;
+  const attempts = cleanNumber(value.attempts, 0, MAX_PROFILE_ATTEMPTS) || 0;
+  const submittedAnswers = cleanNumber(value.answers, 0, MAX_PROFILE_ANSWERS);
+  const answers = attempts > 0 ? Math.min(attempts * 12, submittedAnswers ?? attempts * 12) : 0;
+  const score = attempts > 0 ? cleanNumber(value.score, MIN_PROFILE_SCORE, MAX_PROFILE_SCORE) : null;
+  const submittedBest = attempts > 0 ? cleanNumber(value.best, MIN_PROFILE_SCORE, MAX_PROFILE_SCORE) : null;
+  const best = score === null ? null : Math.max(score, submittedBest ?? score);
   return {
     id,
     slug,
@@ -85,12 +101,12 @@ function normalizeProfile(value: Record<string, unknown>): PublicProfile | null 
     city: cleanOptionalText(value.city, 80),
     country: cleanOptionalText(value.country, 80),
     xHandle: cleanSlug(value.xHandle) || null,
-    xVerified: Boolean(value.xVerified),
-    score: cleanNumber(value.score, 0, 200),
-    best: cleanNumber(value.best, 0, 200),
-    rank: cleanOptionalText(value.rank, 24),
-    attempts: cleanNumber(value.attempts, 0, 10000) || 0,
-    answers: cleanNumber(value.answers, 0, 1_000_000) || (cleanNumber(value.attempts, 0, 10000) || 0) * 12,
+    xVerified: false,
+    score,
+    best,
+    rank: attempts > 0 ? cleanRank(value.rank) : null,
+    attempts,
+    answers,
     profilePublic: value.profilePublic !== false,
     showLocation: value.showLocation !== false,
     showXBadge: value.showXBadge !== false,
@@ -104,8 +120,14 @@ function emptyStore(): ProfileStore {
 }
 
 function normalizeStore(parsed: Partial<ProfileStore>): ProfileStore {
+  const profiles = Array.isArray(parsed.profiles)
+    ? parsed.profiles
+      .map((profile) => profile && typeof profile === 'object' ? normalizeProfile(profile as Record<string, unknown>) : null)
+      .filter((profile): profile is PublicProfile => Boolean(profile))
+      .slice(-MAX_PROFILES)
+    : [];
   return {
-    profiles: Array.isArray(parsed.profiles) ? parsed.profiles.filter((profile) => profile && typeof profile === 'object').slice(-MAX_PROFILES) as PublicProfile[] : [],
+    profiles,
   };
 }
 
