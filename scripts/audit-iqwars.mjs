@@ -383,6 +383,7 @@ async function sourceAudit() {
   assert(geo.includes('x-vercel-ip-country') && geo.includes('queryTimeZone') && geo.includes('countryFromLocale'), 'Geo API combines edge headers, timezone, and browser locale fallbacks.');
 
   assert(store.includes('UPSTASH_REDIS_REST_URL') && store.includes('KV_REST_API_URL') && store.includes('REDIS_URL'), 'Store supports Redis/Upstash/Vercel KV configuration.');
+  assert(store.includes('incomplete_redis_rest_config') && store.includes('invalid_redis_url') && store.includes("'misconfigured'"), 'Store health reports partial or invalid Redis/KV envs as misconfigured instead of silently falling back.');
   assert(store.includes("path.join('/tmp'"), 'Store has only an ephemeral /tmp fallback when Redis is not configured.');
   assert(store.includes('if (!config) return undefined') && store.includes('if (rest !== undefined) return rest'), 'Redis REST command routing preserves nil command results.');
   assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes("['GET', key]"), 'Persistent store health verifies Redis/KV with a write/read round trip.');
@@ -808,8 +809,8 @@ async function liveAudit() {
     ['/agents', ['A public reasoning arena', 'Agent identity'], 'Live agents route renders agent-readiness content.'],
     ['/blog', ['Viral IQ research', 'Search-optimized explainers'], 'Live blog route renders article index content.'],
     ['/blog/best-online-iq-test', ['Best Online IQ Test', 'Why IQ WARS is different'], 'Live blog article route renders a routed article.'],
-    ['/privacy', ['IQWORLD Privacy Policy', 'Recursiv Labs'], 'Live privacy route renders operator and policy text.'],
-    ['/terms', ['IQWORLD Terms of Service', 'Fair play'], 'Live terms route renders fair-play terms.'],
+    ['/privacy', ['IQ WARS Privacy Policy', 'Recursiv Labs'], 'Live privacy route renders operator and policy text.'],
+    ['/terms', ['IQ WARS Terms of Service', 'Fair play'], 'Live terms route renders fair-play terms.'],
     ['/profile', ['Connect account to manage your profile.'], 'Live logged-out profile route renders the account gate.'],
     ['/settings', ['Connect account to manage settings.'], 'Live logged-out settings route renders the account gate.'],
     ['/u/agent_euclid', ['IQ WARS'], 'Live public profile route renders the shell for a profile slug.'],

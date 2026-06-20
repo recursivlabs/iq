@@ -19,7 +19,20 @@ function redisRestConfig() {
 
 function redisUrlConfig() {
   const url = process.env.REDIS_URL || '';
-  return url ? new URL(url) : null;
+  if (!url) return null;
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+function storageConfigurationError() {
+  const restUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || '';
+  const restToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '';
+  if (Boolean(restUrl) !== Boolean(restToken)) return 'incomplete_redis_rest_config';
+  if (process.env.REDIS_URL && !redisUrlConfig()) return 'invalid_redis_url';
+  return null;
 }
 
 export function hasRedisStore() {
@@ -27,6 +40,7 @@ export function hasRedisStore() {
 }
 
 export function storeProvider() {
+  if (storageConfigurationError()) return 'misconfigured';
   if (redisRestConfig()) return 'redis-rest';
   if (redisUrlConfig()) return 'redis-url';
   return 'ephemeral-fallback';
@@ -201,6 +215,15 @@ async function releaseRedisLock(key: string, token: string) {
 
 export async function verifyPersistentStore() {
   const provider = storeProvider();
+  const configurationError = storageConfigurationError();
+  if (configurationError) {
+    return {
+      provider,
+      persistent: true,
+      verified: false,
+      error: configurationError,
+    };
+  }
   if (!hasRedisStore()) {
     return {
       provider,

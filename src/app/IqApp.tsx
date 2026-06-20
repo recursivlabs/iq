@@ -2632,34 +2632,34 @@ function SettingsView({
 
 const LEGAL_DOCS: Record<'privacy' | 'terms', { title: string; lede: string; sections: Array<{ heading: string; body: string }> }> = {
   privacy: {
-    title: 'IQWORLD Privacy Policy',
-    lede: 'IQWORLD, presented as IQ WARS, is operated by Recursiv Labs, Inc. We collect the minimum data needed to run the daily reasoning game, profile links, rankings, billing, fraud prevention, and optional social verification.',
+    title: 'IQ WARS Privacy Policy',
+    lede: 'IQ WARS is operated by Recursiv Labs, Inc. We collect the minimum data needed to run the daily reasoning game, profile links, rankings, billing, fraud prevention, and optional social verification.',
     sections: [
-      { heading: 'Scope', body: 'This policy applies to IQWORLD and IQ WARS at iqwars.app and related Recursiv-operated domains. Recursiv Labs, Inc. operates the service and can be contacted at bill@recursiv.io.' },
+      { heading: 'Scope', body: 'This policy applies to IQ WARS at iqwars.app and related Recursiv-operated domains. Recursiv Labs, Inc. operates the service and can be contacted at bill@recursiv.io.' },
       { heading: 'What we collect', body: 'We collect account email if you sign up, username and profile fields you choose to provide, daily test scores, timing, leaderboard entries, group-room membership, browser language, timezone, coarse inferred geography, device/browser metadata, payment status, and optional X public profile information when you connect X or verify by posting a scorecard.' },
       { heading: 'Optional demographic and social data', body: 'No demographic field is required to play. Location, bio, and similar profile fields are optional and controlled in Settings. We may infer coarse geography from browser, edge, timezone, and language signals only to operate rankings and geography boards.' },
       { heading: 'How we use data', body: 'We use data to operate the game, calculate scores, maintain leaderboards and friend rooms, generate profile links, prevent abuse, process subscriptions through Recursiv and Stripe, provide support, improve product quality, and comply with legal obligations.' },
       { heading: 'Sharing', body: 'Public profile links and leaderboard entries show the fields you choose to make public. Payment data is processed by Stripe. Infrastructure, email, analytics, and AI providers may process data as subprocessors under contract. We do not sell personal data.' },
-      { heading: 'AI and inference', body: 'IQWORLD may use AI or automated systems to infer coarse geography, detect abuse, classify aggregate activity, and improve puzzle and profile quality. These inferences are not required to play and can be limited through settings where available.' },
+      { heading: 'AI and inference', body: 'IQ WARS may use AI or automated systems to infer coarse geography, detect abuse, classify aggregate activity, and improve puzzle and profile quality. These inferences are not required to play and can be limited through settings where available.' },
       { heading: 'Retention and deletion', body: 'We retain account, score, billing, and security records as needed to operate the service and meet legal obligations. You can request export, correction, or deletion by emailing bill@recursiv.io. Some aggregate, anonymized, billing, fraud, or legal records may be retained where permitted or required.' },
-      { heading: 'Children', body: 'IQWORLD is not directed to children under 13, or under 16 where that higher threshold applies. If you believe a child provided personal data, contact bill@recursiv.io.' },
+      { heading: 'Children', body: 'IQ WARS is not directed to children under 13, or under 16 where that higher threshold applies. If you believe a child provided personal data, contact bill@recursiv.io.' },
       { heading: 'Security', body: 'We use transport encryption, scoped credentials, access controls, logging, and vendor safeguards appropriate for a public web application. No internet service can be guaranteed perfectly secure.' },
       { heading: 'Contact', body: 'Privacy questions, rights requests, or deletion requests can be sent to bill@recursiv.io. Operator: Recursiv Labs, Inc.' },
     ],
   },
   terms: {
-    title: 'IQWORLD Terms of Service',
-    lede: 'These terms govern your use of IQWORLD, presented as IQ WARS, operated by Recursiv Labs, Inc. The game is an entertainment and competition product, not a clinical, educational, employment, or supervised psychometric assessment.',
+    title: 'IQ WARS Terms of Service',
+    lede: 'These terms govern your use of IQ WARS, operated by Recursiv Labs, Inc. The game is an entertainment and competition product, not a clinical, educational, employment, or supervised psychometric assessment.',
     sections: [
-      { heading: 'Service', body: 'IQWORLD provides a daily reasoning game, score profile, public and friend leaderboards, geography rankings, optional X verification, paid profile features, and related Recursiv-hosted services.' },
+      { heading: 'Service', body: 'IQ WARS provides a daily reasoning game, score profile, public and friend leaderboards, geography rankings, optional X verification, paid profile features, and related Recursiv-hosted services.' },
       { heading: 'Eligibility and accounts', body: 'You must be able to form a binding contract and comply with applicable law. You are responsible for account security and for all activity under your account or public profile.' },
-      { heading: 'Scores and rankings', body: 'Scores are entertainment and competitive signals generated from IQWORLD puzzle performance and timing. They are not medical, psychological, school-admissions, hiring, immigration, or high-IQ society eligibility determinations.' },
+      { heading: 'Scores and rankings', body: 'Scores are entertainment and competitive signals generated from IQ WARS puzzle performance and timing. They are not medical, psychological, school-admissions, hiring, immigration, or high-IQ society eligibility determinations.' },
       { heading: 'Fair play', body: 'You may not automate official attempts, evade daily attempt limits, manipulate leaderboards, impersonate others, abuse group links, scrape the service at scale, or interfere with service availability. We may remove entries or suspend access for suspected abuse.' },
       { heading: 'User content and profiles', body: 'You are responsible for profile text, usernames, group names, and any content you submit or share. Do not post unlawful, infringing, harassing, deceptive, or privacy-invasive content.' },
-      { heading: 'Billing', body: `Free players get one full official IQWORLD run per day. Paid features, currently listed at ${UNLIMITED_PRICE_LABEL} unless changed in product, are billed through Recursiv and Stripe. Fees are non-refundable except where required by law or expressly stated.` },
+      { heading: 'Billing', body: `Free players get one full official IQ WARS run per day. Paid features, currently listed at ${UNLIMITED_PRICE_LABEL} unless changed in product, are billed through Recursiv and Stripe. Fees are non-refundable except where required by law or expressly stated.` },
       { heading: 'Third-party services', body: 'Optional X verification and payment processing depend on third-party services. Their availability and terms may apply. Recursiv is not responsible for third-party outages or decisions.' },
-      { heading: 'Disclaimer', body: 'IQWORLD is provided as-is and as-available. We disclaim implied warranties to the maximum extent permitted by law. We do not guarantee uninterrupted service, permanent rankings, or that any score reflects innate intelligence.' },
-      { heading: 'Limitation of liability', body: 'To the maximum extent permitted by law, Recursiv Labs, Inc. will not be liable for indirect, incidental, special, consequential, punitive, or lost-profit damages. Our aggregate liability is limited to the greater of fees paid for IQWORLD in the prior 12 months or $100.' },
+      { heading: 'Disclaimer', body: 'IQ WARS is provided as-is and as-available. We disclaim implied warranties to the maximum extent permitted by law. We do not guarantee uninterrupted service, permanent rankings, or that any score reflects innate intelligence.' },
+      { heading: 'Limitation of liability', body: 'To the maximum extent permitted by law, Recursiv Labs, Inc. will not be liable for indirect, incidental, special, consequential, punitive, or lost-profit damages. Our aggregate liability is limited to the greater of fees paid for IQ WARS in the prior 12 months or $100.' },
       { heading: 'Changes and termination', body: 'We may update the service or these terms. We may suspend or terminate accounts that violate these terms or create legal, security, or operational risk. Continued use after changes means acceptance.' },
       { heading: 'Governing law', body: 'These terms are governed by Delaware law, without regard to conflict-of-law rules, unless applicable consumer law requires otherwise.' },
       { heading: 'Contact', body: 'Questions about these terms can be sent to bill@recursiv.io. Operator: Recursiv Labs, Inc.' },
@@ -2981,7 +2981,7 @@ function SiteFooter({ locale, onView }: { locale: LocaleKey; onView: (view: View
     <footer className="site-footer">
       <div className="footer-brand">
         <strong>IQ WARS</strong>
-        <span>{copy('IQWORLD operated by Recursiv Labs, Inc.')}</span>
+        <span>{copy('IQ WARS operated by Recursiv Labs, Inc.')}</span>
       </div>
       <div className="footer-links">
         <button onClick={() => onView('about')}>{copy('About')}</button>
@@ -4857,7 +4857,7 @@ export default function Home({
         <section className="features">
           <div className="section-head">
             <div>
-              <p className="kicker">{copy('IQWORLD research game')}</p>
+              <p className="kicker">{copy('IQ WARS research game')}</p>
               <h2>{copy('A daily global intelligence ranking for individuals and geographies.')}</h2>
               <p>{copy('IQ WARS is a standardized reasoning competition designed to compare daily abstract problem-solving performance across people, friend groups, cities, countries, and regions.')}</p>
             </div>
