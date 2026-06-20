@@ -129,6 +129,81 @@ function stringArrayFromVariable(ts, tree, name) {
     .filter(Boolean);
 }
 
+function hashNumber(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0);
+}
+
+function officialWorldIdsFromSource(app, questionCount, noRepeatDays) {
+  const explicitNumbers = [...app.matchAll(/id: 'world-(\d+)'/g)]
+    .map((match) => Number(match[1]))
+    .filter((number) => Number.isInteger(number))
+    .sort((a, b) => a - b);
+  const uniqueNumbers = [...new Set(explicitNumbers)];
+  const required = questionCount * noRepeatDays;
+  const generatedCount = Math.max(0, required - uniqueNumbers.length);
+  const generatedNumbers = Array.from({ length: generatedCount }, (_, index) => uniqueNumbers.length + index + 1);
+  return [...uniqueNumbers, ...generatedNumbers].map((number) => `world-${String(number).padStart(2, '0')}`);
+}
+
+function hashedSort(seed, ids) {
+  return [...ids].sort((a, b) => hashNumber(`${seed}:${a}`) - hashNumber(`${seed}:${b}`) || a.localeCompare(b));
+}
+
+function simulateOfficialQuestionRotation({ ids, starterIds, questionCount, days, playerSeed }) {
+  let starterHistory = [];
+  let setHistory = [];
+  const rounds = [];
+
+  function chooseStarterId(day, candidateIds) {
+    if (!candidateIds.length) return '';
+    const history = starterHistory.filter((id) => candidateIds.includes(id));
+    const available = candidateIds.filter((id) => !history.includes(id));
+    const pool = available.length > 0 ? available : candidateIds;
+    const index = hashNumber(`${day}:world:${playerSeed}:${history.join(',')}`) % pool.length;
+    const starter = pool[index];
+    starterHistory = [starter, ...history.filter((id) => id !== starter)].slice(0, candidateIds.length);
+    return starter;
+  }
+
+  for (let dayIndex = 0; dayIndex < days; dayIndex += 1) {
+    const day = `2026-07-${String(dayIndex + 1).padStart(2, '0')}`;
+    const seen = new Set(setHistory.filter((id) => ids.includes(id)));
+    const starterPool = starterIds.filter((id) => ids.includes(id));
+    const unseenStarterPool = starterPool.filter((id) => !seen.has(id));
+    const unseenPool = ids.filter((id) => !seen.has(id));
+    const fallbackStarterPool = unseenPool.length ? unseenPool : starterPool;
+    const starterId = chooseStarterId(day, unseenStarterPool.length ? unseenStarterPool : fallbackStarterPool);
+    const selected = [];
+    if (starterId) selected.push(starterId);
+
+    const selectedIds = new Set(selected);
+    const seed = `${day}:world:${playerSeed}:question-order:question-set`;
+    const unseen = hashedSort(seed, unseenPool.filter((id) => !selectedIds.has(id)));
+    const recycled = ids
+      .filter((id) => !selectedIds.has(id) && !unseen.includes(id))
+      .sort((a, b) => setHistory.indexOf(b) - setHistory.indexOf(a) || hashNumber(`${seed}:recycle:${a}`) - hashNumber(`${seed}:recycle:${b}`));
+
+    for (const id of [...unseen, ...recycled]) {
+      if (selected.length >= questionCount) break;
+      selected.push(id);
+      selectedIds.add(id);
+    }
+
+    setHistory = [
+      ...selected.filter((id) => ids.includes(id)),
+      ...setHistory.filter((id) => ids.includes(id) && !selected.includes(id)),
+    ].slice(0, ids.length);
+    rounds.push({ day, starterId, selected });
+  }
+
+  return rounds;
+}
+
 async function sourceAudit() {
   const app = source(appPath);
   const audit = source(fileURLToPath(import.meta.url));
@@ -214,6 +289,23 @@ async function sourceAudit() {
   assert(stableOrder.includes('chooseQuestionSet') && stableOrder.includes('targetCount'), 'Stable question order selects a fixed-size rotating question set before ordering it.');
   const permutedOrder = functionText(findFunction(ts, tree, 'permutedQuestionOrder'), app);
   assert(app.includes('function difficultyRank') && permutedOrder.includes('difficultyRank(a) - difficultyRank(b)') && permutedOrder.includes(':band:'), 'Question order ramps by difficulty after the rotating starter while randomizing within bands.');
+
+  const questionCountNumber = Number(officialQuestionCount);
+  const noRepeatDaysNumber = Number(noRepeatDays);
+  const officialIds = officialWorldIdsFromSource(app, questionCountNumber, noRepeatDaysNumber);
+  const starterIds = officialIds.slice(0, 8);
+  const simulatedRounds = simulateOfficialQuestionRotation({
+    ids: officialIds,
+    starterIds,
+    questionCount: questionCountNumber,
+    days: noRepeatDaysNumber,
+    playerSeed: 'audit-player',
+  });
+  const simulatedSelections = simulatedRounds.flatMap((round) => round.selected);
+  assert(officialIds.length >= questionCountNumber * noRepeatDaysNumber, 'Official question bank has enough source IDs for the promised no-repeat window.');
+  assert(simulatedRounds.every((round) => round.selected.length === questionCountNumber && new Set(round.selected).size === questionCountNumber), 'Simulated daily official runs contain the configured number of unique questions.');
+  assert(new Set(simulatedSelections).size === simulatedSelections.length, 'Simulated official question rotation has no repeated questions across the full no-repeat window.');
+  assert(new Set(simulatedRounds.map((round) => round.starterId)).size === Math.min(noRepeatDaysNumber, starterIds.length), 'Simulated official starter question rotates across consecutive days.');
 
   const buildGlobe = functionText(findFunction(ts, tree, 'buildGlobeRegions'), app);
   assert(buildGlobe.includes('geography.countries') && buildGlobe.includes('geography.cities.slice') && buildGlobe.includes('geography.towns.slice'), 'Globe regions derive only from ranked geography board rows.');
