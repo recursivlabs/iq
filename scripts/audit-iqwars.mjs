@@ -19,6 +19,7 @@ const roomMessagesPath = path.join(root, 'src/app/api/rooms/messages/route.ts');
 const presencePath = path.join(root, 'src/app/api/presence/route.ts');
 const remindersPath = path.join(root, 'src/app/api/reminders/route.ts');
 const remindersSendPath = path.join(root, 'src/app/api/reminders/send/route.ts');
+const remindersLibPath = path.join(root, 'src/app/api/_lib/reminders.ts');
 const accessPath = path.join(root, 'src/app/api/access/route.ts');
 const checkoutPath = path.join(root, 'src/app/api/checkout/route.ts');
 const checkoutStatusPath = path.join(root, 'src/app/api/checkout-status/route.ts');
@@ -225,6 +226,7 @@ async function sourceAudit() {
   const presence = source(presencePath);
   const reminders = source(remindersPath);
   const remindersSend = source(remindersSendPath);
+  const remindersLib = source(remindersLibPath);
   const access = source(accessPath);
   const checkout = source(checkoutPath);
   const checkoutStatus = source(checkoutStatusPath);
@@ -375,6 +377,8 @@ async function sourceAudit() {
   assert(roomMessages.includes('PLAYER_API_KEY_COOKIE') && roomMessages.includes('Connect an IQ WARS account before posting room chat.'), 'Room chat write API requires a connected IQ WARS account cookie.');
   assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
   assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
+  assert(reminders.includes('shouldSendConfirmation') && reminders.includes('confirmationSentAt'), 'Reminder signup only sends confirmation email until a reminder has a recorded confirmation.');
+  assert(remindersLib.includes('MAX_REMINDERS') && remindersLib.includes('normalizeReminder') && remindersLib.includes('validEmail') && remindersLib.includes('new Map'), 'Reminder store normalizes, dedupes, and bounds reminder records before reads and writes.');
   assert(remindersSend.includes('IQ_REMINDER_CRON_TOKEN') && remindersSend.includes("process.env.NODE_ENV === 'production'"), 'Reminder cron send API requires explicit production configuration.');
   assert(access.includes('PLAYER_API_KEY_COOKIE') && access.includes('app-subscriptions/status'), 'Access API checks Recursiv app subscription status from the player key.');
   assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl'), 'Checkout API requires a player key and sanitizes return URLs.');

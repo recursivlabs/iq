@@ -54,12 +54,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Enter a valid email.' }, { status: 400 });
   }
 
+  const now = Date.now();
   const groupCode = cleanGroupCode(body?.groupCode) || null;
   const groupName = cleanText(body?.groupName) || (groupCode ? groupCode : null);
   const playerId = cleanText(body?.playerId, 80) || `email:${email}`;
   const id = `${email}:${groupCode || 'global'}`;
 
-  await updateReminderStore((store) => {
+  const saveResult = await updateReminderStore((store) => {
     const existingIndex = store.reminders.findIndex((item) => item.id === id);
     const existing = existingIndex >= 0 ? store.reminders[existingIndex] : null;
     const record: ReminderRecord = {
@@ -68,17 +69,27 @@ export async function POST(request: Request) {
       playerId,
       groupCode,
       groupName,
-      createdAt: existing?.createdAt || Date.now(),
+      createdAt: existing?.createdAt || now,
       lastSentAt: existing?.lastSentAt || null,
+      confirmationSentAt: existing?.confirmationSentAt || null,
     };
     if (existingIndex >= 0) {
       store.reminders[existingIndex] = record;
     } else {
       store.reminders.push(record);
     }
-    return null;
+    return { shouldSendConfirmation: !record.confirmationSentAt };
   });
-  const confirmationSent = await sendConfirmation(email, groupCode, groupName).catch(() => false);
+  const confirmationSent = saveResult.shouldSendConfirmation
+    ? await sendConfirmation(email, groupCode, groupName).catch(() => false)
+    : false;
+  if (confirmationSent) {
+    await updateReminderStore((store) => {
+      const reminder = store.reminders.find((item) => item.id === id);
+      if (reminder) reminder.confirmationSentAt = now;
+      return null;
+    });
+  }
 
   return NextResponse.json({
     ok: true,
