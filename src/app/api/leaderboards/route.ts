@@ -259,8 +259,9 @@ function groupRows(entries: SocialEntry[], day: string, groupCode: string) {
 export async function GET(request: NextRequest) {
   const day = sanitizeText(request.nextUrl.searchParams.get('day'), new Date().toISOString().slice(0, 10), 10);
   const groupCode = sanitizeGroupCode(request.nextUrl.searchParams.get('group'));
+  const includeAgents = request.nextUrl.searchParams.get('agents') !== 'false';
   const store = await readStore();
-  const entries = [...seededAgentEntries(day), ...store.entries];
+  const entries = includeAgents ? [...seededAgentEntries(day), ...store.entries] : store.entries;
 
   return NextResponse.json({
     day,
@@ -273,6 +274,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const includeAgents = request.nextUrl.searchParams.get('agents') !== 'false';
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
     return NextResponse.json({ error: 'Invalid leaderboard entry.' }, { status: 400 });
@@ -326,13 +328,14 @@ export async function POST(request: NextRequest) {
     store.entries.push(entry);
   }
   await writeStore(store);
+  const responseEntries = includeAgents ? [...seededAgentEntries(day), ...store.entries] : store.entries;
 
   return NextResponse.json({
     accepted: existingIndex < 0,
     entry: existingIndex >= 0 ? store.entries[existingIndex] : entry,
-    global: globalRows([...seededAgentEntries(day), ...store.entries], day),
-    group: groupCode ? groupRows([...seededAgentEntries(day), ...store.entries], day, groupCode) : [],
-    geography: geographyRows([...seededAgentEntries(day), ...store.entries], day),
+    global: globalRows(responseEntries, day),
+    group: groupCode ? groupRows(responseEntries, day, groupCode) : [],
+    geography: geographyRows(responseEntries, day),
   }, {
     headers: { 'cache-control': 'no-store' },
   });

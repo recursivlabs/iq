@@ -232,6 +232,8 @@ const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
 const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
 const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
 const OFFICIAL_HISTORY_LIMIT = 60;
+const QUESTION_ORDER_STORAGE_KEY = 'world-iq-question-order-v2';
+const QUESTION_STARTER_HISTORY_STORAGE_KEY = 'world-iq-question-starters-v2';
 const PLAYER_ID_STORAGE_KEY = 'world-iq-player-id';
 const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
 const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
@@ -1167,10 +1169,78 @@ function withSixOptions(puzzle: Puzzle): Puzzle {
   };
 }
 
+function readQuestionStarterHistory(mode: ModeKey) {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(`${QUESTION_STARTER_HISTORY_STORAGE_KEY}:${mode}`) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQuestionStarterHistory(mode: ModeKey, history: string[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(`${QUESTION_STARTER_HISTORY_STORAGE_KEY}:${mode}`, JSON.stringify(history.slice(0, 12)));
+}
+
+function chooseStarterId(mode: ModeKey, candidateIds: string[]) {
+  if (!candidateIds.length) return '';
+  const history = readQuestionStarterHistory(mode).filter((id) => candidateIds.includes(id));
+  const available = candidateIds.filter((id) => !history.includes(id));
+  const pool = available.length > 0 ? available : candidateIds;
+  const playerSeed = typeof window === 'undefined' ? 'server' : readPlayerId();
+  const index = hashNumber(`${localDayKey()}:${mode}:${playerSeed}:${history.join(',')}`) % pool.length;
+  const starter = pool[index];
+  writeQuestionStarterHistory(mode, [starter, ...history.filter((id) => id !== starter)].slice(0, candidateIds.length));
+  return starter;
+}
+
+function orderPuzzlesForStarter(puzzles: Puzzle[], starterId: string) {
+  if (!starterId) return puzzles;
+  const starter = puzzles.find((puzzle) => puzzle.id === starterId);
+  if (!starter) return puzzles;
+  return [starter, ...puzzles.filter((puzzle) => puzzle.id !== starterId)];
+}
+
+function normalizeQuestionOrderRecord(value: unknown, mode: ModeKey, validIds: string[]) {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as { day?: unknown; mode?: unknown; order?: unknown };
+  if (record.day !== localDayKey() || record.mode !== mode || !Array.isArray(record.order)) return null;
+  const valid = new Set(validIds);
+  const order = record.order.filter((id): id is string => typeof id === 'string' && valid.has(id));
+  return order.length === validIds.length && new Set(order).size === validIds.length ? order : null;
+}
+
+function readQuestionOrder(mode: ModeKey, validIds: string[]) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(`${QUESTION_ORDER_STORAGE_KEY}:${mode}`) || 'null');
+    return normalizeQuestionOrderRecord(parsed, mode, validIds);
+  } catch {
+    return null;
+  }
+}
+
+function writeQuestionOrder(mode: ModeKey, order: string[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(`${QUESTION_ORDER_STORAGE_KEY}:${mode}`, JSON.stringify({ day: localDayKey(), mode, order }));
+}
+
+function stableQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterCandidates: Puzzle[]) {
+  const validIds = puzzles.map((puzzle) => puzzle.id);
+  const saved = readQuestionOrder(mode, validIds);
+  if (saved) return saved.map((id) => puzzles.find((puzzle) => puzzle.id === id)!).filter(Boolean);
+  const starterId = chooseStarterId(mode, starterCandidates.map((puzzle) => puzzle.id));
+  const ordered = orderPuzzlesForStarter(puzzles, starterId);
+  writeQuestionOrder(mode, ordered.map((puzzle) => puzzle.id));
+  return ordered;
+}
+
 function getQuestions(mode: ModeKey) {
-  if (mode === 'agi') return agiPuzzles.map(withSixOptions);
+  if (mode === 'agi') return stableQuestionOrder(mode, agiPuzzles, agiPuzzles).map(withSixOptions);
   if (mode === 'daily') return [withSixOptions(todayPuzzle())];
-  return rankedWorldPuzzles.map(withSixOptions);
+  return stableQuestionOrder(mode, rankedWorldPuzzles, rankedWorldPuzzles.slice(0, 4)).map(withSixOptions);
 }
 
 function percentileFromScore(correct: number, total: number) {
@@ -3229,6 +3299,7 @@ export default function Home({
     try {
       const params = new URLSearchParams({ day: localDayKey() });
       if (code) params.set('group', code);
+      if (!settings.showAgentActivity) params.set('agents', 'false');
       const response = await fetch(`/api/leaderboards?${params.toString()}`, { cache: 'no-store' });
       const data = await response.json().catch(() => null);
       if (response.ok && Array.isArray(data?.global)) {
@@ -3245,7 +3316,7 @@ export default function Home({
     } catch {
       // Friend boards are additive; the test still works if the social endpoint is unavailable.
     }
-  }, []);
+  }, [settings.showAgentActivity]);
 
   React.useEffect(() => {
     refreshSocialBoards(groupCode || null);
@@ -3445,7 +3516,9 @@ export default function Home({
     const submittedGroupCode = targetRoom?.groupCode ?? (groupCode || null);
     const submittedGroupName = targetRoom?.groupName ?? groupName;
     try {
-      const response = await fetch('/api/leaderboards', {
+      const params = new URLSearchParams();
+      if (!settings.showAgentActivity) params.set('agents', 'false');
+      const response = await fetch(`/api/leaderboards${params.toString() ? `?${params.toString()}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3980,7 +4053,7 @@ export default function Home({
       ...socialBoards,
       global: socialBoards.global.filter(notAgent),
       group: socialBoards.group.filter(notAgent),
-      geography: EMPTY_GEOGRAPHY_BOARDS,
+      geography: socialBoards.geography,
     };
   }, [settings.showAgentActivity, socialBoards]);
   const localProfile = localPublicProfile();
