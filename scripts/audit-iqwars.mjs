@@ -348,6 +348,7 @@ async function sourceAudit() {
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');
   assert(apiScoring.includes('canonicalOfficialScore') && leaderboard.includes('canonicalOfficialScore') && leaderboard.includes('safeCorrect > safeTotal'), 'Leaderboard API derives canonical score/rank server-side and rejects impossible totals.');
+  assert(leaderboard.includes('beatAi > correct') && leaderboard.includes('safeBeatAi > safeCorrect'), 'Leaderboard API rejects impossible AI-beat counts.');
   assert(leaderboard.includes("!entry.playerId.startsWith('agent-')"), 'Friend group leaderboard excludes seeded agent players.');
   assert(leaderboard.includes('geo: sanitizeGeo(body.geo)'), 'Leaderboard submissions persist sanitized geography snapshots.');
   assert(leaderboard.includes('geography: geographyRows(responseEntries, day)') && leaderboard.includes('geographyRows(entries, day)'), 'Geography boards are computed from the same real leaderboard entry set.');
@@ -357,6 +358,7 @@ async function sourceAudit() {
   assert(attempts.includes('accepted: false') && attempts.includes('locked: true'), 'Attempt lock API returns an existing lock instead of accepting duplicates.');
   assert(attempts.includes('sanitizeBoardDay') && attempts.includes('Invalid attempt day.'), 'Attempt lock API rejects arbitrary stale/future official attempt days.');
   assert(attempts.includes('canonicalOfficialScore') && attempts.includes('correct > total'), 'Attempt lock API derives canonical score/rank server-side and rejects impossible totals.');
+  assert(attempts.includes('beatAi > correct') && attempts.includes('beatAi > total'), 'Attempt lock API rejects impossible AI-beat counts.');
   assert(attempts.includes('readJsonStore') && attempts.includes('updateJsonStore'), 'Attempt lock API uses the shared serialized store.');
 
   assert(username.includes('isValidUsername') && username.includes('status: 409'), 'Username API validates format and rejects claims owned by another player.');
@@ -625,6 +627,20 @@ async function liveAudit() {
   });
   assert(impossibleAttempt.response.status === 400, 'Live attempt API rejects impossible correct totals.');
 
+  const impossibleBeatAiAttempt = await requestJson(`${origin}/api/attempts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      day,
+      playerId: `${playerId}-bad-beatai`,
+      correct: 2,
+      total: 12,
+      beatAi: 3,
+      elapsedMs: 270000,
+    }),
+  });
+  assert(impossibleBeatAiAttempt.response.status === 400, 'Live attempt API rejects impossible AI-beat counts.');
+
   const attempt = {
     day,
     playerId,
@@ -648,7 +664,7 @@ async function liveAudit() {
   const attemptDuplicate = await requestJson(`${origin}/api/attempts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...attempt, score: 99, correct: 1 }),
+    body: JSON.stringify({ ...attempt, score: 99, correct: 1, beatAi: 0 }),
   });
   assert(attemptDuplicate.response.ok && attemptDuplicate.data.accepted === false && attemptDuplicate.data.attempt?.score === 137, 'Live attempt API rejects duplicate official attempts for the same player/day.');
 
@@ -664,7 +680,7 @@ async function liveAudit() {
       requestJson(`${origin}/api/attempts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...raceAttempt, score: 101, correct: 2 }),
+        body: JSON.stringify({ ...raceAttempt, score: 101, correct: 2, beatAi: 1 }),
       }),
     ]);
     const acceptedRaceAttempts = raceAttempts.filter((item) => item.response.ok && item.data.accepted === true);
@@ -715,6 +731,26 @@ async function liveAudit() {
     }),
   });
   assert(impossibleLeaderboardWrite.response.status === 400, 'Live leaderboard API rejects impossible correct totals.');
+
+  const impossibleBeatAiLeaderboardWrite = await requestJson(`${origin}/api/leaderboards?agents=false`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      day,
+      playerId: `${playerId}-bad-ai-count`,
+      displayName: 'Bad AI Count Audit',
+      score: 120,
+      rank: '#100,000',
+      percentile: 90,
+      correct: 2,
+      total: 12,
+      beatAi: 3,
+      elapsedMs: 270000,
+      speedBonus: 4,
+      geo,
+    }),
+  });
+  assert(impossibleBeatAiLeaderboardWrite.response.status === 400, 'Live leaderboard API rejects impossible AI-beat counts.');
 
   const post = await requestJson(`${origin}/api/leaderboards?agents=false`, {
     method: 'POST',

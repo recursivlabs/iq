@@ -309,12 +309,13 @@ export async function POST(request: NextRequest) {
   const total = Number(body.total);
   const beatAi = Number(body.beatAi);
   const elapsedMs = Number(body.elapsedMs);
-  if (![correct, total, beatAi].every(Number.isFinite) || correct > total) {
+  if (![correct, total, beatAi].every(Number.isFinite) || correct > total || beatAi > correct || beatAi > total) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
   const safeCorrect = Math.max(0, Math.min(99, Math.round(correct)));
   const safeTotal = Math.max(1, Math.min(99, Math.round(total)));
-  if (safeCorrect > safeTotal) {
+  const safeBeatAi = Math.max(0, Math.min(99, Math.round(beatAi)));
+  if (safeCorrect > safeTotal || safeBeatAi > safeCorrect || safeBeatAi > safeTotal) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
   const safeElapsedMs = Number.isFinite(elapsedMs) ? Math.max(0, Math.min(86_400_000, Math.round(elapsedMs))) : null;
@@ -335,7 +336,7 @@ export async function POST(request: NextRequest) {
     percentile: canonical.percentile,
     correct: safeCorrect,
     total: safeTotal,
-    beatAi: Math.max(0, Math.min(99, Math.round(beatAi))),
+    beatAi: safeBeatAi,
     elapsedMs: safeElapsedMs,
     speedBonus: canonical.speedBonus,
     timestamp: Date.now(),

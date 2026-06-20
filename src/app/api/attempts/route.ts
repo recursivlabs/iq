@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
   const total = cleanNumber(body.total, 1, 99);
   const beatAi = cleanNumber(body.beatAi, 0, 99);
   const elapsedMs = cleanNumber(body.elapsedMs, 0, 86_400_000);
-  if (correct === null || total === null || beatAi === null || correct > total) {
+  if (correct === null || total === null || beatAi === null || correct > total || beatAi > correct || beatAi > total) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
   const canonical = canonicalOfficialScore(correct, total, elapsedMs);
