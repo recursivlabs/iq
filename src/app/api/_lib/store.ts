@@ -24,6 +24,12 @@ export function hasRedisStore() {
   return Boolean(redisRestConfig() || redisUrlConfig());
 }
 
+export function storeProvider() {
+  if (redisRestConfig()) return 'redis-rest';
+  if (redisUrlConfig()) return 'redis-url';
+  return 'ephemeral-fallback';
+}
+
 async function redisRestCommand(args: string[]) {
   const config = redisRestConfig();
   if (!config) return null;

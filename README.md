@@ -2,6 +2,34 @@
 
 Minimal Next.js starter for deploying apps on Recursiv.
 
+## IQ WARS launch checks
+
+Run the source audit before shipping code:
+
+```bash
+pnpm audit:source
+```
+
+Run the live audit after deploying production:
+
+```bash
+pnpm audit:live
+```
+
+Run the launch gate when production should be considered release-ready:
+
+```bash
+pnpm audit:launch
+```
+
+`audit:launch` requires persistent storage. Configure one of these production env sets on Vercel before launch:
+
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
+- `KV_REST_API_URL` and `KV_REST_API_TOKEN`
+- `REDIS_URL`
+
+Without Redis/KV, leaderboards, geography maps, profiles, usernames, presence, reminders, and room messages fall back to serverless `/tmp` storage and are not reliable across deployments or runtime instances.
+
 ## Usage
 
 1. Create a new repo on GitHub: `gh repo create recursivlabs/<app-name> --public`

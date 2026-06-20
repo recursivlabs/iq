@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "audit:source": "node scripts/audit-iqwars.mjs",
+    "audit:live": "node scripts/audit-iqwars.mjs --origin https://iqwars.app",
+    "audit:launch": "node scripts/audit-iqwars.mjs --origin https://iqwars.app --require-persistent"
   },
   "dependencies": {
     "next": "^14.2.0",
