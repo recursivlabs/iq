@@ -439,7 +439,7 @@ async function sourceAudit() {
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL && !process.env.IQWARS_DATABASE_URL && !process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
     const message = 'No persistent store env is visible in this shell; production must configure Redis/KV/Postgres or leaderboard/map/profile writes are only ephemeral per runtime.';
     if (requirePersistent && !runLive) failures.push(message);
-    else warn(message);
+    else if (!runLive) warn(message);
   }
 }
 
