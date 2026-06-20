@@ -158,24 +158,31 @@ async function sourceAudit() {
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
   assert(dailyLimit === '1', 'Free official play is limited to one completed run per day.');
+  const officialQuestionCount = initializerText(findVariable(ts, tree, 'OFFICIAL_QUESTION_COUNT'), app);
+  assert(officialQuestionCount === '12', 'Official world run remains a 12-question baseline.');
   assert(app.includes('showAgentActivity: false'), 'Seeded agent activity is opt-in by default.');
 
   const rankedIds = stringArrayFromVariable(ts, tree, 'rankedWorldPuzzleIds');
-  assert(rankedIds.length >= 12, 'Official world mode has at least 12 configured puzzle ids.');
+  assert(rankedIds.length >= 24, 'Official world mode has an expanded bank of at least 24 configured puzzle ids.');
   assert(new Set(rankedIds).size === rankedIds.length, 'Official world puzzle id list has no duplicates.');
 
   const proofChecks = functionText(findFunction(ts, tree, 'withProofChecks'), app);
   assert(proofChecks.includes('solutionProof.checksum') && proofChecks.includes('proofTileSignature'), 'Puzzle answer proofs are checksum-verified at module load.');
 
   const getQuestions = functionText(findFunction(ts, tree, 'getQuestions'), app);
-  assert(getQuestions.includes('stableQuestionOrder(mode, rankedWorldPuzzles') && getQuestions.includes('rankedWorldPuzzles.slice(0, 4)'), 'Official question order is stable per day and starts from the calibrated starter pool.');
+  assert(getQuestions.includes('stableQuestionOrder(mode, rankedWorldPuzzles') && getQuestions.includes('rankedWorldPuzzles.slice(0, 8)') && getQuestions.includes('OFFICIAL_QUESTION_COUNT'), 'Official question order is stable per day, 12 questions long, and starts from the calibrated starter pool.');
   assert(getQuestions.includes('stableQuestionOrder(mode, agiPuzzles'), 'AGI lab questions use the same stable rotation helper.');
 
   const chooseStarter = functionText(findFunction(ts, tree, 'chooseStarterId'), app);
   assert(chooseStarter.includes('readQuestionStarterHistory') && chooseStarter.includes('writeQuestionStarterHistory') && chooseStarter.includes('available.length > 0 ? available : candidateIds'), 'Question starters cycle through recent-start history before repeating.');
 
+  const chooseSet = functionText(findFunction(ts, tree, 'chooseQuestionSet'), app);
+  assert(chooseSet.includes('readQuestionSetHistory') && chooseSet.includes('writeQuestionSetHistory'), 'Official question sets persist per-player recent question history.');
+  assert(chooseSet.includes('unseenPool') && chooseSet.includes('fallbackStarterPool') && chooseSet.includes('history.indexOf(b.id) - history.indexOf(a.id)'), 'Question set selection prefers unseen questions and only recycles least-recently-seen items after the bank is exhausted.');
+
   const stableOrder = functionText(findFunction(ts, tree, 'stableQuestionOrder'), app);
   assert(stableOrder.includes('readQuestionOrder') && stableOrder.includes('writeQuestionOrder'), 'Daily question order is persisted so refreshes do not reshuffle an active attempt.');
+  assert(stableOrder.includes('chooseQuestionSet') && stableOrder.includes('targetCount'), 'Stable question order selects a fixed-size rotating question set before ordering it.');
   assert(app.includes('function permutedQuestionOrder') && stableOrder.includes('permutedQuestionOrder'), 'Question order is fully permuted per player/day after selecting the rotating starter.');
 
   const result = app.slice(app.indexOf('function Result('), app.indexOf('function Runner('));

@@ -228,6 +228,7 @@ type IqProfile = {
 type SoundKind = 'tap' | 'select' | 'commit' | 'copy' | 'success' | 'error';
 
 const DAILY_PLAY_LIMIT = 1;
+const OFFICIAL_QUESTION_COUNT = 12;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
@@ -238,6 +239,7 @@ const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
 const OFFICIAL_HISTORY_LIMIT = 60;
 const QUESTION_ORDER_STORAGE_KEY = 'world-iq-question-order-v3';
 const QUESTION_STARTER_HISTORY_STORAGE_KEY = 'world-iq-question-starters-v2';
+const QUESTION_SET_HISTORY_STORAGE_KEY = 'world-iq-question-set-history-v1';
 const PLAYER_ID_STORAGE_KEY = 'world-iq-player-id';
 const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
 const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
@@ -527,6 +529,162 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     answerIndex: 0,
     aiSolved: false,
   },
+  {
+    id: 'world-13',
+    mode: 'world',
+    title: 'Weighted rows',
+    difficulty: 'Foundation',
+    prompt: 'Rows add pressure by two while columns advance the angle.',
+    explanation: 'The row contributes two dots at a time, the column contributes one dot and rotation, and the bottom-right completes the six-dot three-bar tile.',
+    solutionProof: proof('Rows set the weight: 0, 2, 4. Columns add 0, 1, 2 dots and rotate 0, 45, 90 degrees. The last row also carries three bars.', 'dots = 2r + c, bars = r + 1, ring = r === 1, tilt = [0,45,90][c]. Missing cell (2,2) gives dots = 6, bars = 3, ring = false, tilt = 90.', tile(6, 3, false, 90, 'blue')),
+    matrix: [tile(0, 1, false, 0, 'blue'), tile(1, 1, false, 45, 'blue'), tile(2, 1, false, 90, 'blue'), tile(2, 2, true, 0, 'blue'), tile(3, 2, true, 45, 'blue'), tile(4, 2, true, 90, 'blue'), tile(4, 3, false, 0, 'blue'), tile(5, 3, false, 45, 'blue'), null],
+    options: [tile(6, 3, false, 90, 'blue'), tile(5, 3, true, 90, 'blue'), tile(6, 2, false, 45, 'blue'), tile(4, 3, false, 90, 'blue')],
+    answerIndex: 0,
+    aiSolved: true,
+  },
+  {
+    id: 'world-14',
+    mode: 'world',
+    title: 'Column parity',
+    difficulty: 'Foundation',
+    prompt: 'Columns set the count. Rows drain the bars.',
+    explanation: 'Dots are fixed by column, bars decrease by row, and the outside columns keep the ring active.',
+    solutionProof: proof('Read down the last column: the dot count stays three while bars go 2, 1, 0. The outer-column ring remains on.', 'dots = c + 1, bars = 2 - r, ring = c % 2 === 0, tilt = 45r. Missing cell (2,2) gives dots = 3, bars = 0, ring = true, tilt = 90.', tile(3, 0, true, 90, 'green')),
+    matrix: [tile(1, 2, true, 0, 'green'), tile(2, 2, false, 0, 'green'), tile(3, 2, true, 0, 'green'), tile(1, 1, true, 45, 'green'), tile(2, 1, false, 45, 'green'), tile(3, 1, true, 45, 'green'), tile(1, 0, true, 90, 'green'), tile(2, 0, false, 90, 'green'), null],
+    options: [tile(3, 0, true, 90, 'green'), tile(2, 0, true, 90, 'green'), tile(3, 1, false, 90, 'green'), tile(1, 0, false, 45, 'green')],
+    answerIndex: 0,
+    aiSolved: true,
+  },
+  {
+    id: 'world-15',
+    mode: 'world',
+    title: 'Column addition',
+    difficulty: 'Adaptive',
+    prompt: 'The bottom cell is the sum of the two cells above it.',
+    explanation: 'In each column, dots and bars add downward. The last column sums to five dots and one bar.',
+    solutionProof: proof('Add the top and middle cells in each column. In the final column, 2 + 3 dots gives 5, and 0 + 1 bars gives 1. Bottom-row cells carry the ring.', 'bottom.dots = top.dots + middle.dots, bottom.bars = top.bars + middle.bars, bottom.ring = true. Last column gives dots = 5, bars = 1, ring = true.', tile(5, 1, true, 0, 'amber')),
+    matrix: [tile(1, 0, false, 0, 'amber'), tile(0, 1, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(2, 1, false, 0, 'amber'), tile(3, 1, false, 0, 'amber'), tile(3, 1, false, 0, 'amber'), tile(3, 1, true, 0, 'amber'), tile(3, 2, true, 0, 'amber'), null],
+    options: [tile(5, 1, true, 0, 'amber'), tile(4, 2, true, 0, 'amber'), tile(5, 0, false, 0, 'amber'), tile(3, 1, true, 45, 'amber')],
+    answerIndex: 0,
+    aiSolved: true,
+  },
+  {
+    id: 'world-16',
+    mode: 'world',
+    title: 'Tilt weave',
+    difficulty: 'Adaptive',
+    prompt: 'Dots fall by column, bars rise by row, and diagonal rings mark equality.',
+    explanation: 'The missing corner is on the main diagonal, so the ring is active. Its column gives one dot and its row gives two bars.',
+    solutionProof: proof('Columns reduce dots from 3 to 1. Rows add bars from 0 to 2. The main diagonal has rings and the rotation cycles by row plus column.', 'dots = 3 - c, bars = r, ring = r === c, tilt = [0,45,90][(r+c)%3]. Missing cell (2,2) gives dots = 1, bars = 2, ring = true, tilt = 45.', tile(1, 2, true, 45, 'rose')),
+    matrix: [tile(3, 0, true, 0, 'rose'), tile(2, 0, false, 45, 'rose'), tile(1, 0, false, 90, 'rose'), tile(3, 1, false, 45, 'rose'), tile(2, 1, true, 90, 'rose'), tile(1, 1, false, 0, 'rose'), tile(3, 2, false, 90, 'rose'), tile(2, 2, false, 0, 'rose'), null],
+    options: [tile(1, 2, true, 45, 'rose'), tile(2, 2, true, 45, 'rose'), tile(1, 1, false, 45, 'rose'), tile(3, 2, true, 90, 'rose')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-17',
+    mode: 'world',
+    title: 'Mirror gate',
+    difficulty: 'Advanced',
+    prompt: 'The middle column transforms; the right column mirrors the left.',
+    explanation: 'The right side returns the left-side counts with a 90-degree rotation. The bottom-left tile therefore reappears at bottom-right with the ring intact.',
+    solutionProof: proof('For each row, the right tile mirrors the left tile while rotating to 90 degrees. The bottom left has 2 dots, 2 bars, and a ring.', 'right.dots = left.dots, right.bars = left.bars, right.ring = left.ring, right.tilt = 90. Missing cell mirrors row 3 left: dots = 2, bars = 2, ring = true, tilt = 90.', tile(2, 2, true, 90, 'ink')),
+    matrix: [tile(1, 1, false, 0, 'ink'), tile(2, 2, true, 45, 'ink'), tile(1, 1, false, 90, 'ink'), tile(2, 0, true, 0, 'ink'), tile(3, 1, false, 45, 'ink'), tile(2, 0, true, 90, 'ink'), tile(2, 2, true, 0, 'ink'), tile(3, 3, false, 45, 'ink'), null],
+    options: [tile(2, 2, true, 90, 'ink'), tile(3, 2, true, 90, 'ink'), tile(2, 3, false, 90, 'ink'), tile(1, 2, true, 45, 'ink')],
+    answerIndex: 0,
+    aiSolved: true,
+  },
+  {
+    id: 'world-18',
+    mode: 'world',
+    title: 'Subtractive row',
+    difficulty: 'Advanced',
+    prompt: 'The third tile is the first tile minus the second tile.',
+    explanation: 'Subtract dots and bars across each row. The final row subtracts 3 dots and 2 bars from 6 dots and 3 bars.',
+    solutionProof: proof('Within each row, tile three equals tile one minus tile two. In the final row, 6 - 3 dots gives 3, and 3 - 2 bars gives 1. The ring follows first-on, second-off.', 'third.dots = first.dots - second.dots, third.bars = first.bars - second.bars, third.ring = first.ring && !second.ring. Missing cell gives dots = 3, bars = 1, ring = true, tilt = 90.', tile(3, 1, true, 90, 'amber')),
+    matrix: [tile(5, 3, true, 0, 'amber'), tile(2, 1, false, 0, 'amber'), tile(3, 2, true, 0, 'amber'), tile(4, 2, false, 45, 'amber'), tile(1, 1, true, 45, 'amber'), tile(3, 1, false, 45, 'amber'), tile(6, 3, true, 90, 'amber'), tile(3, 2, false, 90, 'amber'), null],
+    options: [tile(3, 1, true, 90, 'amber'), tile(2, 1, true, 90, 'amber'), tile(3, 2, false, 90, 'amber'), tile(4, 1, true, 45, 'amber')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-19',
+    mode: 'world',
+    title: 'XOR grid',
+    difficulty: 'Frontier',
+    prompt: 'Rows set odd counts, columns set bars, and parity controls the ring.',
+    explanation: 'The final corner has the third odd count, the third bar count, and an even-parity ring.',
+    solutionProof: proof('Rows carry 1, 3, 5 dots. Columns carry 0, 1, 2 bars. The ring is on when row plus column is even, and the tilt cycles by r + 2c.', 'dots = 1 + 2r, bars = c, ring = (r+c)%2===0, tilt = [0,45,90][(r+2c)%3]. Missing cell (2,2) gives dots = 5, bars = 2, ring = true, tilt = 0.', tile(5, 2, true, 0, 'rose')),
+    matrix: [tile(1, 0, true, 0, 'rose'), tile(1, 1, false, 90, 'rose'), tile(1, 2, true, 45, 'rose'), tile(3, 0, false, 45, 'rose'), tile(3, 1, true, 0, 'rose'), tile(3, 2, false, 90, 'rose'), tile(5, 0, true, 90, 'rose'), tile(5, 1, false, 45, 'rose'), null],
+    options: [tile(5, 2, true, 0, 'rose'), tile(5, 2, false, 0, 'rose'), tile(4, 2, true, 45, 'rose'), tile(5, 1, true, 90, 'rose')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-20',
+    mode: 'world',
+    title: 'Tone ladder',
+    difficulty: 'Frontier',
+    prompt: 'The row changes the material while count and bar pressure move across columns.',
+    explanation: 'The bottom row is amber, the last column has zero bars, and dots reach four.',
+    solutionProof: proof('Rows set tone: blue, green, amber. Moving right adds one dot, removes one bar, and rotates 45 degrees each step.', 'dots = r + c, bars = 2 - c, ring = c === 0, tilt = 45c, tone = rowTone[r]. Missing cell (2,2) gives dots = 4, bars = 0, ring = false, tilt = 90, tone = amber.', tile(4, 0, false, 90, 'amber')),
+    matrix: [tile(0, 2, true, 0, 'blue'), tile(1, 1, false, 45, 'blue'), tile(2, 0, false, 90, 'blue'), tile(1, 2, true, 0, 'green'), tile(2, 1, false, 45, 'green'), tile(3, 0, false, 90, 'green'), tile(2, 2, true, 0, 'amber'), tile(3, 1, false, 45, 'amber'), null],
+    options: [tile(4, 0, false, 90, 'amber'), tile(4, 1, false, 90, 'amber'), tile(3, 0, true, 90, 'amber'), tile(4, 0, false, 45, 'green')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-21',
+    mode: 'world',
+    title: 'Modulo count',
+    difficulty: 'Frontier',
+    prompt: 'Both marks cycle, but they cycle at different rates.',
+    explanation: 'The final cell wraps dots back to two and bars to two, with no middle-column ring.',
+    solutionProof: proof('Dots follow a four-step cycle from row plus column. Bars use twice the row plus the column. Only the middle column has rings.', 'dots = ((r+c)%4)+2, bars = (2r+c)%4, ring = c === 1, tilt = 45c. Missing cell (2,2) gives dots = 2, bars = 2, ring = false, tilt = 90.', tile(2, 2, false, 90, 'green')),
+    matrix: [tile(2, 0, false, 0, 'green'), tile(3, 1, true, 45, 'green'), tile(4, 2, false, 90, 'green'), tile(3, 2, false, 0, 'green'), tile(4, 3, true, 45, 'green'), tile(5, 0, false, 90, 'green'), tile(4, 0, false, 0, 'green'), tile(5, 1, true, 45, 'green'), null],
+    options: [tile(2, 2, false, 90, 'green'), tile(6, 2, false, 90, 'green'), tile(2, 1, true, 90, 'green'), tile(4, 2, false, 45, 'green')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-22',
+    mode: 'world',
+    title: 'Column conservation',
+    difficulty: 'Elite',
+    prompt: 'Each column preserves the same total number of marks.',
+    explanation: 'The last column needs two marks to reach the conserved total, so it lands on one dot and one bar with the bottom-row ring.',
+    solutionProof: proof('Add dots plus bars within each column. The first two columns total 8. In the last column, 4 marks plus 2 marks leaves 2 marks for the missing tile.', 'For each column, sum(dots + bars) = 8. Column 3 known total = (3+1) + (1+1) = 6, so missing dots + bars = 2. Bottom row ring is true, expected dots = 1 and bars = 1.', tile(1, 1, true, 90, 'blue')),
+    matrix: [tile(1, 1, false, 0, 'blue'), tile(2, 0, false, 45, 'blue'), tile(3, 1, false, 90, 'blue'), tile(2, 1, false, 0, 'blue'), tile(1, 2, false, 45, 'blue'), tile(1, 1, false, 90, 'blue'), tile(3, 0, true, 0, 'blue'), tile(2, 1, true, 45, 'blue'), null],
+    options: [tile(1, 1, true, 90, 'blue'), tile(2, 0, true, 90, 'blue'), tile(1, 2, false, 90, 'blue'), tile(3, 1, true, 45, 'blue')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-23',
+    mode: 'world',
+    title: 'Offset diagonal',
+    difficulty: 'Elite',
+    prompt: 'The anti-diagonal is emphasized while the count advances outward.',
+    explanation: 'The missing corner sits off the anti-diagonal, so no ring. Its count reaches six with zero bars and row-three rotation.',
+    solutionProof: proof('Dots add row plus column plus two. Bars come from the column cycle 1, 2, 0. Rings sit only on the anti-diagonal where row plus column equals two.', 'dots = r + c + 2, bars = (c + 1) % 3, ring = r + c === 2, tilt = 45r. Missing cell (2,2) gives dots = 6, bars = 0, ring = false, tilt = 90.', tile(6, 0, false, 90, 'rose')),
+    matrix: [tile(2, 1, false, 0, 'rose'), tile(3, 2, false, 0, 'rose'), tile(4, 0, true, 0, 'rose'), tile(3, 1, false, 45, 'rose'), tile(4, 2, true, 45, 'rose'), tile(5, 0, false, 45, 'rose'), tile(4, 1, true, 90, 'rose'), tile(5, 2, false, 90, 'rose'), null],
+    options: [tile(6, 0, false, 90, 'rose'), tile(6, 1, false, 90, 'rose'), tile(5, 0, true, 90, 'rose'), tile(6, 0, false, 45, 'rose')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
+  {
+    id: 'world-24',
+    mode: 'world',
+    title: 'Attribute braid',
+    difficulty: 'Elite',
+    prompt: 'Every step shifts count, bars, ring, tone, and rotation together.',
+    explanation: 'The final step reaches the fifth braid state: six dots, zero bars, ring-on, amber tone, and 45-degree rotation.',
+    solutionProof: proof('Each move down-right advances the shared braid index. Index four has six dots, zero bars, ring on, amber tone, and a 45-degree tilt.', 'Let k = r + c. dots = k + 2, bars = k % 4, ring = k % 2 === 0, tilt = [0,45,90][k % 3], tone = [ink,blue,green,rose,amber][k]. Missing cell (2,2) gives k = 4: dots = 6, bars = 0, ring = true, tilt = 45, tone = amber.', tile(6, 0, true, 45, 'amber')),
+    matrix: [tile(2, 0, true, 0, 'ink'), tile(3, 1, false, 45, 'blue'), tile(4, 2, true, 90, 'green'), tile(3, 1, false, 45, 'blue'), tile(4, 2, true, 90, 'green'), tile(5, 3, false, 0, 'rose'), tile(4, 2, true, 90, 'green'), tile(5, 3, false, 0, 'rose'), null],
+    options: [tile(6, 0, true, 45, 'amber'), tile(6, 1, true, 45, 'amber'), tile(5, 0, false, 45, 'amber'), tile(6, 0, true, 90, 'rose')],
+    answerIndex: 0,
+    aiSolved: false,
+  },
 ]);
 
 const agiPuzzles: Puzzle[] = ['world-07', 'world-09', 'world-10', 'world-11', 'world-12', 'world-08']
@@ -561,19 +719,31 @@ const rankedWorldPuzzleIds = [
   'world-10',
   'world-11',
   'world-12',
+  'world-13',
+  'world-14',
+  'world-15',
+  'world-16',
+  'world-17',
+  'world-18',
+  'world-19',
+  'world-20',
+  'world-21',
+  'world-22',
+  'world-23',
+  'world-24',
 ];
 
 const rankedWorldPuzzles: Puzzle[] = rankedWorldPuzzleIds.map((id, index) => {
   const source = worldPuzzles.find((puzzle) => puzzle.id === id)!;
-  const difficulty = index === 0
+  const difficulty = index < 2
     ? 'Calibration'
-    : index < 3
+    : index < 6
       ? 'Foundation'
-      : index < 6
+      : index < 10
         ? 'Adaptive'
-        : index < 8
+        : index < 14
           ? 'Advanced'
-          : index < 11
+          : index < 20
             ? 'Frontier'
             : 'Elite';
   return {
@@ -1195,6 +1365,29 @@ function writeQuestionStarterHistory(mode: ModeKey, history: string[]) {
   window.localStorage.setItem(`${QUESTION_STARTER_HISTORY_STORAGE_KEY}:${mode}`, JSON.stringify(history.slice(0, 12)));
 }
 
+function readQuestionSetHistory(mode: ModeKey, validIds: string[]) {
+  if (typeof window === 'undefined') return [];
+  try {
+    const valid = new Set(validIds);
+    const parsed = JSON.parse(window.localStorage.getItem(`${QUESTION_SET_HISTORY_STORAGE_KEY}:${mode}`) || '[]');
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string' && valid.has(id))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQuestionSetHistory(mode: ModeKey, selectedIds: string[], previousHistory: string[], validIds: string[]) {
+  if (typeof window === 'undefined') return;
+  const valid = new Set(validIds);
+  const next = [
+    ...selectedIds.filter((id) => valid.has(id)),
+    ...previousHistory.filter((id) => valid.has(id) && !selectedIds.includes(id)),
+  ].slice(0, validIds.length);
+  window.localStorage.setItem(`${QUESTION_SET_HISTORY_STORAGE_KEY}:${mode}`, JSON.stringify(next));
+}
+
 function chooseStarterId(mode: ModeKey, candidateIds: string[]) {
   if (!candidateIds.length) return '';
   const history = readQuestionStarterHistory(mode).filter((id) => candidateIds.includes(id));
@@ -1207,38 +1400,71 @@ function chooseStarterId(mode: ModeKey, candidateIds: string[]) {
   return starter;
 }
 
+function hashedPuzzleSort(seed: string, puzzles: Puzzle[]) {
+  return [...puzzles].sort((a, b) => {
+    const left = hashNumber(`${seed}:${a.id}`);
+    const right = hashNumber(`${seed}:${b.id}`);
+    return left - right || a.id.localeCompare(b.id);
+  });
+}
+
 function questionOrderSeed(mode: ModeKey) {
   const playerSeed = typeof window === 'undefined' ? 'server' : readPlayerId();
   return `${localDayKey()}:${mode}:${playerSeed}:question-order`;
 }
 
+function chooseQuestionSet(mode: ModeKey, puzzles: Puzzle[], starterCandidates: Puzzle[], count: number) {
+  const validIds = puzzles.map((puzzle) => puzzle.id);
+  const history = readQuestionSetHistory(mode, validIds);
+  const seen = new Set(history);
+  const starterPool = starterCandidates.filter((puzzle) => validIds.includes(puzzle.id));
+  const unseenStarterPool = starterPool.filter((puzzle) => !seen.has(puzzle.id));
+  const unseenPool = puzzles.filter((puzzle) => !seen.has(puzzle.id));
+  const fallbackStarterPool = unseenPool.length ? unseenPool : starterPool;
+  const starterId = chooseStarterId(mode, (unseenStarterPool.length ? unseenStarterPool : fallbackStarterPool).map((puzzle) => puzzle.id));
+  const selected: Puzzle[] = [];
+  const starter = starterId ? puzzles.find((puzzle) => puzzle.id === starterId) : null;
+  if (starter) selected.push(starter);
+
+  const selectedIds = new Set(selected.map((puzzle) => puzzle.id));
+  const targetCount = Math.max(1, Math.min(count, puzzles.length));
+  const seed = `${questionOrderSeed(mode)}:question-set`;
+  const unseen = hashedPuzzleSort(seed, unseenPool.filter((puzzle) => !selectedIds.has(puzzle.id)));
+  const recycled = [...puzzles]
+    .filter((puzzle) => !selectedIds.has(puzzle.id) && !unseen.some((candidate) => candidate.id === puzzle.id))
+    .sort((a, b) => history.indexOf(b.id) - history.indexOf(a.id) || hashNumber(`${seed}:recycle:${a.id}`) - hashNumber(`${seed}:recycle:${b.id}`));
+
+  for (const puzzle of [...unseen, ...recycled]) {
+    if (selected.length >= targetCount) break;
+    selected.push(puzzle);
+    selectedIds.add(puzzle.id);
+  }
+
+  writeQuestionSetHistory(mode, selected.map((puzzle) => puzzle.id), history, validIds);
+  return selected;
+}
+
 function permutedQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterId: string) {
   const seed = questionOrderSeed(mode);
   const starter = starterId ? puzzles.find((puzzle) => puzzle.id === starterId) : null;
-  const rest = puzzles
-    .filter((puzzle) => puzzle.id !== starter?.id)
-    .sort((a, b) => {
-      const left = hashNumber(`${seed}:${a.id}`);
-      const right = hashNumber(`${seed}:${b.id}`);
-      return left - right || a.id.localeCompare(b.id);
-    });
+  const rest = hashedPuzzleSort(seed, puzzles.filter((puzzle) => puzzle.id !== starter?.id));
   return starter ? [starter, ...rest] : rest;
 }
 
-function normalizeQuestionOrderRecord(value: unknown, mode: ModeKey, validIds: string[]) {
+function normalizeQuestionOrderRecord(value: unknown, mode: ModeKey, validIds: string[], expectedCount: number) {
   if (!value || typeof value !== 'object') return null;
   const record = value as { day?: unknown; mode?: unknown; order?: unknown };
   if (record.day !== localDayKey() || record.mode !== mode || !Array.isArray(record.order)) return null;
   const valid = new Set(validIds);
   const order = record.order.filter((id): id is string => typeof id === 'string' && valid.has(id));
-  return order.length === validIds.length && new Set(order).size === validIds.length ? order : null;
+  return order.length === expectedCount && new Set(order).size === expectedCount ? order : null;
 }
 
-function readQuestionOrder(mode: ModeKey, validIds: string[]) {
+function readQuestionOrder(mode: ModeKey, validIds: string[], expectedCount: number) {
   if (typeof window === 'undefined') return null;
   try {
     const parsed = JSON.parse(window.localStorage.getItem(`${QUESTION_ORDER_STORAGE_KEY}:${mode}`) || 'null');
-    return normalizeQuestionOrderRecord(parsed, mode, validIds);
+    return normalizeQuestionOrderRecord(parsed, mode, validIds, expectedCount);
   } catch {
     return null;
   }
@@ -1249,12 +1475,13 @@ function writeQuestionOrder(mode: ModeKey, order: string[]) {
   window.localStorage.setItem(`${QUESTION_ORDER_STORAGE_KEY}:${mode}`, JSON.stringify({ day: localDayKey(), mode, order }));
 }
 
-function stableQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterCandidates: Puzzle[]) {
+function stableQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterCandidates: Puzzle[], count = puzzles.length) {
   const validIds = puzzles.map((puzzle) => puzzle.id);
-  const saved = readQuestionOrder(mode, validIds);
+  const targetCount = Math.max(1, Math.min(count, puzzles.length));
+  const saved = readQuestionOrder(mode, validIds, targetCount);
   if (saved) return saved.map((id) => puzzles.find((puzzle) => puzzle.id === id)!).filter(Boolean);
-  const starterId = chooseStarterId(mode, starterCandidates.map((puzzle) => puzzle.id));
-  const ordered = permutedQuestionOrder(mode, puzzles, starterId);
+  const selected = chooseQuestionSet(mode, puzzles, starterCandidates, targetCount);
+  const ordered = permutedQuestionOrder(mode, selected, selected[0]?.id || '');
   writeQuestionOrder(mode, ordered.map((puzzle) => puzzle.id));
   return ordered;
 }
@@ -1262,7 +1489,7 @@ function stableQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterCandidates
 function getQuestions(mode: ModeKey) {
   if (mode === 'agi') return stableQuestionOrder(mode, agiPuzzles, agiPuzzles).map(withSixOptions);
   if (mode === 'daily') return [withSixOptions(todayPuzzle())];
-  return stableQuestionOrder(mode, rankedWorldPuzzles, rankedWorldPuzzles.slice(0, 4)).map(withSixOptions);
+  return stableQuestionOrder(mode, rankedWorldPuzzles, rankedWorldPuzzles.slice(0, 8), OFFICIAL_QUESTION_COUNT).map(withSixOptions);
 }
 
 function percentileFromScore(correct: number, total: number) {
