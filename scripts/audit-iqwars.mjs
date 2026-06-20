@@ -29,6 +29,21 @@ const xCallbackPath = path.join(root, 'src/app/api/x/callback/route.ts');
 const xVerifyPath = path.join(root, 'src/app/api/x/verify-post/route.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
+const pageRoutePaths = [
+  'src/app/page.tsx',
+  'src/app/about/page.tsx',
+  'src/app/agents/page.tsx',
+  'src/app/blog/page.tsx',
+  'src/app/blog/[slug]/page.tsx',
+  'src/app/g/[group]/page.tsx',
+  'src/app/privacy/page.tsx',
+  'src/app/profile/page.tsx',
+  'src/app/rankings/page.tsx',
+  'src/app/research/page.tsx',
+  'src/app/settings/page.tsx',
+  'src/app/terms/page.tsx',
+  'src/app/u/[profile]/page.tsx',
+].map((routePath) => path.join(root, routePath));
 
 const failures = [];
 const warnings = [];
@@ -159,6 +174,7 @@ async function sourceAudit() {
   assert(existsSync(checkoutStatusPath), 'Checkout status API route exists.');
   assert(existsSync(authSendPath) && existsSync(authVerifyPath), 'Recursiv email auth API routes exist.');
   assert(existsSync(xConnectPath) && existsSync(xCallbackPath) && existsSync(xVerifyPath), 'X verification API routes exist.');
+  assert(pageRoutePaths.every((routePath) => existsSync(routePath)), 'All public page route files exist.');
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
   assert(dailyLimit === '1', 'Free official play is limited to one completed run per day.');
@@ -259,6 +275,7 @@ async function sourceAudit() {
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
+  assert(audit.includes("['/privacy'") && audit.includes("['/terms'") && audit.includes("['/blog/best-online-iq-test'") && audit.includes('assertLivePage'), 'Live audit covers the public page route surface.');
 
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL) {
     const message = 'No Redis/KV env is visible in this shell; production must configure one or leaderboard/map/profile writes are only ephemeral per runtime.';
@@ -283,6 +300,11 @@ async function requestText(url) {
   const response = await fetch(url);
   const text = await response.text();
   return { response, text };
+}
+
+async function assertLivePage(route, expectedSnippets, message) {
+  const page = await requestText(`${origin}${route}`);
+  assert(page.response.ok && expectedSnippets.every((snippet) => page.text.includes(snippet)), message);
 }
 
 async function requestRedirect(url) {
@@ -565,6 +587,24 @@ async function liveAudit() {
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
   assert(rankings.response.ok && rankings.text.includes('Audit') && rankings.text.includes('friend rankings'), 'Live rankings route opens the requested friend board.');
+
+  const publicPages = [
+    ['/', ['Lock answer'], 'Live home route renders the playable test above the fold.'],
+    ['/rankings', ['Live world board', 'Global board'], 'Live rankings route renders the global leaderboard view.'],
+    ['/about', ['A daily global intelligence ranking', 'Country rankings'], 'Live about route renders the academic/geography positioning.'],
+    ['/research', ['Daily abstract reasoning practice', 'Read source'], 'Live research route renders research sources.'],
+    ['/agents', ['A public reasoning arena', 'Agent identity'], 'Live agents route renders agent-readiness content.'],
+    ['/blog', ['Viral IQ research', 'Search-optimized explainers'], 'Live blog route renders article index content.'],
+    ['/blog/best-online-iq-test', ['Best Online IQ Test', 'Why IQ WARS is different'], 'Live blog article route renders a routed article.'],
+    ['/privacy', ['IQWORLD Privacy Policy', 'Recursiv Labs'], 'Live privacy route renders operator and policy text.'],
+    ['/terms', ['IQWORLD Terms of Service', 'Fair play'], 'Live terms route renders fair-play terms.'],
+    ['/profile', ['Connect account to manage your profile.'], 'Live logged-out profile route renders the account gate.'],
+    ['/settings', ['Connect account to manage settings.'], 'Live logged-out settings route renders the account gate.'],
+    ['/u/agent_euclid', ['IQ WARS'], 'Live public profile route renders the shell for a profile slug.'],
+  ];
+  for (const [route, snippets, message] of publicPages) {
+    await assertLivePage(route, snippets, message);
+  }
 }
 
 await sourceAudit();
