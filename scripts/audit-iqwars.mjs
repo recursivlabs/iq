@@ -16,9 +16,15 @@ const profilesPath = path.join(root, 'src/app/api/profiles/route.ts');
 const roomMessagesPath = path.join(root, 'src/app/api/rooms/messages/route.ts');
 const presencePath = path.join(root, 'src/app/api/presence/route.ts');
 const remindersPath = path.join(root, 'src/app/api/reminders/route.ts');
+const remindersSendPath = path.join(root, 'src/app/api/reminders/send/route.ts');
+const accessPath = path.join(root, 'src/app/api/access/route.ts');
 const checkoutPath = path.join(root, 'src/app/api/checkout/route.ts');
+const checkoutStatusPath = path.join(root, 'src/app/api/checkout-status/route.ts');
 const authSendPath = path.join(root, 'src/app/api/recursiv-auth/send-code/route.ts');
 const authVerifyPath = path.join(root, 'src/app/api/recursiv-auth/verify-code/route.ts');
+const xConnectPath = path.join(root, 'src/app/api/x/connect/route.ts');
+const xCallbackPath = path.join(root, 'src/app/api/x/callback/route.ts');
+const xVerifyPath = path.join(root, 'src/app/api/x/verify-post/route.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 
@@ -117,9 +123,15 @@ async function sourceAudit() {
   const roomMessages = source(roomMessagesPath);
   const presence = source(presencePath);
   const reminders = source(remindersPath);
+  const remindersSend = source(remindersSendPath);
+  const access = source(accessPath);
   const checkout = source(checkoutPath);
+  const checkoutStatus = source(checkoutStatusPath);
   const authSend = source(authSendPath);
   const authVerify = source(authVerifyPath);
+  const xConnect = source(xConnectPath);
+  const xCallback = source(xCallbackPath);
+  const xVerify = source(xVerifyPath);
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
@@ -135,8 +147,12 @@ async function sourceAudit() {
   assert(existsSync(roomMessagesPath), 'Room message API route exists.');
   assert(existsSync(presencePath), 'Presence API route exists.');
   assert(existsSync(remindersPath), 'Reminder API route exists.');
+  assert(existsSync(remindersSendPath), 'Reminder cron send API route exists.');
+  assert(existsSync(accessPath), 'Access API route exists.');
   assert(existsSync(checkoutPath), 'Checkout API route exists.');
+  assert(existsSync(checkoutStatusPath), 'Checkout status API route exists.');
   assert(existsSync(authSendPath) && existsSync(authVerifyPath), 'Recursiv email auth API routes exist.');
+  assert(existsSync(xConnectPath) && existsSync(xCallbackPath) && existsSync(xVerifyPath), 'X verification API routes exist.');
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
   assert(dailyLimit === '1', 'Free official play is limited to one completed run per day.');
@@ -189,9 +205,15 @@ async function sourceAudit() {
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
   assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
   assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
+  assert(remindersSend.includes('IQ_REMINDER_CRON_TOKEN') && remindersSend.includes("process.env.NODE_ENV === 'production'"), 'Reminder cron send API requires explicit production configuration.');
+  assert(access.includes('PLAYER_API_KEY_COOKIE') && access.includes('app-subscriptions/status'), 'Access API checks Recursiv app subscription status from the player key.');
   assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl'), 'Checkout API requires a player key and sanitizes return URLs.');
+  assert(checkoutStatus.includes('PLAYER_API_KEY_COOKIE') && checkoutStatus.includes('setAccessCookie'), 'Checkout status API requires a player key and syncs the access cookie.');
   assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
   assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID'), 'Email-code verify route creates project-scoped IQ WARS player keys.');
+  assert(xConnect.includes('safeReturnPath') && xConnect.includes('code_challenge_method'), 'X connect route sanitizes returns and uses PKCE.');
+  assert(xCallback.includes('expectedState !== state') && xCallback.includes('redirectWithParams'), 'X callback route verifies state and redirects with status params.');
+  assert(xVerify.includes('X_BEARER_TOKEN') && xVerify.includes('IQ\\s*WARS'), 'X post verification route requires configured bearer access and IQ WARS scorecard text.');
 
   assert(app.includes('geo: geoSnapshot || fallbackGeoSnapshot()'), 'Client submits inferred/fallback geography with official results.');
   assert(app.includes('buildGlobeRegions(geography') && app.includes('geography.countries'), 'Home/rankings globe derives regions from geography board data.');
@@ -224,6 +246,14 @@ async function requestText(url) {
   const response = await fetch(url);
   const text = await response.text();
   return { response, text };
+}
+
+async function requestRedirect(url) {
+  const response = await fetch(url, { redirect: 'manual' });
+  return {
+    response,
+    location: response.headers.get('location') || '',
+  };
 }
 
 async function liveAudit() {
@@ -334,12 +364,25 @@ async function liveAudit() {
   });
   assert(reminderInvalid.response.status === 400, 'Live reminders API rejects invalid email input.');
 
+  const reminderSendNoAuth = await requestJson(`${origin}/api/reminders/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert([401, 503].includes(reminderSendNoAuth.response.status), 'Live reminder cron send API is not open without authorization/configuration.');
+
+  const accessNoCookie = await requestJson(`${origin}/api/access`);
+  assert(accessNoCookie.response.ok && accessNoCookie.data.active === false, 'Live access API returns inactive without a player account cookie.');
+
   const checkoutNoCookie = await requestJson(`${origin}/api/checkout`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ returnUrl: `${origin}/rankings` }),
   });
   assert(checkoutNoCookie.response.status === 401, 'Live checkout API requires an IQ WARS player account cookie.');
+
+  const checkoutStatusNoCookie = await requestJson(`${origin}/api/checkout-status?tier=plus`);
+  assert(checkoutStatusNoCookie.response.status === 401, 'Live checkout status API requires an IQ WARS player account cookie.');
 
   const authSendInvalid = await requestJson(`${origin}/api/recursiv-auth/send-code`, {
     method: 'POST',
@@ -354,6 +397,19 @@ async function liveAudit() {
     body: JSON.stringify({ email: 'invalid', code: '1' }),
   });
   assert(authVerifyInvalid.response.status === 400, 'Live email auth verify route rejects invalid email/code input before hitting Recursiv.');
+
+  const xConnectNotConfigured = await requestRedirect(`${origin}/api/x/connect?returnTo=/rankings`);
+  assert([301, 302, 303, 307, 308].includes(xConnectNotConfigured.response.status) && xConnectNotConfigured.location.includes('/rankings') && xConnectNotConfigured.location.includes('x_status=not_configured'), 'Live X connect route redirects safely when X auth is not configured.');
+
+  const xCallbackFailed = await requestRedirect(`${origin}/api/x/callback?state=bad&code=bad`);
+  assert([301, 302, 303, 307, 308].includes(xCallbackFailed.response.status) && xCallbackFailed.location.includes('x_status=failed'), 'Live X callback rejects missing/invalid state before token exchange.');
+
+  const xVerifyMissing = await requestJson(`${origin}/api/x/verify-post`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert(xVerifyMissing.response.status === 400, 'Live X post verification route rejects missing handle/token before hitting X.');
 
   const attempt = {
     day,

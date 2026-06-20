@@ -35,6 +35,9 @@ async function sendReminder(email: string, groupCode: string | null, groupName: 
 
 export async function POST(request: Request) {
   const configuredToken = process.env.IQ_REMINDER_CRON_TOKEN;
+  if (!configuredToken && process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Reminder cron token is not configured.' }, { status: 503 });
+  }
   if (configuredToken) {
     const provided = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
     if (provided !== configuredToken) {
