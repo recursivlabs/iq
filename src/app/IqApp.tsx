@@ -262,7 +262,7 @@ const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   showLocation: false,
   showXBadge: false,
   showScoreHistory: true,
-  showAgentActivity: true,
+  showAgentActivity: false,
   labModesEnabled: false,
   soundEnabled: true,
   reducedMotion: false,
@@ -961,6 +961,13 @@ function normalizeGroupRecord(value: unknown): GroupRecord | null {
 
 function sortGroupRecords(groups: GroupRecord[]) {
   return [...groups].sort((a, b) => b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt || a.name.localeCompare(b.name)).slice(0, 24);
+}
+
+function formatGroupCreatedAt(timestamp: number) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return 'Created recently';
+  if (localDayKey(date) === localDayKey()) return 'Created today';
+  return `Created ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(date)}`;
 }
 
 function readStoredGroups(): GroupRecord[] {
@@ -1742,6 +1749,7 @@ function SocialLeaderboard({
   description,
   entries,
   empty,
+  emptyDetail,
   cta,
   onCta,
   variant = 'standard',
@@ -1753,6 +1761,7 @@ function SocialLeaderboard({
   description: string;
   entries: SocialEntry[];
   empty: string;
+  emptyDetail?: string;
   cta: string;
   onCta: () => void | Promise<void>;
   variant?: 'standard' | 'primary';
@@ -1790,7 +1799,7 @@ function SocialLeaderboard({
         ) : (
           <div className="empty-board">
             <strong>{empty}</strong>
-            <span>{copy('Finish Today\'s IQ WARS to put the first verified score on this board.')}</span>
+            <span>{copy(emptyDetail || 'Finish Today\'s IQ WARS to put the first verified score on this board.')}</span>
           </div>
         )}
       </div>
@@ -2691,7 +2700,7 @@ function StatusRail({
       <section className="rail-panel friend-panel">
         <p className="rail-label">{copy('Friend room')}</p>
         <strong>{groupCode ? groupName : copy('No room yet')}</strong>
-        <span>{groupCode ? `${copy('Room')} /g/${groupCode}. ${copy('Scores land on the friend board after the official run.')}` : copy('Create a room, share the link, and compete daily with one attempt each.')}</span>
+        <span>{groupCode ? `${copy('Room')} /g/${groupCode}. ${copy('Only people who open this link appear on the room board.')}` : copy('Create a different private room for each friend circle. Rooms start empty and fill only from the invite link.')}</span>
         {groupCode ? (
           <>
             <label className="name-field">
@@ -3416,7 +3425,7 @@ export default function Home({
     try {
       const params = new URLSearchParams({ day: localDayKey() });
       if (code) params.set('group', code);
-      if (!settings.showAgentActivity) params.set('agents', 'false');
+      if (code || !settings.showAgentActivity) params.set('agents', 'false');
       const response = await fetch(`/api/leaderboards?${params.toString()}`, { cache: 'no-store' });
       const data = await response.json().catch(() => null);
       if (response.ok && Array.isArray(data?.global)) {
@@ -3634,7 +3643,7 @@ export default function Home({
     const submittedGroupName = targetRoom?.groupName ?? groupName;
     try {
       const params = new URLSearchParams();
-      if (!settings.showAgentActivity) params.set('agents', 'false');
+      if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');
       const response = await fetch(`/api/leaderboards${params.toString() ? `?${params.toString()}` : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3902,7 +3911,11 @@ export default function Home({
   }
 
   async function createGroup() {
-    const knownCodes = readStoredGroups().map((group) => group.code);
+    const knownCodes = [
+      groupCode,
+      ...groupRecords.map((group) => group.code),
+      ...readStoredGroups().map((group) => group.code),
+    ].filter((code): code is string => Boolean(code));
     const code = randomRoomCode(knownCodes);
     const name = groupNameFromCode(code);
     setGroupCode(code);
@@ -4218,46 +4231,49 @@ export default function Home({
         {navOpen ? (
           <>
           <button className="command-backdrop" aria-label={copy('Close command center')} onClick={() => setNavOpen(false)} />
-          <aside className="command-panel" role="dialog" aria-label={copy('IQ WARS command center')}>
+          <aside className="command-panel sidebar-nav" role="dialog" aria-label={copy('IQ WARS command center')}>
             <div className="command-panel-head">
-              <span>{copy('Command')}</span>
+              <span>{copy('Sidebar')}</span>
               <button className="close-command" onClick={() => setNavOpen(false)} aria-label={copy('Close command center')}>X</button>
             </div>
-            <div className="command-profile">
-              <span className={`account-light ${recursivAccount ? 'on' : ''}`} aria-hidden="true" />
-              <div>
-                <strong>{navIdentity}</strong>
-                <span>{navStatus} · {copy('Score')} {navScore} · {copy('Auto')} {localeLabel(locale)}</span>
+            <div className="command-scroll">
+              <div className="command-profile">
+                <span className={`account-light ${recursivAccount ? 'on' : ''}`} aria-hidden="true" />
+                <div>
+                  <strong>{navIdentity}</strong>
+                  <span>{navStatus} · {copy('Score')} {navScore} · {copy('Auto')} {localeLabel(locale)}</span>
+                </div>
               </div>
-            </div>
-            <div className="command-grid">
-              <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
-              {labModesVisible ? <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button> : null}
-              {labModesVisible ? <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button> : null}
-              <button className={view === 'rankings' ? 'active' : ''} onClick={() => navigateView('rankings')}>{copy('Rankings')}</button>
-              <button className={view === 'about' ? 'active' : ''} onClick={() => navigateView('about')}>{copy('About')}</button>
-              <button className={view === 'research' ? 'active' : ''} onClick={() => navigateView('research')}>{copy('Research')}</button>
-              <button className={view === 'blog' ? 'active' : ''} onClick={() => navigateView('blog')}>{copy('Blog')}</button>
-              {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
-              {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
-            </div>
-            <div className="command-groups">
-              <div className="command-section-head">
-                <span>{copy('Groups')} · {groupRecords.length}</span>
-                <button onClick={createGroup}>{copy('New')}</button>
+              <div className="command-grid" role="navigation" aria-label={copy('Primary navigation')}>
+                <button className={view === 'test' && mode === 'world' ? 'active' : ''} onClick={() => openMode('world')}>{copy('Today')}</button>
+                {labModesVisible ? <button className={view === 'test' && mode === 'agi' ? 'active' : ''} onClick={() => openMode('agi')}>{copy('AI')}</button> : null}
+                {labModesVisible ? <button className={view === 'test' && mode === 'daily' ? 'active' : ''} onClick={() => openMode('daily')}>{copy('Sprint')}</button> : null}
+                <button className={view === 'rankings' ? 'active' : ''} onClick={() => navigateView('rankings')}>{copy('Rankings')}</button>
+                <button className={view === 'about' ? 'active' : ''} onClick={() => navigateView('about')}>{copy('About')}</button>
+                <button className={view === 'research' ? 'active' : ''} onClick={() => navigateView('research')}>{copy('Research')}</button>
+                <button className={view === 'blog' ? 'active' : ''} onClick={() => navigateView('blog')}>{copy('Blog')}</button>
+                {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
+                {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
               </div>
-              <div className="command-group-list">
-                {groupRecords.length > 0 ? groupRecords.map((group) => (
-                  <button key={group.code} className={group.code === groupCode ? 'active' : ''} onClick={() => openGroup(group.code, group.name)}>
-                    <strong>{group.name}</strong>
-                    <span>/g/{group.code}</span>
-                  </button>
-                )) : (
-                  <div className="command-empty">
-                    <strong>{copy('No groups yet.')}</strong>
-                    <span>{copy('Create one link for each friend circle.')}</span>
-                  </div>
-                )}
+              <div className="command-groups">
+                <div className="command-section-head">
+                  <span>{copy('Friend groups')} · {groupRecords.length}</span>
+                  <button onClick={createGroup}>{copy('New room')}</button>
+                </div>
+                <div className="command-group-list">
+                  {groupRecords.length > 0 ? groupRecords.map((group) => (
+                    <button key={group.code} className={group.code === groupCode ? 'active' : ''} onClick={() => openGroup(group.code, group.name)}>
+                      <strong>{group.name}</strong>
+                      <span>{formatGroupCreatedAt(group.createdAt)} · {copy('Private room')}</span>
+                      <code>/g/{group.code}</code>
+                    </button>
+                  )) : (
+                    <div className="command-empty">
+                      <strong>{copy('No groups yet.')}</strong>
+                      <span>{copy('Create one link for each friend circle. New rooms start empty.')}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="command-actions">
@@ -4334,6 +4350,7 @@ export default function Home({
             description={groupCode ? copy('This is the board that matters after a run: one invite link, one official attempt each, and the room ranked by today\'s score.') : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
             entries={displayBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
+            emptyDetail={groupCode ? 'Private rooms start empty. Send the link; only real players who open it and finish today appear here.' : 'Create a room link for the group chat. The room board appears as soon as invited players finish today.'}
             cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
             variant="primary"
@@ -5247,17 +5264,15 @@ export default function Home({
           top: 0;
           bottom: 0;
           z-index: 31;
-          width: min(390px, calc(100vw - 26px));
+          width: min(460px, 100vw);
           border: 1px solid rgba(255,255,255,.12);
           border-left: 0;
-          border-radius: 0 10px 10px 0;
+          border-radius: 0 12px 12px 0;
           background: rgba(7,8,10,.98);
           box-shadow: 34px 0 100px rgba(0,0,0,.68), inset 1px 0 0 rgba(255,255,255,.06);
           backdrop-filter: blur(22px);
-          padding: 14px;
           display: grid;
-          grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-          gap: 12px;
+          grid-template-rows: auto minmax(0, 1fr) auto;
           overflow: hidden;
         }
         .command-backdrop {
@@ -5277,7 +5292,7 @@ export default function Home({
           justify-content: space-between;
           gap: 12px;
           min-height: 42px;
-          padding-bottom: 10px;
+          padding: 16px;
           border-bottom: 1px solid rgba(255,255,255,.08);
           color: #777d82;
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -5296,13 +5311,23 @@ export default function Home({
           place-items: center;
           padding: 0;
         }
+        .command-scroll {
+          min-height: 0;
+          overflow-y: auto;
+          display: grid;
+          align-content: start;
+          gap: 14px;
+          padding: 14px;
+        }
         .command-profile {
           display: grid;
           grid-template-columns: 10px minmax(0, 1fr);
           gap: 12px;
           align-items: center;
-          padding: 8px 6px;
-          border-bottom: 1px solid rgba(255,255,255,.08);
+          padding: 14px;
+          border: 1px solid rgba(255,255,255,.09);
+          border-radius: 6px;
+          background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.016));
         }
         .account-light {
           width: 8px;
@@ -5333,17 +5358,21 @@ export default function Home({
         .command-grid {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 8px;
+          gap: 1px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
         }
         .command-grid button,
         .command-actions button,
         .command-group-list button,
         .command-section-head button {
-          min-height: 46px;
-          border: 1px solid rgba(255,255,255,.10);
-          border-radius: 4px;
-          background: rgba(255,255,255,.025);
-          padding: 0 12px;
+          min-height: 50px;
+          border: 0;
+          border-radius: 0;
+          background: #0e1012;
+          padding: 0 14px;
           text-align: left;
           color: #d9dcde;
           width: 100%;
@@ -5359,8 +5388,6 @@ export default function Home({
           display: grid;
           grid-template-rows: auto minmax(0, 1fr);
           gap: 9px;
-          padding-top: 12px;
-          border-top: 1px solid rgba(255,255,255,.08);
         }
         .command-section-head {
           display: flex;
@@ -5378,17 +5405,22 @@ export default function Home({
           min-height: 34px;
           padding: 0 11px;
           color: #f4f5f6;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 3px;
+          background: rgba(255,255,255,.035);
         }
         .command-group-list {
           min-height: 0;
-          overflow-y: auto;
           display: grid;
           align-content: start;
-          gap: 8px;
-          padding-right: 2px;
+          gap: 1px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
         }
         .command-group-list button {
-          min-height: 58px;
+          min-height: 78px;
           display: grid;
           gap: 4px;
           align-content: center;
@@ -5405,7 +5437,8 @@ export default function Home({
           white-space: nowrap;
         }
         .command-group-list span,
-        .command-empty span {
+        .command-empty span,
+        .command-group-list code {
           overflow: hidden;
           color: #777d82;
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -5415,10 +5448,14 @@ export default function Home({
           text-transform: none;
           white-space: nowrap;
         }
+        .command-group-list code {
+          color: #aeb4b8;
+          letter-spacing: .08em;
+        }
         .command-empty {
-          border: 1px solid rgba(255,255,255,.10);
-          border-radius: 4px;
-          background: rgba(255,255,255,.025);
+          border: 0;
+          border-radius: 0;
+          background: #0e1012;
           padding: 14px 12px;
           display: grid;
           gap: 5px;
@@ -5427,8 +5464,9 @@ export default function Home({
           display: grid;
           grid-template-columns: 1fr;
           gap: 8px;
-          padding-top: 12px;
+          padding: 14px;
           border-top: 1px solid rgba(255,255,255,.08);
+          background: rgba(7,8,10,.96);
         }
         .command-actions .nav-cta,
         .command-actions .logout-action {
@@ -7304,12 +7342,19 @@ export default function Home({
             min-width: 42px;
           }
           .command-panel {
-            width: min(360px, calc(100vw - 18px));
+            width: min(390px, 100vw);
+            border-radius: 0;
           }
           .command-grid button,
           .command-actions button,
           .command-group-list button {
-            min-height: 44px;
+            min-height: 50px;
+          }
+          .command-scroll {
+            padding: 10px;
+          }
+          .command-group-list button {
+            min-height: 74px;
           }
           nav button {
             white-space: nowrap;

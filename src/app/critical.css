@@ -190,12 +190,11 @@ nav .nav-cta,
 
 .command-toggle {
   display: inline-grid;
-  grid-template-columns: 22px minmax(0, auto);
-  align-items: center;
-  gap: 12px;
+  place-items: center;
   min-height: 48px;
-  min-width: 138px;
-  padding: 8px 12px;
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, .16);
   border-radius: 4px;
   background: rgba(255, 255, 255, .035);
@@ -247,18 +246,30 @@ nav .nav-cta,
 }
 
 .command-panel {
-  display: block;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 12px);
-  z-index: 9;
-  width: min(380px, calc(100vw - 32px));
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 31;
+  width: min(460px, 100vw);
   border: 1px solid rgba(255, 255, 255, .12);
-  border-radius: 8px;
-  background: rgba(8, 9, 10, .96);
-  box-shadow: 0 32px 90px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255, 255, 255, .06);
-  backdrop-filter: blur(18px);
-  padding: 12px;
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: rgba(7, 8, 10, .98);
+  box-shadow: 34px 0 100px rgba(0, 0, 0, .68), inset 1px 0 0 rgba(255, 255, 255, .06);
+  backdrop-filter: blur(22px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.command-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 14px;
 }
 
 .command-profile {
@@ -266,8 +277,10 @@ nav .nav-cta,
   grid-template-columns: 10px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
-  padding: 8px 6px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 6px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .016));
 }
 
 .account-light {
@@ -302,19 +315,25 @@ nav .nav-cta,
 
 .command-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding-top: 12px;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .08);
 }
 
 .command-grid button,
-.command-actions button {
-  min-height: 46px;
-  border: 1px solid rgba(255, 255, 255, .10);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, .025);
-  padding: 0 12px;
+.command-actions button,
+.command-group-list button,
+.command-section-head button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 0;
+  background: #0e1012;
+  padding: 0 14px;
   text-align: left;
+  width: 100%;
 }
 
 .command-grid button.active {
@@ -325,9 +344,11 @@ nav .nav-cta,
 
 .command-actions {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 8px;
-  padding-top: 10px;
+  padding: 14px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  background: rgba(7, 8, 10, .96);
 }
 
 .command-actions .nav-cta,
@@ -335,6 +356,72 @@ nav .nav-cta,
   width: 100%;
   justify-content: center;
   text-align: center;
+}
+
+.command-groups {
+  min-height: 0;
+  display: grid;
+  gap: 9px;
+}
+
+.command-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #777d82;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.command-section-head button {
+  width: auto;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .035);
+  color: #f4f5f6;
+}
+
+.command-group-list {
+  display: grid;
+  gap: 1px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .08);
+}
+
+.command-group-list button {
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.command-group-list strong,
+.command-empty strong {
+  overflow: hidden;
+  color: #f4f5f6;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-group-list span,
+.command-group-list code,
+.command-empty span {
+  overflow: hidden;
+  color: #777d82;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9.5px;
+  letter-spacing: .1em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .full {
@@ -1119,29 +1206,28 @@ nav .nav-cta,
   }
 
   .command-toggle {
-    min-width: 92px;
     min-height: 42px;
-    gap: 8px;
-    padding: 7px 8px;
-  }
-
-  .command-id strong {
-    max-width: 58px;
-    font-size: 9px;
-  }
-
-  .command-id em {
-    font-size: 8px;
+    width: 42px;
+    min-width: 42px;
   }
 
   .command-panel {
-    top: calc(100% + 8px);
-    width: calc(100vw - 20px);
+    width: min(390px, 100vw);
+    border-radius: 0;
   }
 
   .command-grid button,
-  .command-actions button {
-    min-height: 44px;
+  .command-actions button,
+  .command-group-list button {
+    min-height: 50px;
+  }
+
+  .command-scroll {
+    padding: 10px;
+  }
+
+  .command-group-list button {
+    min-height: 74px;
   }
 
   nav button {

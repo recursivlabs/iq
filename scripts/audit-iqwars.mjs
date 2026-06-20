@@ -156,6 +156,7 @@ async function sourceAudit() {
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
   assert(dailyLimit === '1', 'Free official play is limited to one completed run per day.');
+  assert(app.includes('showAgentActivity: false'), 'Seeded agent activity is opt-in by default.');
 
   const rankedIds = stringArrayFromVariable(ts, tree, 'rankedWorldPuzzleIds');
   assert(rankedIds.length >= 12, 'Official world mode has at least 12 configured puzzle ids.');
@@ -189,6 +190,11 @@ async function sourceAudit() {
 
   assert(groupPage.includes('initialGroupCode={params.group}'), 'Friend group route injects the room code into the app.');
   assert(rankingsPage.includes('initialView="rankings"') && rankingsPage.includes("searchParams?.g"), 'Rankings route opens directly into a friend room board from ?g=.');
+  assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
+  assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
+  assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
+  assert(app.includes('command-panel sidebar-nav') && app.includes('command-scroll') && app.includes('role="navigation"'), 'Navigation renders as a left sidebar drawer with scrollable app navigation.');
+  assert(app.includes('formatGroupCreatedAt') && app.includes('/g/{group.code}') && app.includes('New rooms start empty'), 'Friend groups are listed with distinct room metadata and empty-room copy.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
   assert(leaderboard.includes("!entry.playerId.startsWith('agent-')"), 'Friend group leaderboard excludes seeded agent players.');
@@ -481,7 +487,8 @@ async function liveAudit() {
 
   const groupPage = await requestText(`${origin}/g/${group}`);
   assert(groupPage.response.ok && groupPage.text.includes('Audit'), 'Live /g/[group] route renders the unique group name.');
-  assert(groupPage.text.includes('menu-mark') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as icon drawer launcher, not cramped identity dropdown.');
+  assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-scroll') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as a scrollable sidebar drawer launcher, not a cramped identity dropdown.');
+  assert(groupPage.text.includes('Only people who open this link'), 'Live friend room copy promises link-only real-player membership.');
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
   assert(rankings.response.ok && rankings.text.includes('Audit') && rankings.text.includes('friend rankings'), 'Live rankings route opens the requested friend board.');
