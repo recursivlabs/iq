@@ -116,6 +116,7 @@ function stringArrayFromVariable(ts, tree, name) {
 
 async function sourceAudit() {
   const app = source(appPath);
+  const audit = source(fileURLToPath(import.meta.url));
   const i18n = source(i18nPath);
   const leaderboard = source(leaderboardPath);
   const attempts = source(attemptsPath);
@@ -257,6 +258,7 @@ async function sourceAudit() {
   assert(health.includes('launchReady') && health.includes('verified') && health.includes('status = storage.persistent && !storage.verified ? 503 : 200'), 'Health API exposes launch readiness and fails broken persistent storage configs.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
+  assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
 
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL) {
     const message = 'No Redis/KV env is visible in this shell; production must configure one or leaderboard/map/profile writes are only ephemeral per runtime.';
@@ -343,6 +345,25 @@ async function liveAudit() {
     body: JSON.stringify({ username, playerId: `${playerId}-other`, displayName: 'Other Audit' }),
   });
   assert(usernameDuplicate.response.status === 409, 'Live username API rejects duplicate handle claims from another player.');
+
+  if (persistent && verified && launchReady) {
+    const raceUsername = `race_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const raceClaims = await Promise.all([
+      requestJson(`${origin}/api/username`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: raceUsername, playerId: `${playerId}-race-a`, displayName: 'Race A' }),
+      }),
+      requestJson(`${origin}/api/username`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: raceUsername, playerId: `${playerId}-race-b`, displayName: 'Race B' }),
+      }),
+    ]);
+    const acceptedRaceClaims = raceClaims.filter((claim) => claim.response.ok && claim.data.claim?.username === raceUsername);
+    const rejectedRaceClaims = raceClaims.filter((claim) => claim.response.status === 409);
+    assert(acceptedRaceClaims.length === 1 && rejectedRaceClaims.length === 1, 'Live persistent username claims are race-safe under concurrent duplicate requests.');
+  }
 
   const profilePost = await requestJson(`${origin}/api/profiles`, {
     method: 'POST',
@@ -473,6 +494,27 @@ async function liveAudit() {
     body: JSON.stringify({ ...attempt, score: 99, correct: 1 }),
   });
   assert(attemptDuplicate.response.ok && attemptDuplicate.data.accepted === false && attemptDuplicate.data.attempt?.score === 137, 'Live attempt API rejects duplicate official attempts for the same player/day.');
+
+  if (persistent && verified && launchReady) {
+    const racePlayerId = `audit-race-player-${randomUUID()}`;
+    const raceAttempt = { ...attempt, playerId: racePlayerId, day: '2099-12-30' };
+    const raceAttempts = await Promise.all([
+      requestJson(`${origin}/api/attempts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...raceAttempt, score: 136, correct: 9 }),
+      }),
+      requestJson(`${origin}/api/attempts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...raceAttempt, score: 101, correct: 2 }),
+      }),
+    ]);
+    const acceptedRaceAttempts = raceAttempts.filter((item) => item.response.ok && item.data.accepted === true);
+    const rejectedRaceAttempts = raceAttempts.filter((item) => item.response.ok && item.data.accepted === false);
+    const raceAttemptGet = await requestJson(`${origin}/api/attempts?day=${raceAttempt.day}&playerId=${encodeURIComponent(racePlayerId)}`);
+    assert(acceptedRaceAttempts.length === 1 && rejectedRaceAttempts.length === 1 && raceAttemptGet.data.attempt?.score === acceptedRaceAttempts[0]?.data.attempt?.score, 'Live persistent attempt locks are race-safe under concurrent duplicate requests.');
+  }
 
   const attemptGet = await requestJson(`${origin}/api/attempts?day=${day}&playerId=${encodeURIComponent(playerId)}`);
   assert(attemptGet.response.ok && attemptGet.data.locked === true && attemptGet.data.attempt?.playerId === playerId, 'Live attempt API reads back the server-side daily lock.');
