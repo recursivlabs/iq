@@ -30,6 +30,10 @@ export function storeProvider() {
   return 'ephemeral-fallback';
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message.slice(0, 160) : 'unknown storage error';
+}
+
 async function redisRestCommand(args: string[]) {
   const config = redisRestConfig();
   if (!config) return null;
@@ -145,6 +149,39 @@ async function redisCommand(args: string[]) {
   const rest = await redisRestCommand(args);
   if (rest !== null) return rest;
   return await redisTcpCommand(args);
+}
+
+export async function verifyPersistentStore() {
+  const provider = storeProvider();
+  if (!hasRedisStore()) {
+    return {
+      provider,
+      persistent: false,
+      verified: false,
+      error: 'not_configured',
+    };
+  }
+
+  const nonce = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const key = 'world-iq:health-check:v1';
+
+  try {
+    await redisCommand(['SET', key, nonce, 'EX', '120']);
+    const stored = await redisCommand(['GET', key]);
+    return {
+      provider,
+      persistent: true,
+      verified: stored === nonce,
+      error: stored === nonce ? null : 'roundtrip_mismatch',
+    };
+  } catch (error) {
+    return {
+      provider,
+      persistent: true,
+      verified: false,
+      error: errorMessage(error),
+    };
+  }
 }
 
 function fallbackPath(fileName: string) {

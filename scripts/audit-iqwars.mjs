@@ -11,6 +11,7 @@ const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
+const healthPath = path.join(root, 'src/app/api/health/route.ts');
 const usernamePath = path.join(root, 'src/app/api/username/route.ts');
 const profilesPath = path.join(root, 'src/app/api/profiles/route.ts');
 const roomMessagesPath = path.join(root, 'src/app/api/rooms/messages/route.ts');
@@ -117,6 +118,7 @@ async function sourceAudit() {
   const leaderboard = source(leaderboardPath);
   const attempts = source(attemptsPath);
   const store = source(storePath);
+  const health = source(healthPath);
   const geo = source(geoPath);
   const username = source(usernamePath);
   const profiles = source(profilesPath);
@@ -141,7 +143,7 @@ async function sourceAudit() {
   assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
-  assert(existsSync(path.join(root, 'src/app/api/health/route.ts')), 'Storage health API route exists.');
+  assert(existsSync(healthPath), 'Storage health API route exists.');
   assert(existsSync(usernamePath), 'Username API route exists.');
   assert(existsSync(profilesPath), 'Profile API route exists.');
   assert(existsSync(roomMessagesPath), 'Room message API route exists.');
@@ -228,6 +230,8 @@ async function sourceAudit() {
 
   assert(store.includes('UPSTASH_REDIS_REST_URL') && store.includes('KV_REST_API_URL') && store.includes('REDIS_URL'), 'Store supports Redis/Upstash/Vercel KV configuration.');
   assert(store.includes("path.join('/tmp'"), 'Store has only an ephemeral /tmp fallback when Redis is not configured.');
+  assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes("['GET', key]"), 'Persistent store health verifies Redis/KV with a write/read round trip.');
+  assert(health.includes('launchReady') && health.includes('verified') && health.includes('status = storage.persistent && !storage.verified ? 503 : 200'), 'Health API exposes launch readiness and fails broken persistent storage configs.');
 
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL) {
     const message = 'No Redis/KV env is visible in this shell; production must configure one or leaderboard/map/profile writes are only ephemeral per runtime.';
@@ -285,15 +289,17 @@ async function liveAudit() {
   assert(!beforeRows.some((row) => String(row.playerId || '').startsWith('agent-')), 'Live agents=false response contains no seeded agents before submit.');
 
   const health = await requestJson(`${origin}/api/health`);
-  assert(health.response.ok && health.data.ok === true, 'Live health endpoint responds.');
+  assert(health.response.ok && health.data.ok === true, 'Live health endpoint responds when storage is not misconfigured.');
   const persistent = Boolean(health.data.storage?.persistent);
+  const verified = Boolean(health.data.storage?.verified);
+  const launchReady = Boolean(health.data.storage?.launchReady);
   const provider = String(health.data.storage?.provider || 'unknown');
-  if (persistent) {
-    pass(`Live storage is persistent (${provider}).`);
+  if (persistent && verified && launchReady) {
+    pass(`Live storage is persistent and round-trip verified (${provider}).`);
   } else if (requirePersistent) {
-    failures.push(`Live storage is not launch-persistent (${provider}); configure Redis/KV envs before launch.`);
+    failures.push(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
   } else {
-    warn(`Live storage is not launch-persistent (${provider}); configure Redis/KV envs before launch.`);
+    warn(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
   }
 
   const usernameInvalid = await requestJson(`${origin}/api/username?username=ab`);
