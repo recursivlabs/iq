@@ -320,6 +320,28 @@ const COUNTRY_GLOBE_CENTERS: Record<string, [number, number]> = {
   AE: [54, 24],
   SA: [45, 24],
 };
+const PLACE_GLOBE_CENTERS: Record<string, [number, number]> = {
+  'city:new york:us': [-74.006, 40.7128],
+  'town:new york:us': [-74.006, 40.7128],
+  'city:san francisco:us': [-122.4194, 37.7749],
+  'town:san francisco:us': [-122.4194, 37.7749],
+  'city:berlin:de': [13.405, 52.52],
+  'town:berlin:de': [13.405, 52.52],
+  'city:london:gb': [-0.1276, 51.5072],
+  'town:london:gb': [-0.1276, 51.5072],
+  'city:chennai:in': [80.2707, 13.0827],
+  'town:chennai:in': [80.2707, 13.0827],
+  'city:alexandria:eg': [29.9187, 31.2001],
+  'town:alexandria:eg': [29.9187, 31.2001],
+  'city:paris:fr': [2.3522, 48.8566],
+  'town:paris:fr': [2.3522, 48.8566],
+  'city:toronto:ca': [-79.3832, 43.6532],
+  'town:toronto:ca': [-79.3832, 43.6532],
+  'city:singapore:sg': [103.8198, 1.3521],
+  'town:singapore:sg': [103.8198, 1.3521],
+  'city:sydney:au': [151.2093, -33.8688],
+  'town:sydney:au': [151.2093, -33.8688],
+};
 
 const tones: Record<TileTone, string> = {
   ink: '#f4f5f6',
@@ -1096,7 +1118,20 @@ function hashNumber(value: string) {
   return Math.abs(hash >>> 0);
 }
 
+function normalizedPlaceLabel(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function globeCoordinateFromKnownPlace(label: string, detail: string, kind: GeoBoardRow['kind']) {
+  if (kind === 'country') return null;
+  const countryCode = detail.match(/\b([A-Z]{2})\b/)?.[1]?.toLowerCase() || '';
+  if (!countryCode) return null;
+  return PLACE_GLOBE_CENTERS[`${kind}:${normalizedPlaceLabel(label)}:${countryCode}`] || null;
+}
+
 function globeCoordinateFromLabel(label: string, detail: string, kind: GeoBoardRow['kind']): [number, number] {
+  const place = globeCoordinateFromKnownPlace(label, detail, kind);
+  if (place) return place;
   const code = normalizeCountryCode(kind === 'country' ? detail || label : detail.match(/\b([A-Z]{2})\b/)?.[1]);
   if (code && COUNTRY_GLOBE_CENTERS[code]) return COUNTRY_GLOBE_CENTERS[code];
   const hash = hashNumber(`${label}:${detail}:${kind}`);

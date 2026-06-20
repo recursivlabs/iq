@@ -319,6 +319,7 @@ async function sourceAudit() {
 
   const buildGlobe = functionText(findFunction(ts, tree, 'buildGlobeRegions'), app);
   assert(buildGlobe.includes('geography.countries') && buildGlobe.includes('geography.cities.slice') && buildGlobe.includes('geography.towns.slice'), 'Globe regions derive only from ranked geography board rows.');
+  assert(app.includes('PLACE_GLOBE_CENTERS') && app.includes('globeCoordinateFromKnownPlace') && app.includes("'city:new york:us'") && app.includes("'city:singapore:sg'"), 'Globe uses real known city/town coordinates before hash fallback.');
   assert(!buildGlobe.includes('fallbackGeo') && !buildGlobe.includes('Local signal') && !buildGlobe.includes('score: 100'), 'Globe heat never fabricates a local fallback region or score.');
 
   const result = app.slice(app.indexOf('function Result('), app.indexOf('function Runner('));
