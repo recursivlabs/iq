@@ -923,13 +923,23 @@ function cleanGroupCode(value: string | null | undefined) {
 function groupNameFromCode(code: string) {
   if (!code) return '';
   if (code.startsWith('room-')) {
-    return `Group ${groupRoomNumber(code)}`;
+    return `Group ${groupInviteKey(code)}`;
   }
   return code.split('-').filter(Boolean).map((part) => part.slice(0, 1).toUpperCase() + part.slice(1)).join(' ');
 }
 
 function groupRoomNumber(code: string) {
   return `${(hashNumber(cleanGroupCode(code) || 'room') % 9000) + 1000}`;
+}
+
+function groupInviteKey(code: string) {
+  const cleaned = cleanGroupCode(code);
+  const compact = cleaned.replace(/^room-/, '').replace(/-/g, '');
+  return (compact.slice(-6) || groupRoomNumber(cleaned)).toUpperCase();
+}
+
+function groupRoomIdentity(code: string) {
+  return `Room #${groupRoomNumber(code)} · Key ${groupInviteKey(code)}`;
 }
 
 function groupPath(code: string) {
@@ -1296,7 +1306,10 @@ function normalizeGroupRecord(value: unknown): GroupRecord | null {
   const code = cleanGroupCode(record.code);
   if (!code) return null;
   const now = Date.now();
-  const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim().slice(0, 48) : groupNameFromCode(code);
+  const defaultName = groupNameFromCode(code);
+  const rawName = typeof record.name === 'string' ? record.name.trim().slice(0, 48) : '';
+  const oldAutoName = `Group ${groupRoomNumber(code)}`;
+  const name = rawName && rawName !== oldAutoName ? rawName : defaultName;
   return {
     code,
     name,
@@ -3110,7 +3123,7 @@ function StatusRail({
       <section className="rail-panel friend-panel">
         <p className="rail-label">{copy('Friend room')}</p>
         <strong>{groupCode ? groupName : copy('No room yet')}</strong>
-        <span>{groupCode ? `${copy('Room')} #${groupRoomNumber(groupCode)} · /g/${groupCode}. ${copy('Only people who open this link appear on the room board.')}` : copy('Create a different private room for each friend circle. Rooms start empty and fill only from the invite link.')}</span>
+        <span>{groupCode ? `${groupRoomIdentity(groupCode)} · /g/${groupCode}. ${copy('Only real people who open this link appear on the room board.')}` : copy('Create a different private room for each friend circle. Rooms start empty and fill only from the invite link.')}</span>
         {groupCode ? (
           <>
             <label className="name-field">
@@ -4667,7 +4680,10 @@ export default function Home({
           <button className="command-backdrop" aria-label={copy('Close command center')} onClick={() => setNavOpen(false)} />
           <aside className="command-panel sidebar-nav" role="dialog" aria-label={copy('IQ WARS command center')}>
             <div className="command-panel-head">
-              <span>{copy('Sidebar')}</span>
+              <div>
+                <strong>IQ WARS</strong>
+                <span>{copy('Left sidebar')}</span>
+              </div>
               <button className="close-command" onClick={() => setNavOpen(false)} aria-label={copy('Close command center')}>X</button>
             </div>
             <div className="command-scroll">
@@ -4695,14 +4711,14 @@ export default function Home({
               </div>
               <div className="command-groups">
                 <div className="command-section-head">
-                  <span>{copy('Friend groups')} · {groupRecords.length}</span>
-                  <button onClick={createGroup}>{copy('New room')}</button>
+                  <span>{copy('Friend groups')} · {groupRecords.length} {copy('listed')}</span>
+                  <button onClick={createGroup}>{copy('New group')}</button>
                 </div>
                 <div className="command-room-card">
-                  <span>{copy(groupCode ? 'Active private group' : 'Current room')}</span>
+                  <span>{copy(groupCode ? 'Active private group' : 'No active group')}</span>
                   <strong>{groupCode ? groupName : copy('No active room')}</strong>
                   <code>{groupCode ? groupShareUrl(groupCode).replace(/^https?:\/\//, '') : copy('Create a private room')}</code>
-                  <p>{groupCode ? `${copy('Room')} #${groupRoomNumber(groupCode)}. ${activeGroupScoreLabel}. ${copy('Only people who open this link appear here.')} ${copy('No seeded agents.')}` : copy('Rooms are invite-only and stay empty until real players open your link.')}</p>
+                  <p>{groupCode ? `${groupRoomIdentity(groupCode)}. ${activeGroupScoreLabel}. ${copy('Only real people who open this link appear here.')} ${copy('No seeded agents in private groups.')}` : copy('Each new group gets a different invite link and starts empty until real players open it.')}</p>
                   <button className="copy-link" onClick={groupCode ? copyInvite : createGroup}>{copy(groupCode ? inviteState : 'Create & copy link')}</button>
                 </div>
                 <div className="command-group-list">
@@ -4712,14 +4728,14 @@ export default function Home({
                         <strong>{group.name}</strong>
                         <em>{group.code === groupCode ? copy('Active') : copy('Private')}</em>
                       </div>
-                      <span className="group-room-tag">{copy('Room')} #{groupRoomNumber(group.code)} · {formatGroupCreatedAt(group.createdAt)} · {copy('Invite-only')}</span>
-                      <span>{group.code === groupCode ? activeGroupScoreLabel : copy('Tap for today\'s friend board')}</span>
+                      <span className="group-room-tag">{groupRoomIdentity(group.code)} · {formatGroupCreatedAt(group.createdAt)}</span>
+                      <span>{copy('Invite-only')} · {copy('Real players only')} · {group.code === groupCode ? activeGroupScoreLabel : copy('Tap for today\'s friend board')}</span>
                       <code>{groupShareUrl(group.code).replace(/^https?:\/\//, '')}</code>
                     </button>
                   )) : (
                     <div className="command-empty">
                       <strong>{copy('No groups yet.')}</strong>
-                      <span>{copy('Create one link for each friend circle. New rooms start empty.')}</span>
+                      <span>{copy('Create one link for each friend circle. New groups start empty and only fill from the invite link.')}</span>
                     </div>
                   )}
                 </div>
@@ -5721,10 +5737,10 @@ export default function Home({
           top: 0;
           bottom: 0;
           z-index: 31;
-          width: min(440px, calc(100vw - 18px));
+          width: min(500px, calc(100vw - 14px));
           border: 1px solid rgba(255,255,255,.12);
           border-left: 0;
-          border-radius: 0 12px 12px 0;
+          border-radius: 0 18px 18px 0;
           background: rgba(7,8,10,.98);
           box-shadow: 34px 0 100px rgba(0,0,0,.68), inset 1px 0 0 rgba(255,255,255,.06);
           backdrop-filter: blur(22px);
@@ -5748,9 +5764,27 @@ export default function Home({
           align-items: center;
           justify-content: space-between;
           gap: 12px;
-          min-height: 42px;
-          padding: 16px;
+          min-height: 68px;
+          padding: 18px 18px 16px;
           border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        .command-panel-head div {
+          display: grid;
+          gap: 7px;
+          min-width: 0;
+        }
+        .command-panel-head strong {
+          overflow: hidden;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: .2em;
+          line-height: 1;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .command-panel-head span {
           color: #777d82;
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
           font-size: 10px;
@@ -5773,8 +5807,8 @@ export default function Home({
           overflow-y: auto;
           display: grid;
           align-content: start;
-          gap: 16px;
-          padding: 16px;
+          gap: 18px;
+          padding: 18px;
         }
         .command-profile {
           display: grid;
@@ -5836,7 +5870,7 @@ export default function Home({
         .command-actions button,
         .command-group-list button,
         .command-section-head button {
-          min-height: 54px;
+          min-height: 58px;
           border: 0;
           border-radius: 0;
           background: #0e1012;
@@ -5851,11 +5885,22 @@ export default function Home({
           background: rgba(255,255,255,.08);
           color: #f4f5f6;
         }
+        .command-grid button {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        nav .command-grid button::after {
+          content: "›";
+          color: #777d82;
+          font-size: 17px;
+          letter-spacing: 0;
+        }
         .command-groups {
           min-height: 0;
           display: grid;
           grid-template-rows: auto auto minmax(0, 1fr);
-          gap: 9px;
+          gap: 12px;
         }
         .command-section-head {
           display: flex;
@@ -5879,8 +5924,8 @@ export default function Home({
         }
         .command-room-card {
           display: grid;
-          gap: 10px;
-          padding: 16px;
+          gap: 12px;
+          padding: 18px;
           border: 1px solid rgba(255,255,255,.11);
           border-radius: 8px;
           background:
@@ -5920,7 +5965,7 @@ export default function Home({
           line-height: 1.45;
         }
         .command-room-card button {
-          min-height: 48px;
+          min-height: 54px;
           border: 1px solid rgba(255,255,255,.18);
           border-radius: 4px;
           background: rgba(255,255,255,.055);
@@ -5938,9 +5983,9 @@ export default function Home({
           background: rgba(255,255,255,.08);
         }
         .command-group-list button {
-          min-height: 118px;
+          min-height: 134px;
           display: grid;
-          gap: 7px;
+          gap: 8px;
           align-content: center;
         }
         .group-row-top {
@@ -7880,19 +7925,20 @@ export default function Home({
             min-width: 42px;
           }
           .command-panel {
-            width: min(390px, calc(100vw - 8px));
-            border-radius: 0 12px 12px 0;
+            width: min(430px, calc(100vw - 4px));
+            border-radius: 0 16px 16px 0;
           }
           .command-grid button,
           .command-actions button,
           .command-group-list button {
-            min-height: 50px;
+            min-height: 54px;
           }
           .command-scroll {
-            padding: 12px;
+            padding: 14px;
+            gap: 14px;
           }
           .command-group-list button {
-            min-height: 112px;
+            min-height: 128px;
           }
           nav button {
             white-space: nowrap;

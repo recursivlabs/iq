@@ -344,13 +344,13 @@ async function sourceAudit() {
   assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
-  assert(app.includes('function groupRoomNumber') && app.includes('groupRoomNumber(group.code)'), 'Friend groups render stable unique room identifiers in the sidebar list.');
-  assert(app.includes('return `Group ${groupRoomNumber(code)}`') && app.includes('className="group-room-tag"'), 'Newly created friend groups get stable visible room numbers in the sidebar list.');
+  assert(app.includes('function groupRoomNumber') && app.includes('function groupInviteKey') && app.includes('function groupRoomIdentity'), 'Friend groups render stable room numbers plus invite keys in the sidebar list.');
+  assert(app.includes('return `Group ${groupInviteKey(code)}`') && app.includes('groupRoomIdentity(group.code)') && app.includes('className="group-room-tag"'), 'Newly created friend groups get distinct visible invite-key identities in the sidebar list.');
   assert(app.includes('function navigateGroupRankings') && app.includes('groupRankingsPath(cleaned)') && app.includes('navigateGroupRankings(cleaned)'), 'Opening a listed friend group lands on its durable rankings URL.');
-  assert(app.includes('command-panel sidebar-nav') && app.includes('command-scroll') && app.includes('role="navigation"'), 'Navigation renders as a left sidebar drawer with scrollable app navigation.');
-  assert(app.includes('command-room-card') && app.includes('Current room') && app.includes('command-profile-meta'), 'Sidebar includes a structured command-center room and identity summary.');
-  assert(app.includes('formatGroupCreatedAt') && app.includes('groupShareUrl(group.code)') && app.includes('Invite-only'), 'Friend groups are listed with distinct invite-only room metadata.');
-  assert(app.includes('Active private group') && app.includes('Only people who open this link appear here.') && app.includes('No seeded agents.') && app.includes('Rooms are invite-only and stay empty until real players open your link.'), 'Friend-room UI promises link-only real invited players instead of seeded agents.');
+  assert(app.includes('command-panel sidebar-nav') && app.includes('Left sidebar') && app.includes('command-scroll') && app.includes('role="navigation"'), 'Navigation renders as a left sidebar drawer with scrollable app navigation.');
+  assert(app.includes('command-room-card') && app.includes('No active group') && app.includes('command-profile-meta'), 'Sidebar includes a structured command-center room and identity summary.');
+  assert(app.includes('formatGroupCreatedAt') && app.includes('groupShareUrl(group.code)') && app.includes('Invite-only') && app.includes('Real players only'), 'Friend groups are listed with distinct invite-only real-player room metadata.');
+  assert(app.includes('Active private group') && app.includes('Only real people who open this link appear here.') && app.includes('No seeded agents in private groups.') && app.includes('Each new group gets a different invite link and starts empty until real players open it.'), 'Friend-room UI promises link-only real invited players instead of seeded agents.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');
@@ -869,7 +869,7 @@ async function liveAudit() {
   const groupPage = await requestText(`${origin}/g/${group}`);
   assert(groupPage.response.ok && groupPage.text.includes('Audit'), 'Live /g/[group] route renders the unique group name.');
   assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-toggle') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as an icon sidebar launcher, not a cramped identity dropdown.');
-  assert(groupPage.text.includes('Only people who open this link'), 'Live friend room copy promises link-only real-player membership.');
+  assert(groupPage.text.includes('Only real people who open this link'), 'Live friend room copy promises link-only real-player membership.');
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
   assert(rankings.response.ok && rankings.text.includes('Audit') && rankings.text.includes('friend rankings'), 'Live rankings route opens the requested friend board.');
