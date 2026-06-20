@@ -22,6 +22,7 @@ const STORE_KEY = 'world-iq:room-messages:v1';
 const STORE_FILE = 'world-iq-room-messages.json';
 const MAX_MESSAGES = 3000;
 const MAX_ROOM_MESSAGES = 80;
+const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
 
 function emptyStore(): RoomMessageStore {
   return { messages: [] };
@@ -46,6 +47,10 @@ function sanitizeText(value: unknown, fallback: string, max = 80) {
 function sanitizeBody(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
+function hasPlayerSession(request: NextRequest) {
+  return Boolean(request.cookies.get(PLAYER_API_KEY_COOKIE)?.value);
 }
 
 function isRoomMessage(value: unknown): value is RoomMessage {
@@ -102,6 +107,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!hasPlayerSession(request)) {
+    return NextResponse.json({ error: 'Connect an IQ WARS account before posting room chat.' }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
     return NextResponse.json({ error: 'Invalid message.' }, { status: 400 });

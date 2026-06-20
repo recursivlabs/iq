@@ -370,7 +370,9 @@ async function sourceAudit() {
   assert(profiles.includes('publicProfile(profile)') && profiles.includes('profilePublic'), 'Profile API applies public/privacy controls before returning profiles.');
   assert(profiles.includes('MAX_PROFILE_ATTEMPTS') && profiles.includes('MAX_PROFILE_ANSWERS') && profiles.includes('MAX_PROFILE_SCORE'), 'Profile API clamps public score/history metadata to the supported daily-history range.');
   assert(profiles.includes('xVerified: false') && !profiles.includes('Boolean(value.xVerified)') && profiles.includes('normalizeProfile(profile as Record<string, unknown>)'), 'Profile API does not trust client-submitted X badges or legacy stored profile flags.');
+  assert(profiles.includes('PLAYER_API_KEY_COOKIE') && profiles.includes('Connect an IQ WARS account before saving a profile.'), 'Profile write API requires a connected IQ WARS account cookie.');
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
+  assert(roomMessages.includes('PLAYER_API_KEY_COOKIE') && roomMessages.includes('Connect an IQ WARS account before posting room chat.'), 'Room chat write API requires a connected IQ WARS account cookie.');
   assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
   assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
   assert(remindersSend.includes('IQ_REMINDER_CRON_TOKEN') && remindersSend.includes("process.env.NODE_ENV === 'production'"), 'Reminder cron send API requires explicit production configuration.');
@@ -457,6 +459,7 @@ async function liveAudit() {
     timeZone: 'America/New_York',
     source: 'audit',
   };
+  const playerCookieHeaders = { Cookie: 'iqwars_player_api_key=audit-player-key' };
 
   const before = await requestJson(`${origin}/api/leaderboards?day=${day}&group=${group}&agents=false`);
   assert(before.response.ok, 'Live leaderboard GET accepts agents=false.');
@@ -515,9 +518,21 @@ async function liveAudit() {
     assert(acceptedRaceClaims.length === 1 && rejectedRaceClaims.length === 1, 'Live persistent username claims are race-safe under concurrent duplicate requests.');
   }
 
-  const profilePost = await requestJson(`${origin}/api/profiles`, {
+  const unauthenticatedProfilePost = await requestJson(`${origin}/api/profiles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: `${playerId}-anonymous-profile`,
+      slug: `${profileSlug}_anonymous`,
+      username: `${username}_anonymous`,
+      displayName: 'Anonymous Profile',
+    }),
+  });
+  assert(unauthenticatedProfilePost.response.status === 401, 'Live profile API rejects anonymous profile writes.');
+
+  const profilePost = await requestJson(`${origin}/api/profiles`, {
+    method: 'POST',
+    headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       id: playerId,
       slug: profileSlug,
@@ -543,7 +558,7 @@ async function liveAudit() {
 
   const spoofProfilePost = await requestJson(`${origin}/api/profiles`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       id: `${playerId}-spoof`,
       slug: spoofProfileSlug,
@@ -583,9 +598,15 @@ async function liveAudit() {
 
   const roomMissing = await requestJson(`${origin}/api/rooms/messages`);
   assert(roomMissing.response.status === 400, 'Live room message API rejects missing room reads.');
-  const roomPost = await requestJson(`${origin}/api/rooms/messages`, {
+  const unauthenticatedRoomPost = await requestJson(`${origin}/api/rooms/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groupCode: group, playerId, displayName: 'Audit Player', username, body: roomBody }),
+  });
+  assert(unauthenticatedRoomPost.response.status === 401, 'Live room message API rejects anonymous room chat writes.');
+  const roomPost = await requestJson(`${origin}/api/rooms/messages`, {
+    method: 'POST',
+    headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({ groupCode: group, playerId, displayName: 'Audit Player', username, body: roomBody }),
   });
   assert(roomPost.response.ok && roomPost.data.message?.body === roomBody, 'Live room message API accepts a sanitized room message.');
