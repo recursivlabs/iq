@@ -4066,6 +4066,7 @@ export default function Home({
   const navScore = localProfile.score === null ? copy('Unrated') : String(localProfile.score);
   const navStatus = recursivAccount ? copy('Logged in') : copy('Logged out');
   const liveCountLabel = `${livePresence.active.toLocaleString()} ${copy('live')}`;
+  const commandLabel = `${copy('Open command center')}: ${navIdentity}, ${copy('Score')} ${navScore}`;
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -4084,14 +4085,10 @@ export default function Home({
           <button
             className={`command-toggle ${recursivAccount ? 'logged-in' : 'logged-out'}`}
             aria-expanded={navOpen}
-            aria-label={copy('Open command center')}
+            aria-label={commandLabel}
             onClick={() => setNavOpen((open) => !open)}
           >
             <span className="menu-mark" aria-hidden="true"><i /><i /><i /></span>
-            <span className="command-id">
-              <strong>{navIdentity}</strong>
-              <em>{navScore}</em>
-            </span>
           </button>
         </div>
         {navOpen ? (
@@ -4122,7 +4119,7 @@ export default function Home({
             </div>
             <div className="command-groups">
               <div className="command-section-head">
-                <span>{copy('Groups')}</span>
+                <span>{copy('Groups')} · {groupRecords.length}</span>
                 <button onClick={createGroup}>{copy('New')}</button>
               </div>
               <div className="command-group-list">
@@ -5071,12 +5068,11 @@ export default function Home({
         }
         .command-toggle {
           display: inline-grid;
-          grid-template-columns: 22px minmax(0, auto);
-          align-items: center;
-          gap: 12px;
+          place-items: center;
           min-height: 48px;
-          min-width: 138px;
-          padding: 8px 12px;
+          width: 48px;
+          min-width: 48px;
+          padding: 0;
           border: 1px solid rgba(255,255,255,.16);
           border-radius: 4px;
           background: rgba(255,255,255,.035);
@@ -5088,7 +5084,7 @@ export default function Home({
         .menu-mark {
           display: grid;
           gap: 4px;
-          width: 18px;
+          width: 20px;
         }
         .menu-mark i {
           display: block;
@@ -5305,7 +5301,7 @@ export default function Home({
         }
         .command-actions {
           display: grid;
-          grid-template-columns: 1fr auto;
+          grid-template-columns: 1fr;
           gap: 8px;
           padding-top: 12px;
           border-top: 1px solid rgba(255,255,255,.08);
@@ -7179,17 +7175,9 @@ export default function Home({
             letter-spacing: .12em;
           }
           .command-toggle {
-            min-width: 92px;
             min-height: 42px;
-            gap: 8px;
-            padding: 7px 8px;
-          }
-          .command-id strong {
-            max-width: 58px;
-            font-size: 9px;
-          }
-          .command-id em {
-            font-size: 8px;
+            width: 42px;
+            min-width: 42px;
           }
           .command-panel {
             width: min(360px, calc(100vw - 18px));
