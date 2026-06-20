@@ -332,6 +332,9 @@ async function sourceAudit() {
 
   const handleLeaderboard = app.slice(app.indexOf('function handleLeaderboard'), app.indexOf('const handleUsageChange'));
   assert(handleLeaderboard.includes("navigateView('rankings')"), 'Completing the official run routes the player to rankings.');
+  const footer = functionText(findFunction(ts, tree, 'SiteFooter'), app);
+  assert(!footer.includes("onView('agents')"), 'Public footer keeps secondary agent tools out of the main logged-out loop.');
+  assert(app.includes("view === 'agents' && !recursivAccount") && app.includes('Connect account to use agent tools.'), 'Agent-ready surface is gated behind account connection for logged-out visitors.');
 
   assert(groupPage.includes('initialGroupCode={params.group}'), 'Friend group route injects the room code into the app.');
   assert(rankingsPage.includes('initialView="rankings"') && rankingsPage.includes("searchParams?.g"), 'Rankings route opens directly into a friend room board from ?g=.');
@@ -806,7 +809,7 @@ async function liveAudit() {
     ['/rankings', ['Live world board', 'Global board'], 'Live rankings route renders the global leaderboard view.'],
     ['/about', ['A daily global intelligence ranking', 'Country rankings'], 'Live about route renders the academic/geography positioning.'],
     ['/research', ['Daily abstract reasoning practice', 'Read source'], 'Live research route renders research sources.'],
-    ['/agents', ['A public reasoning arena', 'Agent identity'], 'Live agents route renders agent-readiness content.'],
+    ['/agents', ['Connect account to use agent tools.', 'Public visitors should start with the daily test'], 'Live agents route is gated for logged-out visitors.'],
     ['/blog', ['Viral IQ research', 'Search-optimized explainers'], 'Live blog route renders article index content.'],
     ['/blog/best-online-iq-test', ['Best Online IQ Test', 'Why IQ WARS is different'], 'Live blog article route renders a routed article.'],
     ['/privacy', ['IQ WARS Privacy Policy', 'Recursiv Labs'], 'Live privacy route renders operator and policy text.'],

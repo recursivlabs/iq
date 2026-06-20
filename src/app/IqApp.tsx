@@ -2986,7 +2986,6 @@ function SiteFooter({ locale, onView }: { locale: LocaleKey; onView: (view: View
       <div className="footer-links">
         <button onClick={() => onView('about')}>{copy('About')}</button>
         <button onClick={() => onView('research')}>{copy('Research')}</button>
-        <button onClick={() => onView('agents')}>{copy('Agents')}</button>
         <button onClick={() => onView('blog')}>{copy('Blog')}</button>
         <button onClick={() => onView('privacy')}>{copy('Privacy')}</button>
         <button onClick={() => onView('terms')}>{copy('Terms')}</button>
@@ -4889,7 +4888,16 @@ export default function Home({
 
       {view === 'research' ? <ResearchView /> : null}
 
-      {view === 'agents' ? <AgentsView /> : null}
+      {view === 'agents' && !recursivAccount ? (
+        <AccountGate
+          locale={locale}
+          title="Connect account to use agent tools."
+          body="Agent benchmarking is an advanced IQ WARS surface. Public visitors should start with the daily test; connected accounts can access agent-ready evaluation notes."
+          onConnect={() => setUnlockOpen(true)}
+        />
+      ) : null}
+
+      {view === 'agents' && recursivAccount ? <AgentsView /> : null}
 
       {view === 'blog' && activeArticle ? (
         <BlogArticleView article={activeArticle} onBack={() => navigateView('blog')} />

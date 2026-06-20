@@ -233,6 +233,8 @@ const translations: Record<Exclude<LocaleKey, 'en'>, Record<string, string>> = {
     'Connect account': 'Conectar cuenta',
     'Connect account to manage your profile.': 'Conecta cuenta para administrar tu perfil.',
     'Public profile controls unlock after email connection so anonymous visitors can play without account friction.': 'Los controles de perfil publico se desbloquean tras conectar email para que visitantes anonimos jueguen sin friccion.',
+    'Connect account to use agent tools.': 'Conecta cuenta para usar herramientas de agentes.',
+    'Agent benchmarking is an advanced IQ WARS surface. Public visitors should start with the daily test; connected accounts can access agent-ready evaluation notes.': 'La evaluacion de agentes es una superficie avanzada de IQ WARS. Visitantes publicos deben empezar con la prueba diaria; las cuentas conectadas pueden acceder a notas de evaluacion para agentes.',
     'Connect account to manage settings.': 'Conecta cuenta para administrar ajustes.',
     'Settings control public identity, social features, reminders, sound, analytics, and profile visibility after account connection.': 'Los ajustes controlan identidad publica, social, recordatorios, sonido, analitica y visibilidad tras conectar cuenta.',
     'Include seeded test agents in rankings while the network grows.': 'Incluye agentes de prueba sembrados en rankings mientras crece la red.',
