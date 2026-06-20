@@ -432,6 +432,7 @@ async function sourceAudit() {
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
+  assert(audit.includes('Live durable leaderboard/geography readback skipped because storage is ephemeral.') && audit.includes('Live durable leaderboard/geography readback cannot be verified without persistent storage.'), 'Live audit only treats durable leaderboard/geography readback as required when persistent storage is configured.');
   assert(audit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && audit.includes('Live authenticated social-write success checks skipped'), 'Live audit only runs authenticated social-write success checks with a real audit player key.');
   assert(audit.includes("['/privacy'") && audit.includes("['/terms'") && audit.includes("['/blog/best-online-iq-test'") && audit.includes('assertLivePage'), 'Live audit covers the public page route surface.');
 
@@ -925,12 +926,18 @@ async function liveAudit() {
   const groupRows = after.data.group || [];
   const allRows = [...globalRows, ...groupRows];
   assert(after.response.ok, 'Live leaderboard GET succeeds after submit.');
-  assert(globalRows.some((row) => row.playerId === playerId), 'Live global board includes the submitted real player.');
-  assert(groupRows.some((row) => row.playerId === playerId && row.groupCode === group), 'Live friend room board includes only the submitted room player.');
   assert(!allRows.some((row) => String(row.playerId || '').startsWith('agent-')), 'Live agents=false response still excludes seeded agents after submit.');
-  assert((after.data.geography?.countries || []).some((row) => row.label === 'United States' || row.id === 'US'), 'Live geography countries include submitted geo.');
-  assert((after.data.geography?.cities || []).some((row) => row.label === 'New York'), 'Live geography cities include submitted geo.');
-  assert((after.data.geography?.towns || []).some((row) => row.label === 'New York'), 'Live geography towns include submitted geo.');
+  if (persistent && verified && storageLaunchReady) {
+    assert(globalRows.some((row) => row.playerId === playerId), 'Live global board includes the submitted real player.');
+    assert(groupRows.some((row) => row.playerId === playerId && row.groupCode === group), 'Live friend room board includes only the submitted room player.');
+    assert((after.data.geography?.countries || []).some((row) => row.label === 'United States' || row.id === 'US'), 'Live geography countries include submitted geo.');
+    assert((after.data.geography?.cities || []).some((row) => row.label === 'New York'), 'Live geography cities include submitted geo.');
+    assert((after.data.geography?.towns || []).some((row) => row.label === 'New York'), 'Live geography towns include submitted geo.');
+  } else if (requirePersistent) {
+    failures.push('Live durable leaderboard/geography readback cannot be verified without persistent storage.');
+  } else {
+    warn('Live durable leaderboard/geography readback skipped because storage is ephemeral.');
+  }
 
   const geoCheck = await requestJson(`${origin}/api/geo?tz=America%2FNew_York&locale=en-US`);
   assert(geoCheck.response.ok && geoCheck.data.countryCode === 'US', 'Live geo endpoint infers country from browser locale fallback.');
