@@ -13,6 +13,7 @@ const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
 const healthPath = path.join(root, 'src/app/api/health/route.ts');
+const readyPath = path.join(root, 'src/app/api/ready/route.ts');
 const playerAuthPath = path.join(root, 'src/app/api/_lib/playerAuth.ts');
 const usernamePath = path.join(root, 'src/app/api/username/route.ts');
 const profilesPath = path.join(root, 'src/app/api/profiles/route.ts');
@@ -220,6 +221,7 @@ async function sourceAudit() {
   const attempts = source(attemptsPath);
   const store = source(storePath);
   const health = source(healthPath);
+  const ready = source(readyPath);
   const playerAuth = source(playerAuthPath);
   const geo = source(geoPath);
   const username = source(usernamePath);
@@ -250,6 +252,7 @@ async function sourceAudit() {
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(healthPath), 'Storage health API route exists.');
+  assert(existsSync(readyPath), 'Launch readiness API route exists.');
   assert(existsSync(playerAuthPath), 'Shared player auth validator exists.');
   assert(existsSync(usernamePath), 'Username API route exists.');
   assert(existsSync(profilesPath), 'Profile API route exists.');
@@ -321,6 +324,19 @@ async function sourceAudit() {
   assert(simulatedRounds.every((round) => round.selected.length === questionCountNumber && new Set(round.selected).size === questionCountNumber), 'Simulated daily official runs contain the configured number of unique questions.');
   assert(new Set(simulatedSelections).size === simulatedSelections.length, 'Simulated official question rotation has no repeated questions across the full no-repeat window.');
   assert(new Set(simulatedRounds.map((round) => round.starterId)).size === Math.min(noRepeatDaysNumber, starterIds.length), 'Simulated official starter question rotates across consecutive days.');
+  const simulatedPlayers = Array.from({ length: 12 }, (_, index) => `audit-player-${index + 1}`);
+  const simulatedFirstDays = simulatedPlayers.map((playerSeed) => simulateOfficialQuestionRotation({
+    ids: officialIds,
+    starterIds,
+    questionCount: questionCountNumber,
+    days: noRepeatDaysNumber,
+    playerSeed,
+  }));
+  const firstDayStarters = simulatedFirstDays.map((rounds) => rounds[0]?.starterId || '');
+  const firstDaySets = simulatedFirstDays.map((rounds) => (rounds[0]?.selected || []).join(','));
+  assert(new Set(firstDayStarters).size >= Math.min(6, starterIds.length), 'Simulated fresh players do not all start on the same official question.');
+  assert(new Set(firstDaySets).size >= Math.min(8, simulatedPlayers.length), 'Simulated fresh players receive varied first-day official question sets.');
+  assert(simulatedFirstDays.every((rounds) => new Set(rounds.flatMap((round) => round.selected)).size === questionCountNumber * noRepeatDaysNumber), 'Simulated official question rotation avoids repeats for every audited fresh player across the full no-repeat window.');
 
   const buildGlobe = functionText(findFunction(ts, tree, 'buildGlobeRegions'), app);
   assert(buildGlobe.includes('geography.countries') && buildGlobe.includes('geography.cities.slice') && buildGlobe.includes('geography.towns.slice'), 'Globe regions derive only from ranked geography board rows.');
@@ -406,6 +422,7 @@ async function sourceAudit() {
   assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes("['GET', key]"), 'Persistent store health verifies Redis/KV with a write/read round trip.');
   assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('releaseRedisLock'), 'Shared store serializes read-modify-write updates locally and with Redis locks.');
   assert(health.includes('launchReady') && health.includes('verified') && health.includes('status = storage.persistent && !storage.verified ? 503 : 200'), 'Health API exposes launch readiness and fails broken persistent storage configs.');
+  assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage is launch-ready.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
@@ -491,6 +508,13 @@ async function liveAudit() {
     failures.push(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
   } else {
     warn(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
+  }
+
+  const ready = await requestJson(`${origin}/api/ready`);
+  if (persistent && verified && launchReady) {
+    assert(ready.response.ok && ready.data.ok === true && ready.data.launchReady === true, 'Live readiness endpoint passes only when launch storage is verified.');
+  } else {
+    assert(ready.response.status === 503 && ready.data.launchReady === false, 'Live readiness endpoint fails closed until launch storage is verified.');
   }
 
   const usernameInvalid = await requestJson(`${origin}/api/username?username=ab`);
