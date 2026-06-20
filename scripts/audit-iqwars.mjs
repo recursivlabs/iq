@@ -27,6 +27,7 @@ const authVerifyPath = path.join(root, 'src/app/api/recursiv-auth/verify-code/ro
 const xConnectPath = path.join(root, 'src/app/api/x/connect/route.ts');
 const xCallbackPath = path.join(root, 'src/app/api/x/callback/route.ts');
 const xVerifyPath = path.join(root, 'src/app/api/x/verify-post/route.ts');
+const apiDaysPath = path.join(root, 'src/app/api/_lib/days.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const pageRoutePaths = [
@@ -67,6 +68,10 @@ function assert(condition, message) {
 
 function source(file) {
   return readFileSync(file, 'utf8');
+}
+
+function utcDayKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);
 }
 
 function findArg(name) {
@@ -227,6 +232,7 @@ async function sourceAudit() {
   const xConnect = source(xConnectPath);
   const xCallback = source(xCallbackPath);
   const xVerify = source(xVerifyPath);
+  const apiDays = source(apiDaysPath);
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
@@ -249,6 +255,7 @@ async function sourceAudit() {
   assert(existsSync(checkoutStatusPath), 'Checkout status API route exists.');
   assert(existsSync(authSendPath) && existsSync(authVerifyPath), 'Recursiv email auth API routes exist.');
   assert(existsSync(xConnectPath) && existsSync(xCallbackPath) && existsSync(xVerifyPath), 'X verification API routes exist.');
+  assert(existsSync(apiDaysPath), 'Shared API board-day validator exists.');
   assert(pageRoutePaths.every((routePath) => existsSync(routePath)), 'All public page route files exist.');
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
@@ -336,6 +343,7 @@ async function sourceAudit() {
   assert(app.includes('No seeded agents.') && app.includes('Rooms are invite-only and stay empty until real players open your link.'), 'Friend-room UI promises real invited players instead of seeded agents.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
+  assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');
   assert(leaderboard.includes("!entry.playerId.startsWith('agent-')"), 'Friend group leaderboard excludes seeded agent players.');
   assert(leaderboard.includes('geo: sanitizeGeo(body.geo)'), 'Leaderboard submissions persist sanitized geography snapshots.');
   assert(leaderboard.includes('geography: geographyRows(responseEntries, day)') && leaderboard.includes('geographyRows(entries, day)'), 'Geography boards are computed from the same real leaderboard entry set.');
@@ -343,6 +351,7 @@ async function sourceAudit() {
 
   assert(attempts.includes("STORE_KEY = 'world-iq:official-attempts:v1'"), 'Attempt lock API stores official attempts under a dedicated key.');
   assert(attempts.includes('accepted: false') && attempts.includes('locked: true'), 'Attempt lock API returns an existing lock instead of accepting duplicates.');
+  assert(attempts.includes('sanitizeBoardDay') && attempts.includes('Invalid attempt day.'), 'Attempt lock API rejects arbitrary stale/future official attempt days.');
   assert(attempts.includes('readJsonStore') && attempts.includes('updateJsonStore'), 'Attempt lock API uses the shared serialized store.');
 
   assert(username.includes('isValidUsername') && username.includes('status: 409'), 'Username API validates format and rejects claims owned by another player.');
@@ -421,7 +430,8 @@ async function liveAudit() {
   const username = `audit_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
   const profileSlug = `${username}_profile`;
   const roomBody = `audit message ${randomUUID().slice(0, 8)}`;
-  const day = '2099-12-31';
+  const day = utcDayKey();
+  const invalidFutureDay = '2099-12-31';
   const geo = {
     country: 'United States',
     countryCode: 'US',
@@ -436,6 +446,8 @@ async function liveAudit() {
   assert(before.response.ok, 'Live leaderboard GET accepts agents=false.');
   const beforeRows = [...(before.data.global || []), ...(before.data.group || [])];
   assert(!beforeRows.some((row) => String(row.playerId || '').startsWith('agent-')), 'Live agents=false response contains no seeded agents before submit.');
+  const farFutureBoard = await requestJson(`${origin}/api/leaderboards?day=${invalidFutureDay}&agents=false`);
+  assert(farFutureBoard.response.status === 400, 'Live leaderboard API rejects arbitrary future board days.');
 
   const health = await requestJson(`${origin}/api/health`);
   assert(health.response.ok && health.data.ok === true, 'Live health endpoint responds when storage is not misconfigured.');
@@ -591,6 +603,9 @@ async function liveAudit() {
   });
   assert(xVerifyMissing.response.status === 400, 'Live X post verification route rejects missing handle/token before hitting X.');
 
+  const farFutureAttempt = await requestJson(`${origin}/api/attempts?day=${invalidFutureDay}&playerId=${encodeURIComponent(playerId)}`);
+  assert(farFutureAttempt.response.status === 400, 'Live attempt API rejects arbitrary future attempt days.');
+
   const attempt = {
     day,
     playerId,
@@ -619,7 +634,7 @@ async function liveAudit() {
 
   if (persistent && verified && launchReady) {
     const racePlayerId = `audit-race-player-${randomUUID()}`;
-    const raceAttempt = { ...attempt, playerId: racePlayerId, day: '2099-12-30' };
+    const raceAttempt = { ...attempt, playerId: racePlayerId };
     const raceAttempts = await Promise.all([
       requestJson(`${origin}/api/attempts`, {
         method: 'POST',
@@ -640,6 +655,26 @@ async function liveAudit() {
 
   const attemptGet = await requestJson(`${origin}/api/attempts?day=${day}&playerId=${encodeURIComponent(playerId)}`);
   assert(attemptGet.response.ok && attemptGet.data.locked === true && attemptGet.data.attempt?.playerId === playerId, 'Live attempt API reads back the server-side daily lock.');
+
+  const futureLeaderboardWrite = await requestJson(`${origin}/api/leaderboards?agents=false`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      day: invalidFutureDay,
+      playerId: `${playerId}-future`,
+      displayName: 'Future Audit',
+      score: 137,
+      rank: '#13,700',
+      percentile: 98.63,
+      correct: 10,
+      total: 12,
+      beatAi: 3,
+      elapsedMs: 390000,
+      speedBonus: 2,
+      geo,
+    }),
+  });
+  assert(futureLeaderboardWrite.response.status === 400, 'Live leaderboard API rejects arbitrary future score writes.');
 
   const post = await requestJson(`${origin}/api/leaderboards?agents=false`, {
     method: 'POST',
@@ -662,7 +697,7 @@ async function liveAudit() {
       geo,
     }),
   });
-  assert(post.response.ok && post.data.accepted === true, 'Live leaderboard POST accepts a real future-dated audit entry.');
+  assert(post.response.ok && post.data.accepted === true, 'Live leaderboard POST accepts a real same-day audit entry.');
 
   const after = await requestJson(`${origin}/api/leaderboards?day=${day}&group=${group}&agents=false`);
   const globalRows = after.data.global || [];

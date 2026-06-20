@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { sanitizeBoardDay } from '../_lib/days';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -268,7 +269,10 @@ function groupRows(entries: SocialEntry[], day: string, groupCode: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const day = sanitizeText(request.nextUrl.searchParams.get('day'), new Date().toISOString().slice(0, 10), 10);
+  const day = sanitizeBoardDay(request.nextUrl.searchParams.get('day'));
+  if (!day) {
+    return NextResponse.json({ error: 'Invalid leaderboard day.' }, { status: 400 });
+  }
   const groupCode = sanitizeGroupCode(request.nextUrl.searchParams.get('group'));
   const includeAgents = request.nextUrl.searchParams.get('agents') !== 'false';
   const store = await readStore();
@@ -291,7 +295,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid leaderboard entry.' }, { status: 400 });
   }
 
-  const day = sanitizeText(body.day, new Date().toISOString().slice(0, 10), 10);
+  const day = sanitizeBoardDay(body.day);
+  if (!day) {
+    return NextResponse.json({ error: 'Invalid leaderboard day.' }, { status: 400 });
+  }
   const playerId = sanitizeText(body.playerId, '', 80);
   if (!playerId) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });

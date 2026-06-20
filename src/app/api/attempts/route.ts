@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { sanitizeBoardDay } from '../_lib/days';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -39,11 +40,6 @@ function sanitizeText(value: unknown, fallback: string, max = 80) {
 
 function sanitizePlayerId(value: unknown) {
   return sanitizeText(value, '', 100).replace(/[^a-zA-Z0-9:_-]+/g, '').slice(0, 100);
-}
-
-function sanitizeDay(value: unknown) {
-  const day = sanitizeText(value, new Date().toISOString().slice(0, 10), 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : new Date().toISOString().slice(0, 10);
 }
 
 function cleanNumber(value: unknown, min: number, max: number) {
@@ -106,7 +102,10 @@ function publicAttempt(attempt: OfficialAttempt) {
 }
 
 export async function GET(request: NextRequest) {
-  const day = sanitizeDay(request.nextUrl.searchParams.get('day'));
+  const day = sanitizeBoardDay(request.nextUrl.searchParams.get('day'));
+  if (!day) {
+    return NextResponse.json({ error: 'Invalid attempt day.' }, { status: 400 });
+  }
   const playerId = sanitizePlayerId(request.nextUrl.searchParams.get('playerId'));
   if (!playerId) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
@@ -130,7 +129,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid attempt.' }, { status: 400 });
   }
 
-  const day = sanitizeDay(body.day);
+  const day = sanitizeBoardDay(body.day);
+  if (!day) {
+    return NextResponse.json({ error: 'Invalid attempt day.' }, { status: 400 });
+  }
   const playerId = sanitizePlayerId(body.playerId);
   if (!playerId) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
