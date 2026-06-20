@@ -3,12 +3,16 @@ import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import tls from 'node:tls';
+import { Pool } from 'pg';
+import type { PoolClient } from 'pg';
 
 type RedisValue = string | number | null | RedisValue[];
 
 const memoryStore = globalThis as typeof globalThis & {
   __worldIqStore?: Record<string, unknown>;
   __worldIqLocks?: Record<string, Promise<void>>;
+  __worldIqPgPool?: Pool;
+  __worldIqPgTableReady?: boolean;
 };
 
 function redisRestConfig() {
@@ -27,11 +31,31 @@ function redisUrlConfig() {
   }
 }
 
+function postgresUrlConfig() {
+  const url = process.env.IQWARS_DATABASE_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL || '';
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function postgresTableName() {
+  const name = process.env.IQWARS_STORE_TABLE || 'iqwars_json_store';
+  return /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/.test(name) ? name : null;
+}
+
 function storageConfigurationError() {
   const restUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || '';
   const restToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '';
+  const postgresUrl = process.env.IQWARS_DATABASE_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL || '';
   if (Boolean(restUrl) !== Boolean(restToken)) return 'incomplete_redis_rest_config';
   if (process.env.REDIS_URL && !redisUrlConfig()) return 'invalid_redis_url';
+  if (postgresUrl && !postgresUrlConfig()) return 'invalid_postgres_url';
+  if (postgresUrl && !postgresTableName()) return 'invalid_postgres_table';
   return null;
 }
 
@@ -39,10 +63,19 @@ export function hasRedisStore() {
   return Boolean(redisRestConfig() || redisUrlConfig());
 }
 
+export function hasPostgresStore() {
+  return Boolean(postgresUrlConfig());
+}
+
+export function hasPersistentStore() {
+  return Boolean(hasRedisStore() || hasPostgresStore());
+}
+
 export function storeProvider() {
   if (storageConfigurationError()) return 'misconfigured';
   if (redisRestConfig()) return 'redis-rest';
   if (redisUrlConfig()) return 'redis-url';
+  if (postgresUrlConfig()) return 'postgres';
   return 'ephemeral-fallback';
 }
 
@@ -171,6 +204,67 @@ async function redisCommand(args: string[]) {
   return await redisTcpCommand(args);
 }
 
+function postgresConnectionString() {
+  const parsed = postgresUrlConfig();
+  return parsed ? parsed.toString() : '';
+}
+
+function postgresSsl(parsed: URL) {
+  const sslMode = parsed.searchParams.get('sslmode');
+  if (sslMode === 'disable') return false;
+  if (sslMode === 'require' || parsed.hostname.includes('neon.tech')) return { rejectUnauthorized: false };
+  return undefined;
+}
+
+function postgresPool() {
+  const parsed = postgresUrlConfig();
+  if (!parsed) return null;
+  if (!memoryStore.__worldIqPgPool) {
+    memoryStore.__worldIqPgPool = new Pool({
+      connectionString: postgresConnectionString(),
+      max: 4,
+      idleTimeoutMillis: 20_000,
+      connectionTimeoutMillis: 5_000,
+      ssl: postgresSsl(parsed),
+    });
+  }
+  return memoryStore.__worldIqPgPool;
+}
+
+async function ensurePostgresTable(client: Pool | PoolClient) {
+  if (memoryStore.__worldIqPgTableReady) return;
+  const table = postgresTableName();
+  if (!table) throw new Error('Invalid Postgres store table.');
+  await client.query(`
+    create table if not exists ${table} (
+      key text primary key,
+      value jsonb not null,
+      updated_at timestamptz not null default now()
+    )
+  `);
+  memoryStore.__worldIqPgTableReady = true;
+}
+
+async function postgresReadJsonStore<T>(client: Pool | PoolClient, key: string, fallback: T): Promise<T> {
+  const table = postgresTableName();
+  if (!table) throw new Error('Invalid Postgres store table.');
+  await ensurePostgresTable(client);
+  const result = await client.query<{ value: T }>(`select value from ${table} where key = $1`, [key]);
+  return result.rows[0]?.value ?? fallback;
+}
+
+async function postgresWriteJsonStore<T>(client: Pool | PoolClient, key: string, value: T) {
+  const table = postgresTableName();
+  if (!table) throw new Error('Invalid Postgres store table.');
+  await ensurePostgresTable(client);
+  await client.query(
+    `insert into ${table} (key, value, updated_at)
+     values ($1, $2::jsonb, now())
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    [key, JSON.stringify(value)],
+  );
+}
+
 async function withLocalLock<T>(key: string, task: () => Promise<T>) {
   memoryStore.__worldIqLocks ||= {};
   const pending = memoryStore.__worldIqLocks[key] || Promise.resolve();
@@ -216,6 +310,9 @@ async function releaseRedisLock(key: string, token: string) {
 export async function verifyPersistentStore() {
   const provider = storeProvider();
   const configurationError = storageConfigurationError();
+  const nonce = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const key = 'world-iq:health-check:v1';
+
   if (configurationError) {
     return {
       provider,
@@ -225,6 +322,34 @@ export async function verifyPersistentStore() {
     };
   }
   if (!hasRedisStore()) {
+    if (hasPostgresStore()) {
+      const pool = postgresPool();
+      if (!pool) {
+        return {
+          provider,
+          persistent: true,
+          verified: false,
+          error: 'postgres_not_configured',
+        };
+      }
+      try {
+        await postgresWriteJsonStore(pool, key, { nonce });
+        const stored = await postgresReadJsonStore<{ nonce: string }>(pool, key, { nonce: '' });
+        return {
+          provider,
+          persistent: true,
+          verified: stored.nonce === nonce,
+          error: stored.nonce === nonce ? null : 'roundtrip_mismatch',
+        };
+      } catch (error) {
+        return {
+          provider,
+          persistent: true,
+          verified: false,
+          error: errorMessage(error),
+        };
+      }
+    }
     return {
       provider,
       persistent: false,
@@ -232,9 +357,6 @@ export async function verifyPersistentStore() {
       error: 'not_configured',
     };
   }
-
-  const nonce = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-  const key = 'world-iq:health-check:v1';
 
   try {
     await redisCommand(['SET', key, nonce, 'EX', '120']);
@@ -268,6 +390,9 @@ export async function readJsonStore<T>(key: string, fallback: T, fileName: strin
     return fallback;
   }
 
+  const pool = postgresPool();
+  if (pool) return await postgresReadJsonStore(pool, key, fallback);
+
   if (memoryStore.__worldIqStore[key]) return memoryStore.__worldIqStore[key] as T;
   try {
     const raw = await readFile(fallbackPath(fileName), 'utf8');
@@ -289,6 +414,12 @@ export async function writeJsonStore<T>(key: string, value: T, fileName: string)
     return;
   }
 
+  const pool = postgresPool();
+  if (pool) {
+    await postgresWriteJsonStore(pool, key, value);
+    return;
+  }
+
   await mkdir(path.dirname(fallbackPath(fileName)), { recursive: true });
   await writeFile(fallbackPath(fileName), JSON.stringify(value), 'utf8');
 }
@@ -302,6 +433,24 @@ export async function updateJsonStore<T, R>(
   return await withLocalLock(key, async () => {
     const lockKey = `world-iq:lock:${key}`;
     const token = hasRedisStore() ? await acquireRedisLock(lockKey) : null;
+    const pool = postgresPool();
+    if (!token && pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        await client.query('select pg_advisory_xact_lock(hashtext($1), 0)', [key]);
+        const current = await postgresReadJsonStore<T>(client, key, fallback);
+        const { value, result } = await updater(current);
+        await postgresWriteJsonStore(client, key, value);
+        await client.query('commit');
+        return result;
+      } catch (error) {
+        await client.query('rollback').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     try {
       const current = await readJsonStore<T>(key, fallback, fileName);
       const { value, result } = await updater(current);

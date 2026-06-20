@@ -32,8 +32,11 @@ Production exposes two operational checks:
 - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
 - `KV_REST_API_URL` and `KV_REST_API_TOKEN`
 - `REDIS_URL`
+- `IQWARS_DATABASE_URL`, `POSTGRES_URL`, or `DATABASE_URL`
 
-Without Redis/KV, leaderboards, geography maps, profiles, usernames, presence, reminders, and room messages fall back to serverless `/tmp` storage and are not reliable across deployments or runtime instances.
+Without Redis/KV/Postgres, leaderboards, geography maps, profiles, usernames, presence, reminders, and room messages fall back to serverless `/tmp` storage and are not reliable across deployments or runtime instances.
+
+The SQL path stores JSON app state in a single table, `iqwars_json_store` by default. Override it with `IQWARS_STORE_TABLE` if the database requires a different table name.
 
 The Recursiv envs must point to the same IQ WARS project:
 

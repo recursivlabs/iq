@@ -88,7 +88,7 @@ function findArg(name) {
 const explicitOrigin = findArg('--origin') || process.env.IQWARS_AUDIT_ORIGIN || '';
 const runLive = Boolean(explicitOrigin);
 const origin = explicitOrigin.replace(/\/$/, '');
-const requirePersistent = process.argv.includes('--require-persistent') || process.env.REQUIRE_REDIS === '1';
+const requirePersistent = process.argv.includes('--require-persistent') || process.env.REQUIRE_REDIS === '1' || process.env.REQUIRE_PERSISTENT_STORE === '1';
 
 async function parseTs(file, kind) {
   const ts = await import('typescript');
@@ -420,12 +420,12 @@ async function sourceAudit() {
 
   assert(geo.includes('x-vercel-ip-country') && geo.includes('queryTimeZone') && geo.includes('countryFromLocale'), 'Geo API combines edge headers, timezone, and browser locale fallbacks.');
 
-  assert(store.includes('UPSTASH_REDIS_REST_URL') && store.includes('KV_REST_API_URL') && store.includes('REDIS_URL'), 'Store supports Redis/Upstash/Vercel KV configuration.');
-  assert(store.includes('incomplete_redis_rest_config') && store.includes('invalid_redis_url') && store.includes("'misconfigured'"), 'Store health reports partial or invalid Redis/KV envs as misconfigured instead of silently falling back.');
-  assert(store.includes("path.join('/tmp'"), 'Store has only an ephemeral /tmp fallback when Redis is not configured.');
+  assert(store.includes('UPSTASH_REDIS_REST_URL') && store.includes('KV_REST_API_URL') && store.includes('REDIS_URL') && store.includes('DATABASE_URL'), 'Store supports Redis/Upstash/Vercel KV and Postgres configuration.');
+  assert(store.includes('incomplete_redis_rest_config') && store.includes('invalid_redis_url') && store.includes('invalid_postgres_url') && store.includes("'misconfigured'"), 'Store health reports partial or invalid persistent envs as misconfigured instead of silently falling back.');
+  assert(store.includes("path.join('/tmp'"), 'Store has only an ephemeral /tmp fallback when no persistent store is configured.');
   assert(store.includes('if (!config) return undefined') && store.includes('if (rest !== undefined) return rest'), 'Redis REST command routing preserves nil command results.');
-  assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes("['GET', key]"), 'Persistent store health verifies Redis/KV with a write/read round trip.');
-  assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('releaseRedisLock'), 'Shared store serializes read-modify-write updates locally and with Redis locks.');
+  assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes('postgresWriteJsonStore') && store.includes('postgresReadJsonStore'), 'Persistent store health verifies configured storage with a write/read round trip.');
+  assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('pg_advisory_xact_lock'), 'Shared store serializes read-modify-write updates locally and with persistent store locks.');
   assert(recursivConfig.includes('verifyRecursivProjectAuth') && recursivConfig.includes('/api/v1/users/me') && recursivConfig.includes('/api/v1/databases') && recursivConfig.includes('projectAccess'), 'Recursiv project auth verifier checks both API-key validity and IQ WARS project access.');
   assert(health.includes('launchReady') && health.includes('verified') && health.includes('verifyRecursivProjectAuth') && health.includes('recursivConfiguredButBroken'), 'Health API exposes launch readiness and fails broken persistent storage or configured Recursiv auth.');
   assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('verifyRecursivProjectAuth') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage and Recursiv project access are launch-ready.');
@@ -436,9 +436,9 @@ async function sourceAudit() {
   assert(audit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && audit.includes('Live authenticated social-write success checks skipped'), 'Live audit only runs authenticated social-write success checks with a real audit player key.');
   assert(audit.includes("['/privacy'") && audit.includes("['/terms'") && audit.includes("['/blog/best-online-iq-test'") && audit.includes('assertLivePage'), 'Live audit covers the public page route surface.');
 
-  if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL) {
-    const message = 'No Redis/KV env is visible in this shell; production must configure one or leaderboard/map/profile writes are only ephemeral per runtime.';
-    if (requirePersistent) failures.push(message);
+  if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL && !process.env.IQWARS_DATABASE_URL && !process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
+    const message = 'No persistent store env is visible in this shell; production must configure Redis/KV/Postgres or leaderboard/map/profile writes are only ephemeral per runtime.';
+    if (requirePersistent && !runLive) failures.push(message);
     else warn(message);
   }
 }
@@ -517,9 +517,9 @@ async function liveAudit() {
   if (persistent && verified && storageLaunchReady) {
     pass(`Live storage is persistent and round-trip verified (${provider}).`);
   } else if (requirePersistent) {
-    failures.push(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
+    failures.push(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV/Postgres envs before launch.`);
   } else {
-    warn(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
+    warn(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV/Postgres envs before launch.`);
   }
   if (recursivLaunchReady) {
     pass('Live Recursiv API key is valid and can access the IQ WARS project.');
