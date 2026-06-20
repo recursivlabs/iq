@@ -212,6 +212,10 @@ type OfficialRankRecord = {
   timestamp: number;
 };
 
+type ServerAttemptRecord = OfficialRankRecord & {
+  playerId: string;
+};
+
 type IqProfile = {
   attempts: number;
   answers: number;
@@ -232,7 +236,7 @@ const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
 const OFFICIAL_RANK_STORAGE_KEY = 'world-iq-official-rank';
 const OFFICIAL_HISTORY_STORAGE_KEY = 'world-iq-official-history';
 const OFFICIAL_HISTORY_LIMIT = 60;
-const QUESTION_ORDER_STORAGE_KEY = 'world-iq-question-order-v2';
+const QUESTION_ORDER_STORAGE_KEY = 'world-iq-question-order-v3';
 const QUESTION_STARTER_HISTORY_STORAGE_KEY = 'world-iq-question-starters-v2';
 const PLAYER_ID_STORAGE_KEY = 'world-iq-player-id';
 const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
@@ -1196,11 +1200,22 @@ function chooseStarterId(mode: ModeKey, candidateIds: string[]) {
   return starter;
 }
 
-function orderPuzzlesForStarter(puzzles: Puzzle[], starterId: string) {
-  if (!starterId) return puzzles;
-  const starter = puzzles.find((puzzle) => puzzle.id === starterId);
-  if (!starter) return puzzles;
-  return [starter, ...puzzles.filter((puzzle) => puzzle.id !== starterId)];
+function questionOrderSeed(mode: ModeKey) {
+  const playerSeed = typeof window === 'undefined' ? 'server' : readPlayerId();
+  return `${localDayKey()}:${mode}:${playerSeed}:question-order`;
+}
+
+function permutedQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterId: string) {
+  const seed = questionOrderSeed(mode);
+  const starter = starterId ? puzzles.find((puzzle) => puzzle.id === starterId) : null;
+  const rest = puzzles
+    .filter((puzzle) => puzzle.id !== starter?.id)
+    .sort((a, b) => {
+      const left = hashNumber(`${seed}:${a.id}`);
+      const right = hashNumber(`${seed}:${b.id}`);
+      return left - right || a.id.localeCompare(b.id);
+    });
+  return starter ? [starter, ...rest] : rest;
 }
 
 function normalizeQuestionOrderRecord(value: unknown, mode: ModeKey, validIds: string[]) {
@@ -1232,7 +1247,7 @@ function stableQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterCandidates
   const saved = readQuestionOrder(mode, validIds);
   if (saved) return saved.map((id) => puzzles.find((puzzle) => puzzle.id === id)!).filter(Boolean);
   const starterId = chooseStarterId(mode, starterCandidates.map((puzzle) => puzzle.id));
-  const ordered = orderPuzzlesForStarter(puzzles, starterId);
+  const ordered = permutedQuestionOrder(mode, puzzles, starterId);
   writeQuestionOrder(mode, ordered.map((puzzle) => puzzle.id));
   return ordered;
 }
@@ -1427,6 +1442,46 @@ function writeOfficialHistory(history: OfficialRankRecord[]) {
 function saveOfficialHistory(record: OfficialRankRecord) {
   const existing = readOfficialHistory().filter((entry) => entry.day !== record.day);
   writeOfficialHistory([record, ...existing]);
+}
+
+function syncLocalOfficialLock(record: OfficialRankRecord) {
+  writeOfficialRank(record);
+  saveOfficialHistory(record);
+  if (record.day === localDayKey()) {
+    writePlayUsage({ day: record.day, count: DAILY_PLAY_LIMIT });
+  }
+}
+
+function normalizeServerAttempt(value: unknown): ServerAttemptRecord | null {
+  if (!value || typeof value !== 'object') return null;
+  const attempt = value as Partial<ServerAttemptRecord>;
+  if (typeof attempt.playerId !== 'string' || !isOfficialRankRecord(attempt)) return null;
+  return attempt as ServerAttemptRecord;
+}
+
+async function readServerOfficialAttempt(playerId: string): Promise<ServerAttemptRecord | null> {
+  if (!playerId) return null;
+  const params = new URLSearchParams({ day: localDayKey(), playerId });
+  const response = await fetch(`/api/attempts?${params.toString()}`, { cache: 'no-store' });
+  const data = await response.json().catch(() => null) as { locked?: unknown; attempt?: unknown } | null;
+  if (!response.ok || !data?.locked) return null;
+  return normalizeServerAttempt(data.attempt);
+}
+
+async function claimServerOfficialAttempt(playerId: string, record: OfficialRankRecord): Promise<{ accepted: boolean; attempt: ServerAttemptRecord | null }> {
+  const response = await fetch('/api/attempts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...record, playerId }),
+  });
+  const data = await response.json().catch(() => null) as { accepted?: unknown; attempt?: unknown; error?: unknown } | null;
+  if (!response.ok) {
+    throw new Error(typeof data?.error === 'string' ? data.error : 'Could not claim official attempt.');
+  }
+  return {
+    accepted: data?.accepted === true,
+    attempt: normalizeServerAttempt(data?.attempt),
+  };
 }
 
 function getIqProfile(history: OfficialRankRecord[]): IqProfile {
@@ -2689,6 +2744,8 @@ function Result({
   onRankings,
   groupCode,
   groupName,
+  playerId,
+  onServerAttemptLocked,
 }: {
   locale: LocaleKey;
   mode: ModeKey;
@@ -2699,6 +2756,8 @@ function Result({
   onRankings: () => void;
   groupCode: string | null;
   groupName: string;
+  playerId: string;
+  onServerAttemptLocked: (record: OfficialRankRecord) => void;
 }) {
   const copy = (text: string) => translate(locale, text);
   const [shareState, setShareState] = React.useState(groupCode ? 'Invite friends' : 'Share result');
@@ -2741,24 +2800,47 @@ function Result({
       speedBonus,
       timestamp: Date.now(),
     };
-    writeOfficialRank(officialRank);
-    saveOfficialHistory(officialRank);
-    consumePlay();
-    setResultStatus('official');
 
-    const entry: LeaderboardEntry = {
-      id: `official-${localDayKey()}`,
-      name: 'You',
-      score,
-      mode: copy('Today\'s IQ WARS'),
-      accuracy: `${correct}/${total}`,
-      qualifier: beatAi > 0 ? `${beatAi} ${copy('AI misses')}` : copy('official daily rank'),
-      timestamp: Date.now(),
-      local: true,
+    let cancelled = false;
+    async function submitOfficial() {
+      const id = playerId || readPlayerId();
+      try {
+        const claim = await claimServerOfficialAttempt(id, officialRank);
+        if (cancelled) return;
+        if (!claim.accepted && claim.attempt) {
+          syncLocalOfficialLock(claim.attempt);
+          onServerAttemptLocked(claim.attempt);
+          setResultStatus('practice');
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        // Keep the local first-run path available if the server lock endpoint is temporarily unavailable.
+      }
+
+      syncLocalOfficialLock(officialRank);
+      consumePlay();
+      setResultStatus('official');
+
+      const entry: LeaderboardEntry = {
+        id: `official-${localDayKey()}`,
+        name: 'You',
+        score,
+        mode: copy('Today\'s IQ WARS'),
+        accuracy: `${correct}/${total}`,
+        qualifier: beatAi > 0 ? `${beatAi} ${copy('AI misses')}` : copy('official daily rank'),
+        timestamp: Date.now(),
+        local: true,
+      };
+      saveLeaderboardEntry(entry);
+      onLeaderboard(entry, officialRank);
+    }
+
+    void submitOfficial();
+    return () => {
+      cancelled = true;
     };
-    saveLeaderboardEntry(entry);
-    onLeaderboard(entry, officialRank);
-  }, [beatAi, correct, elapsedMs, locale, mode, officialWorldRun, onLeaderboard, percentile, rank, score, speedBonus, total]);
+  }, [beatAi, correct, elapsedMs, locale, mode, officialWorldRun, onLeaderboard, onServerAttemptLocked, percentile, playerId, rank, score, speedBonus, total]);
 
   async function share() {
     try {
@@ -2859,6 +2941,8 @@ function Runner({
   onUsageChange,
   groupCode,
   groupName,
+  playerId,
+  onServerAttemptLocked,
 }: {
   locale: LocaleKey;
   mode: ModeKey;
@@ -2872,6 +2956,8 @@ function Runner({
   onUsageChange: (usage: PlayUsage) => void;
   groupCode: string | null;
   groupName: string;
+  playerId: string;
+  onServerAttemptLocked: (record: OfficialRankRecord) => void;
 }) {
   const copy = (text: string) => translate(locale, text);
   const [started, setStarted] = React.useState(() => isPaid || playsRemaining(readPlayUsage()) > 0);
@@ -2912,6 +2998,37 @@ function Runner({
     setElapsedMs(0);
     setCompletedElapsedMs(null);
   }, [isPaid, mode, onUsageChange]);
+
+  React.useEffect(() => {
+    if (mode !== 'world' || !playerId) return undefined;
+    let cancelled = false;
+
+    async function syncServerLock() {
+      try {
+        const serverAttempt = await readServerOfficialAttempt(playerId);
+        if (cancelled || !serverAttempt || serverAttempt.day !== localDayKey()) return;
+        syncLocalOfficialLock(serverAttempt);
+        onServerAttemptLocked(serverAttempt);
+        const usage = readPlayUsage();
+        setPlayUsage(usage);
+        onUsageChange(usage);
+        if (!isPaid) {
+          setStarted(false);
+          setStep(0);
+          setSelected(null);
+          setFeedback(null);
+          setAnswers([]);
+        }
+      } catch {
+        // Local lock state still protects the common path if the server check is unavailable.
+      }
+    }
+
+    void syncServerLock();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPaid, mode, onServerAttemptLocked, onUsageChange, playerId]);
 
   React.useEffect(() => {
     if (!started || complete || feedback) return undefined;
@@ -2988,7 +3105,7 @@ function Runner({
     );
   }
 
-  if (complete) return <Result locale={locale} mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} onRankings={onRankings} groupCode={groupCode} groupName={groupName} />;
+  if (complete) return <Result locale={locale} mode={mode} answers={answers} elapsedMs={completedElapsedMs ?? elapsedMs} onUnlock={onUnlock} onLeaderboard={onLeaderboard} onRankings={onRankings} groupCode={groupCode} groupName={groupName} playerId={playerId} onServerAttemptLocked={onServerAttemptLocked} />;
 
   return (
     <div className={`runner-panel ${feedback ? feedback.correct ? 'feedback-correct' : 'feedback-wrong' : ''}`}>
@@ -3575,6 +3692,13 @@ export default function Home({
     setUsageSnapshot(usage);
   }, []);
 
+  const handleServerAttemptLocked = React.useCallback((record: OfficialRankRecord) => {
+    syncLocalOfficialLock(record);
+    setOfficialSnapshot(readOfficialRank());
+    setOfficialHistory(readOfficialHistory());
+    setUsageSnapshot(readPlayUsage());
+  }, []);
+
   function handlePlayerNameChange(name: string) {
     const next = name.slice(0, 32);
     setPlayerName(next);
@@ -4151,7 +4275,7 @@ export default function Home({
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${copy(modes[mode].label)} test`}>
           <SignalSculpture />
-	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onRankings={() => navigateView('rankings')} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} />
+	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onRankings={() => navigateView('rankings')} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} playerId={playerId} onServerAttemptLocked={handleServerAttemptLocked} />
           <StatusRail
             locale={locale}
             isPaid={paidAccess}

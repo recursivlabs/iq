@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appPath = path.join(root, 'src/app/IqApp.tsx');
 const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
+const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
@@ -100,6 +101,7 @@ function stringArrayFromVariable(ts, tree, name) {
 async function sourceAudit() {
   const app = source(appPath);
   const leaderboard = source(leaderboardPath);
+  const attempts = source(attemptsPath);
   const store = source(storePath);
   const geo = source(geoPath);
   const groupPage = source(groupPagePath);
@@ -108,6 +110,7 @@ async function sourceAudit() {
 
   assert(existsSync(appPath), 'IqApp source exists.');
   assert(existsSync(leaderboardPath), 'Leaderboard API route exists.');
+  assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(path.join(root, 'src/app/api/health/route.ts')), 'Storage health API route exists.');
@@ -131,11 +134,16 @@ async function sourceAudit() {
 
   const stableOrder = functionText(findFunction(ts, tree, 'stableQuestionOrder'), app);
   assert(stableOrder.includes('readQuestionOrder') && stableOrder.includes('writeQuestionOrder'), 'Daily question order is persisted so refreshes do not reshuffle an active attempt.');
+  assert(app.includes('function permutedQuestionOrder') && stableOrder.includes('permutedQuestionOrder'), 'Question order is fully permuted per player/day after selecting the rotating starter.');
 
   const result = app.slice(app.indexOf('function Result('), app.indexOf('function Runner('));
   assert(result.includes('readOfficialRank()') && result.includes("setResultStatus('practice')"), 'Retakes after a locked daily result are marked practice.');
-  assert(result.includes('writeOfficialRank(officialRank)') && result.includes('consumePlay()'), 'First official completion writes the local official rank and consumes the daily attempt.');
+  assert(result.includes('claimServerOfficialAttempt') && result.includes('syncLocalOfficialLock(officialRank)'), 'First official completion claims the server attempt lock before local official sync.');
+  assert(result.includes('consumePlay()'), 'First official completion consumes the daily attempt locally.');
   assert(result.includes('onLeaderboard(entry, officialRank)'), 'Official completion submits into the leaderboard flow.');
+
+  const runner = app.slice(app.indexOf('function Runner('), app.indexOf('export default function Home'));
+  assert(runner.includes('readServerOfficialAttempt') && runner.includes('onServerAttemptLocked'), 'Runner syncs server-side daily attempt locks.');
 
   const handleLeaderboard = app.slice(app.indexOf('function handleLeaderboard'), app.indexOf('const handleUsageChange'));
   assert(handleLeaderboard.includes("navigateView('rankings')"), 'Completing the official run routes the player to rankings.');
@@ -148,6 +156,10 @@ async function sourceAudit() {
   assert(leaderboard.includes('geo: sanitizeGeo(body.geo)'), 'Leaderboard submissions persist sanitized geography snapshots.');
   assert(leaderboard.includes('geography: geographyRows(responseEntries, day)') && leaderboard.includes('geographyRows(entries, day)'), 'Geography boards are computed from the same real leaderboard entry set.');
   assert(leaderboard.includes('const bestByPlaceAndPlayer = new Map'), 'Geography boards dedupe by place and player before averaging.');
+
+  assert(attempts.includes("STORE_KEY = 'world-iq:official-attempts:v1'"), 'Attempt lock API stores official attempts under a dedicated key.');
+  assert(attempts.includes('accepted: false') && attempts.includes('locked: true'), 'Attempt lock API returns an existing lock instead of accepting duplicates.');
+  assert(attempts.includes('readJsonStore') && attempts.includes('writeJsonStore'), 'Attempt lock API uses the shared Redis-backed store.');
 
   assert(app.includes('geo: geoSnapshot || fallbackGeoSnapshot()'), 'Client submits inferred/fallback geography with official results.');
   assert(app.includes('buildGlobeRegions(geography') && app.includes('geography.countries'), 'Home/rankings globe derives regions from geography board data.');
@@ -212,6 +224,35 @@ async function liveAudit() {
   } else {
     warn(`Live storage is not launch-persistent (${provider}); configure Redis/KV envs before launch.`);
   }
+
+  const attempt = {
+    day,
+    playerId,
+    score: 137,
+    rank: '#13,700',
+    percentile: 98.63,
+    correct: 10,
+    total: 12,
+    beatAi: 3,
+    elapsedMs: 390000,
+    speedBonus: 2,
+  };
+  const attemptPost = await requestJson(`${origin}/api/attempts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(attempt),
+  });
+  assert(attemptPost.response.ok && attemptPost.data.accepted === true && attemptPost.data.locked === true, 'Live attempt API accepts the first official attempt lock.');
+
+  const attemptDuplicate = await requestJson(`${origin}/api/attempts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...attempt, score: 99, correct: 1 }),
+  });
+  assert(attemptDuplicate.response.ok && attemptDuplicate.data.accepted === false && attemptDuplicate.data.attempt?.score === 137, 'Live attempt API rejects duplicate official attempts for the same player/day.');
+
+  const attemptGet = await requestJson(`${origin}/api/attempts?day=${day}&playerId=${encodeURIComponent(playerId)}`);
+  assert(attemptGet.response.ok && attemptGet.data.locked === true && attemptGet.data.attempt?.playerId === playerId, 'Live attempt API reads back the server-side daily lock.');
 
   const post = await requestJson(`${origin}/api/leaderboards?agents=false`, {
     method: 'POST',
