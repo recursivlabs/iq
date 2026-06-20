@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { sanitizeBoardDay } from '../_lib/days';
+import { canonicalOfficialScore } from '../_lib/scoring';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -304,16 +305,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
   }
 
-  const score = Number(body.score);
   const correct = Number(body.correct);
   const total = Number(body.total);
-  const percentile = Number(body.percentile);
   const beatAi = Number(body.beatAi);
   const elapsedMs = Number(body.elapsedMs);
-  const speedBonus = Number(body.speedBonus);
-  if (![score, correct, total, percentile, beatAi].every(Number.isFinite)) {
+  if (![correct, total, beatAi].every(Number.isFinite) || correct > total) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
+  const safeCorrect = Math.max(0, Math.min(99, Math.round(correct)));
+  const safeTotal = Math.max(1, Math.min(99, Math.round(total)));
+  if (safeCorrect > safeTotal) {
+    return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
+  }
+  const safeElapsedMs = Number.isFinite(elapsedMs) ? Math.max(0, Math.min(86_400_000, Math.round(elapsedMs))) : null;
+  const canonical = canonicalOfficialScore(safeCorrect, safeTotal, safeElapsedMs);
 
   const groupCode = sanitizeGroupCode(body.groupCode) || null;
   const groupName = groupCode ? sanitizeText(body.groupName, groupCode.toUpperCase(), 48) : null;
@@ -325,14 +330,14 @@ export async function POST(request: NextRequest) {
     username: sanitizeUsername(body.username) || null,
     groupCode,
     groupName,
-    score: Math.max(0, Math.min(200, Math.round(score))),
-    rank: sanitizeText(body.rank, '#--', 20),
-    percentile: Math.max(0, Math.min(100, percentile)),
-    correct: Math.max(0, Math.min(99, Math.round(correct))),
-    total: Math.max(1, Math.min(99, Math.round(total))),
+    score: canonical.score,
+    rank: canonical.rank,
+    percentile: canonical.percentile,
+    correct: safeCorrect,
+    total: safeTotal,
     beatAi: Math.max(0, Math.min(99, Math.round(beatAi))),
-    elapsedMs: Number.isFinite(elapsedMs) ? Math.max(0, Math.min(86_400_000, Math.round(elapsedMs))) : null,
-    speedBonus: Number.isFinite(speedBonus) ? Math.max(0, Math.min(50, Math.round(speedBonus))) : null,
+    elapsedMs: safeElapsedMs,
+    speedBonus: canonical.speedBonus,
     timestamp: Date.now(),
     geo: sanitizeGeo(body.geo),
   };

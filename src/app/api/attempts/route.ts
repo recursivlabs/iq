@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { sanitizeBoardDay } from '../_lib/days';
+import { canonicalOfficialScore } from '../_lib/scoring';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -138,16 +139,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
   }
 
-  const score = cleanNumber(body.score, 0, 200);
   const correct = cleanNumber(body.correct, 0, 99);
   const total = cleanNumber(body.total, 1, 99);
-  const percentile = Number(body.percentile);
   const beatAi = cleanNumber(body.beatAi, 0, 99);
   const elapsedMs = cleanNumber(body.elapsedMs, 0, 86_400_000);
-  const speedBonus = cleanNumber(body.speedBonus, 0, 50);
-  if (score === null || correct === null || total === null || !Number.isFinite(percentile) || beatAi === null) {
+  if (correct === null || total === null || beatAi === null || correct > total) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
+  const canonical = canonicalOfficialScore(correct, total, elapsedMs);
 
   const id = `${day}:${playerId}`;
   const result = await updateStore((store) => {
@@ -164,14 +163,14 @@ export async function POST(request: NextRequest) {
       id,
       day,
       playerId,
-      score,
-      rank: sanitizeText(body.rank, '#--', 24),
-      percentile: Math.max(0, Math.min(100, percentile)),
+      score: canonical.score,
+      rank: canonical.rank,
+      percentile: canonical.percentile,
       correct,
       total,
       beatAi,
       elapsedMs,
-      speedBonus,
+      speedBonus: canonical.speedBonus,
       timestamp: Date.now(),
     };
 
