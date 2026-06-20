@@ -42,7 +42,7 @@ function sleep(ms: number) {
 
 async function redisRestCommand(args: string[]) {
   const config = redisRestConfig();
-  if (!config) return null;
+  if (!config) return undefined;
 
   const response = await fetch(config.url, {
     method: 'POST',
@@ -153,7 +153,7 @@ async function redisTcpCommand(args: string[]) {
 
 async function redisCommand(args: string[]) {
   const rest = await redisRestCommand(args);
-  if (rest !== null) return rest;
+  if (rest !== undefined) return rest;
   return await redisTcpCommand(args);
 }
 
