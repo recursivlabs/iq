@@ -229,6 +229,8 @@ type SoundKind = 'tap' | 'select' | 'commit' | 'copy' | 'success' | 'error';
 
 const DAILY_PLAY_LIMIT = 1;
 const OFFICIAL_QUESTION_COUNT = 12;
+const MIN_OFFICIAL_NO_REPEAT_DAYS = 5;
+const GENERATED_WORLD_PUZZLE_COUNT = OFFICIAL_QUESTION_COUNT * MIN_OFFICIAL_NO_REPEAT_DAYS - 24;
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
@@ -370,6 +372,139 @@ function withProofChecks(puzzles: Puzzle[]): Puzzle[] {
     }
   }
   return puzzles;
+}
+
+const tileToneOrder: TileTone[] = ['ink', 'blue', 'green', 'rose', 'amber'];
+const tiltOrder = [0, 45, 90];
+
+function clampMarks(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function tileFromCell(cell: PatternTile) {
+  return tile(cell.dots, cell.bars, cell.ring, cell.tilt, cell.tone);
+}
+
+function generatedOptions(expected: PatternTile, seed: number) {
+  const options = [tileFromCell(expected)];
+  const used = new Set(options.map(tileSignature));
+  const nextTone = tileToneOrder[(tileToneOrder.indexOf(expected.tone) + 1) % tileToneOrder.length];
+  const candidates = [
+    tile(clampMarks(expected.dots + (expected.dots >= 6 ? -1 : 1), 0, 6), expected.bars, expected.ring, expected.tilt, expected.tone),
+    tile(expected.dots, clampMarks(expected.bars + (expected.bars >= 3 ? -1 : 1), 0, 3), expected.ring, expected.tilt, expected.tone),
+    tile(expected.dots, expected.bars, !expected.ring, expected.tilt, expected.tone),
+    tile(expected.dots, expected.bars, expected.ring, tiltOrder[(tiltOrder.indexOf(expected.tilt) + 1) % tiltOrder.length], expected.tone),
+    tile(expected.dots, expected.bars, expected.ring, expected.tilt, nextTone),
+  ];
+
+  for (const candidate of candidates) {
+    if (options.length >= 4) break;
+    const signature = tileSignature(candidate);
+    if (used.has(signature)) continue;
+    used.add(signature);
+    options.push(candidate);
+  }
+
+  for (let dots = 0; options.length < 4 && dots <= 6; dots += 1) {
+    for (let bars = 0; options.length < 4 && bars <= 3; bars += 1) {
+      const candidate = tile(dots, bars, (dots + bars + seed) % 2 === 0, tiltOrder[(dots + bars + seed) % tiltOrder.length], expected.tone);
+      const signature = tileSignature(candidate);
+      if (used.has(signature)) continue;
+      used.add(signature);
+      options.push(candidate);
+    }
+  }
+
+  return options;
+}
+
+function generatedMatrix(cellAt: (r: number, c: number) => PatternTile) {
+  return [
+    cellAt(0, 0), cellAt(0, 1), cellAt(0, 2),
+    cellAt(1, 0), cellAt(1, 1), cellAt(1, 2),
+    cellAt(2, 0), cellAt(2, 1), null,
+  ];
+}
+
+function generatedWorldPuzzle(index: number): Puzzle {
+  const number = index + 25;
+  const id = `world-${String(number).padStart(2, '0')}`;
+  const tone = tileToneOrder[index % tileToneOrder.length];
+  const offset = Math.floor(index / 4) + 1;
+  const family = index % 4;
+  const titlePrefix = ['Affine weave', 'Parity ladder', 'Column synthesis', 'Mirror return'][family];
+  const difficulty = index < 8 ? 'Advanced' : index < 22 ? 'Frontier' : 'Elite';
+  let cellAt: (r: number, c: number) => PatternTile;
+  let lay: string;
+  let formal: string;
+  let explanation: string;
+
+  if (family === 0) {
+    cellAt = (r, c) => tile(
+      (2 * r + c + offset) % 7,
+      (r + c + offset) % 4,
+      (r + c + offset) % 2 === 0,
+      tiltOrder[(r + 2 * c + offset) % tiltOrder.length],
+      tone,
+    );
+    lay = `Rows and columns advance together. With offset ${offset}, the final corner resolves by applying the same dot, bar, ring, and rotation formulas.`;
+    formal = `k=${offset}; dots=(2r+c+k) mod 7; bars=(r+c+k) mod 4; ring=(r+c+k) even; tilt=[0,45,90][(r+2c+k) mod 3]. Missing cell uses r=2,c=2.`;
+    explanation = 'Both axes feed every visible attribute, so the answer is the only tile consistent with all four formula tracks.';
+  } else if (family === 1) {
+    cellAt = (r, c) => tile(
+      ((r + 1) * (c + 1) + offset) % 6 + 1,
+      (2 * r + c + offset) % 4,
+      (c + offset) % 2 === 0,
+      tiltOrder[(r + c + offset) % tiltOrder.length],
+      tone,
+    );
+    lay = `The count uses row-column multiplication while bars and tilt advance linearly. With offset ${offset}, the bottom-right cell is forced.`;
+    formal = `k=${offset}; dots=(((r+1)(c+1)+k) mod 6)+1; bars=(2r+c+k) mod 4; ring=(c+k) even; tilt=[0,45,90][(r+c+k) mod 3]. Missing cell uses r=2,c=2.`;
+    explanation = 'The dot count is nonlinear, but the other attributes give independent checks on the same missing tile.';
+  } else if (family === 2) {
+    const topCell = (c: number) => tile(1 + ((c + offset) % 2), (c + offset) % 2, false, tiltOrder[c % tiltOrder.length], tone);
+    const middleCell = (c: number) => tile(2 + ((c + offset) % 3), (c + offset + 1) % 2, false, tiltOrder[(c + 1) % tiltOrder.length], tone);
+    cellAt = (r, c) => {
+      const top = topCell(c);
+      const middle = middleCell(c);
+      if (r === 0) return top;
+      if (r === 1) return middle;
+      return tile(top.dots + middle.dots, top.bars + middle.bars, true, 90, tone);
+    };
+    lay = `In each column, the bottom cell adds the two cells above it. With offset ${offset}, the last column sums to the missing tile.`;
+    formal = `k=${offset}; top dots=1+((c+k) mod 2), top bars=(c+k) mod 2; middle dots=2+((c+k) mod 3), middle bars=(c+k+1) mod 2; bottom=sum(top,middle), ring=true, tilt=90. Missing cell uses c=2.`;
+    explanation = 'The bottom row is an arithmetic synthesis of the two rows above, preserving a visible column-by-column proof.';
+  } else {
+    const leftCell = (r: number) => tile(1 + ((r + offset) % 4), (r + offset) % 3, (r + offset) % 2 === 0, 0, tone);
+    cellAt = (r, c) => {
+      const left = leftCell(r);
+      if (c === 0) return left;
+      if (c === 2) return tile(left.dots, left.bars, left.ring, 90, tone);
+      return tile(clampMarks(left.dots + 1, 0, 6), (left.bars + 1) % 4, !left.ring, 45, tone);
+    };
+    lay = `The middle column transforms each row, then the right column mirrors the left column at 90 degrees. With offset ${offset}, the bottom-right tile returns the bottom-left counts.`;
+    formal = `k=${offset}; left(r)=(dots=1+((r+k) mod 4), bars=(r+k) mod 3, ring=(r+k) even, tilt=0); middle adds one dot/bar and flips ring; right mirrors left with tilt=90. Missing cell uses r=2.`;
+    explanation = 'The right edge is a rotated mirror of the left edge, so the bottom-right tile must copy the bottom-left attributes with a 90-degree tilt.';
+  }
+
+  const expected = cellAt(2, 2);
+  return {
+    id,
+    mode: 'world',
+    title: `${titlePrefix} ${offset}`,
+    difficulty,
+    prompt: 'Solve the generated official matrix. Every visible attribute is proof-checked.',
+    explanation,
+    solutionProof: proof(lay, formal, expected),
+    matrix: generatedMatrix(cellAt),
+    options: generatedOptions(expected, number),
+    answerIndex: 0,
+    aiSolved: index < 8,
+  };
+}
+
+function generatedWorldPuzzles() {
+  return Array.from({ length: GENERATED_WORLD_PUZZLE_COUNT }, (_, index) => generatedWorldPuzzle(index));
 }
 
 const worldPuzzles: Puzzle[] = withProofChecks([
@@ -685,6 +820,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     answerIndex: 0,
     aiSolved: false,
   },
+  ...generatedWorldPuzzles(),
 ]);
 
 const agiPuzzles: Puzzle[] = ['world-07', 'world-09', 'world-10', 'world-11', 'world-12', 'world-08']
@@ -706,49 +842,13 @@ const dailyPuzzles: Puzzle[] = [
   { ...worldPuzzles[11], id: 'daily-03', mode: 'daily', title: 'Daily synthesis', difficulty: 'Elite', prompt: 'One hard puzzle for today. Lock your answer.' },
 ];
 
-const rankedWorldPuzzleIds = [
-  'world-01',
-  'world-02',
-  'world-03',
-  'world-04',
-  'world-05',
-  'world-06',
-  'world-07',
-  'world-08',
-  'world-09',
-  'world-10',
-  'world-11',
-  'world-12',
-  'world-13',
-  'world-14',
-  'world-15',
-  'world-16',
-  'world-17',
-  'world-18',
-  'world-19',
-  'world-20',
-  'world-21',
-  'world-22',
-  'world-23',
-  'world-24',
-];
+const rankedWorldPuzzleIds = worldPuzzles.map((puzzle) => puzzle.id);
 
 const rankedWorldPuzzles: Puzzle[] = rankedWorldPuzzleIds.map((id, index) => {
   const source = worldPuzzles.find((puzzle) => puzzle.id === id)!;
-  const difficulty = index < 2
-    ? 'Calibration'
-    : index < 6
-      ? 'Foundation'
-      : index < 10
-        ? 'Adaptive'
-        : index < 14
-          ? 'Advanced'
-          : index < 20
-            ? 'Frontier'
-            : 'Elite';
   return {
     ...source,
-    difficulty,
+    difficulty: index === 0 ? 'Calibration' : source.difficulty,
     prompt: index === 0 ? 'Start with the signal. The board ramps quickly.' : source.prompt,
   };
 });
@@ -1397,6 +1497,17 @@ function hashedPuzzleSort(seed: string, puzzles: Puzzle[]) {
   });
 }
 
+function difficultyRank(puzzle: Puzzle) {
+  const difficulty = puzzle.difficulty.toLowerCase();
+  if (difficulty.includes('calibration')) return 0;
+  if (difficulty.includes('basic') || difficulty.includes('foundation')) return 1;
+  if (difficulty.includes('core') || difficulty.includes('adaptive')) return 2;
+  if (difficulty.includes('advanced')) return 3;
+  if (difficulty.includes('hard') || difficulty.includes('frontier')) return 4;
+  if (difficulty.includes('elite')) return 5;
+  return 3;
+}
+
 function questionOrderSeed(mode: ModeKey) {
   const playerSeed = typeof window === 'undefined' ? 'server' : readPlayerId();
   return `${localDayKey()}:${mode}:${playerSeed}:question-order`;
@@ -1436,7 +1547,8 @@ function chooseQuestionSet(mode: ModeKey, puzzles: Puzzle[], starterCandidates: 
 function permutedQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterId: string) {
   const seed = questionOrderSeed(mode);
   const starter = starterId ? puzzles.find((puzzle) => puzzle.id === starterId) : null;
-  const rest = hashedPuzzleSort(seed, puzzles.filter((puzzle) => puzzle.id !== starter?.id));
+  const rest = hashedPuzzleSort(seed, puzzles.filter((puzzle) => puzzle.id !== starter?.id))
+    .sort((a, b) => difficultyRank(a) - difficultyRank(b) || hashNumber(`${seed}:band:${a.id}`) - hashNumber(`${seed}:band:${b.id}`));
   return starter ? [starter, ...rest] : rest;
 }
 

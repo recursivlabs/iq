@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appPath = path.join(root, 'src/app/IqApp.tsx');
+const i18nPath = path.join(root, 'src/app/i18n.ts');
 const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
@@ -115,6 +116,7 @@ function stringArrayFromVariable(ts, tree, name) {
 
 async function sourceAudit() {
   const app = source(appPath);
+  const i18n = source(i18nPath);
   const leaderboard = source(leaderboardPath);
   const attempts = source(attemptsPath);
   const store = source(storePath);
@@ -139,6 +141,7 @@ async function sourceAudit() {
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
 
   assert(existsSync(appPath), 'IqApp source exists.');
+  assert(existsSync(i18nPath), 'I18n source exists.');
   assert(existsSync(leaderboardPath), 'Leaderboard API route exists.');
   assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
   assert(existsSync(geoPath), 'Geo API route exists.');
@@ -160,11 +163,17 @@ async function sourceAudit() {
   assert(dailyLimit === '1', 'Free official play is limited to one completed run per day.');
   const officialQuestionCount = initializerText(findVariable(ts, tree, 'OFFICIAL_QUESTION_COUNT'), app);
   assert(officialQuestionCount === '12', 'Official world run remains a 12-question baseline.');
+  const noRepeatDays = initializerText(findVariable(ts, tree, 'MIN_OFFICIAL_NO_REPEAT_DAYS'), app);
+  assert(noRepeatDays === '5', 'Official question bank targets at least five full daily runs before repeating questions.');
+  const generatedWorldCount = initializerText(findVariable(ts, tree, 'GENERATED_WORLD_PUZZLE_COUNT'), app);
+  assert(generatedWorldCount.includes('OFFICIAL_QUESTION_COUNT * MIN_OFFICIAL_NO_REPEAT_DAYS - 24'), 'Generated official puzzle count fills the no-repeat bank beyond the 24 hand-authored puzzles.');
   assert(app.includes('showAgentActivity: false'), 'Seeded agent activity is opt-in by default.');
 
   const rankedIds = stringArrayFromVariable(ts, tree, 'rankedWorldPuzzleIds');
-  assert(rankedIds.length >= 24, 'Official world mode has an expanded bank of at least 24 configured puzzle ids.');
-  assert(new Set(rankedIds).size === rankedIds.length, 'Official world puzzle id list has no duplicates.');
+  const rankedIdsInit = initializerText(findVariable(ts, tree, 'rankedWorldPuzzleIds'), app);
+  assert(rankedIds.length >= 60 || rankedIdsInit.includes('worldPuzzles.map((puzzle) => puzzle.id)'), 'Official world mode uses the full proof-checked bank for a five-day no-repeat window.');
+  assert(!rankedIds.length || new Set(rankedIds).size === rankedIds.length, 'Explicit official world puzzle id list has no duplicates.');
+  assert(app.includes('...generatedWorldPuzzles()'), 'Generated official puzzle items are included in the proof-checked world puzzle bank.');
 
   const proofChecks = functionText(findFunction(ts, tree, 'withProofChecks'), app);
   assert(proofChecks.includes('solutionProof.checksum') && proofChecks.includes('proofTileSignature'), 'Puzzle answer proofs are checksum-verified at module load.');
@@ -183,7 +192,8 @@ async function sourceAudit() {
   const stableOrder = functionText(findFunction(ts, tree, 'stableQuestionOrder'), app);
   assert(stableOrder.includes('readQuestionOrder') && stableOrder.includes('writeQuestionOrder'), 'Daily question order is persisted so refreshes do not reshuffle an active attempt.');
   assert(stableOrder.includes('chooseQuestionSet') && stableOrder.includes('targetCount'), 'Stable question order selects a fixed-size rotating question set before ordering it.');
-  assert(app.includes('function permutedQuestionOrder') && stableOrder.includes('permutedQuestionOrder'), 'Question order is fully permuted per player/day after selecting the rotating starter.');
+  const permutedOrder = functionText(findFunction(ts, tree, 'permutedQuestionOrder'), app);
+  assert(app.includes('function difficultyRank') && permutedOrder.includes('difficultyRank(a) - difficultyRank(b)') && permutedOrder.includes(':band:'), 'Question order ramps by difficulty after the rotating starter while randomizing within bands.');
 
   const buildGlobe = functionText(findFunction(ts, tree, 'buildGlobeRegions'), app);
   assert(buildGlobe.includes('geography.countries') && buildGlobe.includes('geography.cities.slice') && buildGlobe.includes('geography.towns.slice'), 'Globe regions derive only from ranked geography board rows.');
@@ -236,6 +246,7 @@ async function sourceAudit() {
 
   assert(app.includes('geo: geoSnapshot || fallbackGeoSnapshot()'), 'Client submits inferred/fallback geography with official results.');
   assert(app.includes('buildGlobeRegions(geography') && app.includes('geography.countries'), 'Home/rankings globe derives regions from geography board data.');
+  assert(i18n.includes('Official scores use edge geography when available and timezone as a fallback; empty boards stay empty until ranked attempts land.'), 'Updated real-data geography empty state is localized.');
 
   assert(geo.includes('x-vercel-ip-country') && geo.includes('queryTimeZone') && geo.includes('countryFromLocale'), 'Geo API combines edge headers, timezone, and browser locale fallbacks.');
 

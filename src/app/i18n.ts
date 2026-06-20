@@ -187,6 +187,7 @@ const translations: Record<Exclude<LocaleKey, 'en'>, Record<string, string>> = {
     'No geography ranks yet.': 'Aun no hay rangos geograficos.',
     'Official scores with inferred location will appear here automatically.': 'Los puntajes oficiales con ubicacion inferida apareceran aqui automaticamente.',
     'No location prompt is required. IQ WARS uses edge geography when available and timezone as a fallback.': 'No se requiere permiso de ubicacion. IQ WARS usa geografia del borde cuando esta disponible y zona horaria como respaldo.',
+    'No location prompt is required. Official scores use edge geography when available and timezone as a fallback; empty boards stay empty until ranked attempts land.': 'No se requiere permiso de ubicacion. Los puntajes oficiales usan geografia del borde cuando esta disponible y zona horaria como respaldo; los tableros vacios permanecen vacios hasta que lleguen intentos clasificados.',
     'IQ WARS by Recursiv': 'IQ WARS por Recursiv',
     'The daily reasoning rank for humans and AI.': 'El rango diario de razonamiento para humanos e IA.',
     'A competitive visual reasoning game. One official attempt per day updates a score profile that develops over time.': 'Un juego competitivo de razonamiento visual. Un intento oficial diario actualiza un perfil que madura con el tiempo.',
