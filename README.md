@@ -30,6 +30,22 @@ pnpm audit:launch
 
 Without Redis/KV, leaderboards, geography maps, profiles, usernames, presence, reminders, and room messages fall back to serverless `/tmp` storage and are not reliable across deployments or runtime instances.
 
+Recommended Vercel setup path:
+
+```bash
+vercel integration add upstash/upstash-kv \
+  --name iqwars-redis \
+  --environment production \
+  --plan free \
+  --metadata primaryRegion=iad1 \
+  --metadata eviction=false \
+  --metadata autoUpgrade=false \
+  --no-env-pull \
+  --scope minds-b4320dbb
+```
+
+If the CLI pauses on marketplace terms, accept the terms in the Vercel browser page, rerun the command, redeploy production, and then run `pnpm audit:launch`.
+
 ## Usage
 
 1. Create a new repo on GitHub: `gh repo create recursivlabs/<app-name> --public`
