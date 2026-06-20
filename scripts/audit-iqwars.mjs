@@ -11,6 +11,14 @@ const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
+const usernamePath = path.join(root, 'src/app/api/username/route.ts');
+const profilesPath = path.join(root, 'src/app/api/profiles/route.ts');
+const roomMessagesPath = path.join(root, 'src/app/api/rooms/messages/route.ts');
+const presencePath = path.join(root, 'src/app/api/presence/route.ts');
+const remindersPath = path.join(root, 'src/app/api/reminders/route.ts');
+const checkoutPath = path.join(root, 'src/app/api/checkout/route.ts');
+const authSendPath = path.join(root, 'src/app/api/recursiv-auth/send-code/route.ts');
+const authVerifyPath = path.join(root, 'src/app/api/recursiv-auth/verify-code/route.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 
@@ -104,6 +112,14 @@ async function sourceAudit() {
   const attempts = source(attemptsPath);
   const store = source(storePath);
   const geo = source(geoPath);
+  const username = source(usernamePath);
+  const profiles = source(profilesPath);
+  const roomMessages = source(roomMessagesPath);
+  const presence = source(presencePath);
+  const reminders = source(remindersPath);
+  const checkout = source(checkoutPath);
+  const authSend = source(authSendPath);
+  const authVerify = source(authVerifyPath);
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
@@ -114,6 +130,13 @@ async function sourceAudit() {
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(path.join(root, 'src/app/api/health/route.ts')), 'Storage health API route exists.');
+  assert(existsSync(usernamePath), 'Username API route exists.');
+  assert(existsSync(profilesPath), 'Profile API route exists.');
+  assert(existsSync(roomMessagesPath), 'Room message API route exists.');
+  assert(existsSync(presencePath), 'Presence API route exists.');
+  assert(existsSync(remindersPath), 'Reminder API route exists.');
+  assert(existsSync(checkoutPath), 'Checkout API route exists.');
+  assert(existsSync(authSendPath) && existsSync(authVerifyPath), 'Recursiv email auth API routes exist.');
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
   assert(dailyLimit === '1', 'Free official play is limited to one completed run per day.');
@@ -161,6 +184,15 @@ async function sourceAudit() {
   assert(attempts.includes('accepted: false') && attempts.includes('locked: true'), 'Attempt lock API returns an existing lock instead of accepting duplicates.');
   assert(attempts.includes('readJsonStore') && attempts.includes('writeJsonStore'), 'Attempt lock API uses the shared Redis-backed store.');
 
+  assert(username.includes('isValidUsername') && username.includes('status: 409'), 'Username API validates format and rejects claims owned by another player.');
+  assert(profiles.includes('publicProfile(profile)') && profiles.includes('profilePublic'), 'Profile API applies public/privacy controls before returning profiles.');
+  assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
+  assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
+  assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
+  assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl'), 'Checkout API requires a player key and sanitizes return URLs.');
+  assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
+  assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID'), 'Email-code verify route creates project-scoped IQ WARS player keys.');
+
   assert(app.includes('geo: geoSnapshot || fallbackGeoSnapshot()'), 'Client submits inferred/fallback geography with official results.');
   assert(app.includes('buildGlobeRegions(geography') && app.includes('geography.countries'), 'Home/rankings globe derives regions from geography board data.');
 
@@ -197,6 +229,9 @@ async function requestText(url) {
 async function liveAudit() {
   const group = `audit-${randomUUID().slice(0, 8)}`;
   const playerId = `audit-player-${randomUUID()}`;
+  const username = `audit_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const profileSlug = `${username}_profile`;
+  const roomBody = `audit message ${randomUUID().slice(0, 8)}`;
   const day = '2099-12-31';
   const geo = {
     country: 'United States',
@@ -224,6 +259,101 @@ async function liveAudit() {
   } else {
     warn(`Live storage is not launch-persistent (${provider}); configure Redis/KV envs before launch.`);
   }
+
+  const usernameInvalid = await requestJson(`${origin}/api/username?username=ab`);
+  assert(usernameInvalid.response.status === 400, 'Live username API rejects invalid short handles.');
+  const usernameAvailable = await requestJson(`${origin}/api/username?username=${username}`);
+  assert(usernameAvailable.response.ok && usernameAvailable.data.available === true, 'Live username API reports a fresh audit handle as available.');
+  const usernameClaim = await requestJson(`${origin}/api/username`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, playerId, displayName: 'Audit Player' }),
+  });
+  assert(usernameClaim.response.ok && usernameClaim.data.claim?.username === username, 'Live username API claims a valid handle.');
+  const usernameDuplicate = await requestJson(`${origin}/api/username`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, playerId: `${playerId}-other`, displayName: 'Other Audit' }),
+  });
+  assert(usernameDuplicate.response.status === 409, 'Live username API rejects duplicate handle claims from another player.');
+
+  const profilePost = await requestJson(`${origin}/api/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: playerId,
+      slug: profileSlug,
+      username,
+      displayName: 'Audit Player',
+      bio: 'Launch audit profile',
+      city: 'New York',
+      country: 'United States',
+      score: 137,
+      best: 137,
+      rank: '#13,700',
+      attempts: 1,
+      answers: 12,
+      profilePublic: true,
+      showLocation: true,
+      showXBadge: false,
+      showHistory: true,
+    }),
+  });
+  assert(profilePost.response.ok && profilePost.data.profile?.slug === profileSlug, 'Live profile API accepts a public audit profile.');
+  const profileGet = await requestJson(`${origin}/api/profiles?slug=${profileSlug}`);
+  assert(profileGet.response.ok && profileGet.data.profile?.score === 137 && profileGet.data.profile?.city === 'New York', 'Live profile API reads the submitted public profile with visible location.');
+
+  const roomMissing = await requestJson(`${origin}/api/rooms/messages`);
+  assert(roomMissing.response.status === 400, 'Live room message API rejects missing room reads.');
+  const roomPost = await requestJson(`${origin}/api/rooms/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groupCode: group, playerId, displayName: 'Audit Player', username, body: roomBody }),
+  });
+  assert(roomPost.response.ok && roomPost.data.message?.body === roomBody, 'Live room message API accepts a sanitized room message.');
+  const roomGet = await requestJson(`${origin}/api/rooms/messages?group=${group}`);
+  assert(roomGet.response.ok && (roomGet.data.messages || []).some((message) => message.body === roomBody), 'Live room message API reads messages for the requested room.');
+
+  const presenceMissing = await requestJson(`${origin}/api/presence`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert(presenceMissing.response.status === 400, 'Live presence API rejects missing session/player ids.');
+  const presencePost = await requestJson(`${origin}/api/presence`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: `audit-session-${randomUUID()}`, playerId, username, path: `/g/${group}` }),
+  });
+  assert(presencePost.response.ok && Number(presencePost.data.active) >= 1, 'Live presence API records a heartbeat and returns active count.');
+
+  const reminderInvalid = await requestJson(`${origin}/api/reminders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'not-an-email' }),
+  });
+  assert(reminderInvalid.response.status === 400, 'Live reminders API rejects invalid email input.');
+
+  const checkoutNoCookie = await requestJson(`${origin}/api/checkout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ returnUrl: `${origin}/rankings` }),
+  });
+  assert(checkoutNoCookie.response.status === 401, 'Live checkout API requires an IQ WARS player account cookie.');
+
+  const authSendInvalid = await requestJson(`${origin}/api/recursiv-auth/send-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'invalid' }),
+  });
+  assert(authSendInvalid.response.status === 400, 'Live email auth send route rejects invalid emails before hitting Recursiv.');
+
+  const authVerifyInvalid = await requestJson(`${origin}/api/recursiv-auth/verify-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'invalid', code: '1' }),
+  });
+  assert(authVerifyInvalid.response.status === 400, 'Live email auth verify route rejects invalid email/code input before hitting Recursiv.');
 
   const attempt = {
     day,
