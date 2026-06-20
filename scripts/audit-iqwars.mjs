@@ -194,6 +194,9 @@ async function sourceAudit() {
 
   const proofChecks = functionText(findFunction(ts, tree, 'withProofChecks'), app);
   assert(proofChecks.includes('solutionProof.checksum') && proofChecks.includes('proofTileSignature'), 'Puzzle answer proofs are checksum-verified at module load.');
+  assert(proofChecks.includes('ids.has') && proofChecks.includes('matrix.length !== 9') && proofChecks.includes('filter((item) => item === null).length !== 1'), 'Puzzle proof checks reject duplicate ids and malformed matrices.');
+  assert(proofChecks.includes('answerIndex') && proofChecks.includes('options.length < 4') && proofChecks.includes('new Set(puzzle.options.map(tileSignature)).size !== puzzle.options.length'), 'Puzzle proof checks reject invalid answer indexes and duplicate answer options.');
+  assert(app.includes('function isValidTile') && proofChecks.includes('isValidTile') && proofChecks.includes('solutionProof.lay.trim()') && proofChecks.includes('solutionProof.formal.trim()'), 'Puzzle proof checks require valid tiles and non-empty proof text.');
 
   const getQuestions = functionText(findFunction(ts, tree, 'getQuestions'), app);
   assert(getQuestions.includes('stableQuestionOrder(mode, rankedWorldPuzzles') && getQuestions.includes('rankedWorldPuzzles.slice(0, 8)') && getQuestions.includes('OFFICIAL_QUESTION_COUNT'), 'Official question order is stable per day, 12 questions long, and starts from the calibrated starter pool.');

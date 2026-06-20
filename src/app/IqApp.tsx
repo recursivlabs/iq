@@ -364,8 +364,45 @@ function proof(lay: string, formal: string, expected: PatternTile): SolutionProo
   return { lay, formal, checksum: proofTileSignature(expected) };
 }
 
+function isValidTile(item: PatternTile | null | undefined): item is PatternTile {
+  if (!item) return false;
+  return Number.isInteger(item.dots)
+    && item.dots >= 0
+    && item.dots <= 6
+    && Number.isInteger(item.bars)
+    && item.bars >= 0
+    && item.bars <= 3
+    && typeof item.ring === 'boolean'
+    && [0, 45, 90].includes(item.tilt)
+    && ['ink', 'blue', 'green', 'rose', 'amber'].includes(item.tone);
+}
+
 function withProofChecks(puzzles: Puzzle[]): Puzzle[] {
+  const ids = new Set<string>();
   for (const puzzle of puzzles) {
+    if (!puzzle.id || ids.has(puzzle.id)) {
+      throw new Error(`Puzzle id is missing or duplicated: ${puzzle.id || 'missing'}`);
+    }
+    ids.add(puzzle.id);
+
+    if (puzzle.matrix.length !== 9 || puzzle.matrix.filter((item) => item === null).length !== 1) {
+      throw new Error(`Puzzle matrix must have nine cells and exactly one missing cell: ${puzzle.id}`);
+    }
+    if (puzzle.matrix.some((item) => item !== null && !isValidTile(item))) {
+      throw new Error(`Puzzle matrix contains an invalid tile: ${puzzle.id}`);
+    }
+    if (!Number.isInteger(puzzle.answerIndex) || puzzle.answerIndex < 0 || puzzle.answerIndex >= puzzle.options.length) {
+      throw new Error(`Puzzle answer index is out of range: ${puzzle.id}`);
+    }
+    if (puzzle.options.length < 4 || puzzle.options.some((option) => !isValidTile(option))) {
+      throw new Error(`Puzzle options must contain at least four valid tiles: ${puzzle.id}`);
+    }
+    if (new Set(puzzle.options.map(tileSignature)).size !== puzzle.options.length) {
+      throw new Error(`Puzzle options must be unique: ${puzzle.id}`);
+    }
+    if (!puzzle.solutionProof.lay.trim() || !puzzle.solutionProof.formal.trim()) {
+      throw new Error(`Puzzle proof text is missing: ${puzzle.id}`);
+    }
     const expected = proofTileSignature(puzzle.options[puzzle.answerIndex]);
     if (puzzle.solutionProof.checksum !== expected) {
       throw new Error(`Puzzle proof checksum mismatch for ${puzzle.id}: ${puzzle.solutionProof.checksum} !== ${expected}`);
