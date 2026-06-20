@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readReminderStore, writeReminderStore, type ReminderRecord } from '../_lib/reminders';
+import { updateReminderStore, type ReminderRecord } from '../_lib/reminders';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -59,24 +59,25 @@ export async function POST(request: Request) {
   const playerId = cleanText(body?.playerId, 80) || `email:${email}`;
   const id = `${email}:${groupCode || 'global'}`;
 
-  const store = await readReminderStore();
-  const existingIndex = store.reminders.findIndex((item) => item.id === id);
-  const existing = existingIndex >= 0 ? store.reminders[existingIndex] : null;
-  const record: ReminderRecord = {
-    id,
-    email,
-    playerId,
-    groupCode,
-    groupName,
-    createdAt: existing?.createdAt || Date.now(),
-    lastSentAt: existing?.lastSentAt || null,
-  };
-  if (existingIndex >= 0) {
-    store.reminders[existingIndex] = record;
-  } else {
-    store.reminders.push(record);
-  }
-  await writeReminderStore(store);
+  await updateReminderStore((store) => {
+    const existingIndex = store.reminders.findIndex((item) => item.id === id);
+    const existing = existingIndex >= 0 ? store.reminders[existingIndex] : null;
+    const record: ReminderRecord = {
+      id,
+      email,
+      playerId,
+      groupCode,
+      groupName,
+      createdAt: existing?.createdAt || Date.now(),
+      lastSentAt: existing?.lastSentAt || null,
+    };
+    if (existingIndex >= 0) {
+      store.reminders[existingIndex] = record;
+    } else {
+      store.reminders.push(record);
+    }
+    return null;
+  });
   const confirmationSent = await sendConfirmation(email, groupCode, groupName).catch(() => false);
 
   return NextResponse.json({

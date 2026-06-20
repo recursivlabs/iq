@@ -1,4 +1,4 @@
-import { readJsonStore, writeJsonStore } from './store';
+import { readJsonStore, updateJsonStore } from './store';
 
 export type ReminderRecord = {
   id: string;
@@ -24,8 +24,19 @@ export async function readReminderStore(): Promise<ReminderStore> {
   };
 }
 
-export async function writeReminderStore(store: ReminderStore) {
-  await writeJsonStore(REMINDER_STORE_KEY, {
-    reminders: store.reminders.slice(-5000),
-  }, REMINDER_STORE_FILE);
+function normalizeReminderStore(parsed: Partial<ReminderStore>): ReminderStore {
+  return {
+    reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [],
+  };
+}
+
+export async function updateReminderStore<R>(updater: (store: ReminderStore) => R | Promise<R>) {
+  return await updateJsonStore<Partial<ReminderStore>, R>(REMINDER_STORE_KEY, { reminders: [] }, REMINDER_STORE_FILE, async (parsed) => {
+    const store = normalizeReminderStore(parsed);
+    const result = await updater(store);
+    return {
+      value: { reminders: store.reminders.slice(-5000) },
+      result,
+    };
+  });
 }

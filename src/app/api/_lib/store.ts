@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import tls from 'node:tls';
@@ -7,6 +8,7 @@ type RedisValue = string | number | null | RedisValue[];
 
 const memoryStore = globalThis as typeof globalThis & {
   __worldIqStore?: Record<string, unknown>;
+  __worldIqLocks?: Record<string, Promise<void>>;
 };
 
 function redisRestConfig() {
@@ -32,6 +34,10 @@ export function storeProvider() {
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message.slice(0, 160) : 'unknown storage error';
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function redisRestCommand(args: string[]) {
@@ -151,6 +157,48 @@ async function redisCommand(args: string[]) {
   return await redisTcpCommand(args);
 }
 
+async function withLocalLock<T>(key: string, task: () => Promise<T>) {
+  memoryStore.__worldIqLocks ||= {};
+  const pending = memoryStore.__worldIqLocks[key] || Promise.resolve();
+  let release = () => {};
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const next = pending.catch(() => undefined).then(() => current);
+  memoryStore.__worldIqLocks[key] = next;
+
+  await pending.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (memoryStore.__worldIqLocks?.[key] === next) {
+      delete memoryStore.__worldIqLocks[key];
+    }
+  }
+}
+
+async function acquireRedisLock(key: string) {
+  const token = randomUUID();
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const result = await redisCommand(['SET', key, token, 'NX', 'PX', '5000']);
+    if (result === 'OK') return token;
+    await sleep(35 + Math.floor(Math.random() * 45));
+  }
+  throw new Error('Timed out acquiring persistent store lock.');
+}
+
+async function releaseRedisLock(key: string, token: string) {
+  const script = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
+  try {
+    await redisCommand(['EVAL', script, '1', key, token]);
+  } catch {
+    const stored = await redisCommand(['GET', key]).catch(() => null);
+    if (stored === token) await redisCommand(['DEL', key]).catch(() => null);
+  }
+}
+
 export async function verifyPersistentStore() {
   const provider = storeProvider();
   if (!hasRedisStore()) {
@@ -220,4 +268,24 @@ export async function writeJsonStore<T>(key: string, value: T, fileName: string)
 
   await mkdir(path.dirname(fallbackPath(fileName)), { recursive: true });
   await writeFile(fallbackPath(fileName), JSON.stringify(value), 'utf8');
+}
+
+export async function updateJsonStore<T, R>(
+  key: string,
+  fallback: T,
+  fileName: string,
+  updater: (current: T) => Promise<{ value: T; result: R }> | { value: T; result: R },
+) {
+  return await withLocalLock(key, async () => {
+    const lockKey = `world-iq:lock:${key}`;
+    const token = hasRedisStore() ? await acquireRedisLock(lockKey) : null;
+    try {
+      const current = await readJsonStore<T>(key, fallback, fileName);
+      const { value, result } = await updater(current);
+      await writeJsonStore(key, value, fileName);
+      return result;
+    } finally {
+      if (token) await releaseRedisLock(lockKey, token);
+    }
+  });
 }

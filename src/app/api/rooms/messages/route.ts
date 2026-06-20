@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { readJsonStore, writeJsonStore } from '../../_lib/store';
+import { readJsonStore, updateJsonStore } from '../../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -59,16 +59,27 @@ function isRoomMessage(value: unknown): value is RoomMessage {
     && typeof message.timestamp === 'number';
 }
 
-async function readStore(): Promise<RoomMessageStore> {
-  const parsed = await readJsonStore<Partial<RoomMessageStore>>(STORE_KEY, emptyStore(), STORE_FILE);
+function normalizeStore(parsed: Partial<RoomMessageStore>): RoomMessageStore {
   return {
     messages: Array.isArray(parsed.messages) ? parsed.messages.filter(isRoomMessage).slice(-MAX_MESSAGES) : [],
   };
 }
 
-async function writeStore(store: RoomMessageStore) {
+async function readStore(): Promise<RoomMessageStore> {
+  return normalizeStore(await readJsonStore<Partial<RoomMessageStore>>(STORE_KEY, emptyStore(), STORE_FILE));
+}
+
+function trimStore(store: RoomMessageStore) {
   store.messages = store.messages.slice(-MAX_MESSAGES);
-  await writeJsonStore(STORE_KEY, store, STORE_FILE);
+  return store;
+}
+
+async function updateStore<R>(updater: (store: RoomMessageStore) => R) {
+  return await updateJsonStore<Partial<RoomMessageStore>, R>(STORE_KEY, emptyStore(), STORE_FILE, (parsed) => {
+    const store = normalizeStore(parsed);
+    const result = updater(store);
+    return { value: trimStore(store), result };
+  });
 }
 
 function roomRows(messages: RoomMessage[], groupCode: string) {
@@ -113,11 +124,12 @@ export async function POST(request: NextRequest) {
     timestamp: Date.now(),
   };
 
-  const store = await readStore();
-  store.messages.push(message);
-  await writeStore(store);
+  const messages = await updateStore((store) => {
+    store.messages.push(message);
+    return roomRows(store.messages, groupCode);
+  });
 
-  return NextResponse.json({ message, messages: roomRows(store.messages, groupCode) }, {
+  return NextResponse.json({ message, messages }, {
     headers: { 'cache-control': 'no-store' },
   });
 }

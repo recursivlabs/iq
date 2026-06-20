@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { readJsonStore, writeJsonStore } from '../_lib/store';
+import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -66,16 +66,27 @@ function isOfficialAttempt(value: unknown): value is OfficialAttempt {
     && typeof attempt.timestamp === 'number';
 }
 
-async function readStore(): Promise<AttemptStore> {
-  const parsed = await readJsonStore<Partial<AttemptStore>>(STORE_KEY, emptyStore(), STORE_FILE);
+function normalizeStore(parsed: Partial<AttemptStore>): AttemptStore {
   return {
     attempts: Array.isArray(parsed.attempts) ? parsed.attempts.filter(isOfficialAttempt).slice(-MAX_ATTEMPTS) : [],
   };
 }
 
-async function writeStore(store: AttemptStore) {
+async function readStore(): Promise<AttemptStore> {
+  return normalizeStore(await readJsonStore<Partial<AttemptStore>>(STORE_KEY, emptyStore(), STORE_FILE));
+}
+
+function trimStore(store: AttemptStore) {
   store.attempts = store.attempts.slice(-MAX_ATTEMPTS);
-  await writeJsonStore(STORE_KEY, store, STORE_FILE);
+  return store;
+}
+
+async function updateStore<R>(updater: (store: AttemptStore) => R) {
+  return await updateJsonStore<Partial<AttemptStore>, R>(STORE_KEY, emptyStore(), STORE_FILE, (parsed) => {
+    const store = normalizeStore(parsed);
+    const result = updater(store);
+    return { value: trimStore(store), result };
+  });
 }
 
 function publicAttempt(attempt: OfficialAttempt) {
@@ -136,42 +147,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid score.' }, { status: 400 });
   }
 
-  const store = await readStore();
   const id = `${day}:${playerId}`;
-  const existing = store.attempts.find((item) => item.id === id);
-  if (existing) {
-    return NextResponse.json({
-      accepted: false,
+  const result = await updateStore((store) => {
+    const existing = store.attempts.find((item) => item.id === id);
+    if (existing) {
+      return {
+        accepted: false,
+        locked: true,
+        attempt: publicAttempt(existing),
+      };
+    }
+
+    const attempt: OfficialAttempt = {
+      id,
+      day,
+      playerId,
+      score,
+      rank: sanitizeText(body.rank, '#--', 24),
+      percentile: Math.max(0, Math.min(100, percentile)),
+      correct,
+      total,
+      beatAi,
+      elapsedMs,
+      speedBonus,
+      timestamp: Date.now(),
+    };
+
+    store.attempts.push(attempt);
+    return {
+      accepted: true,
       locked: true,
-      attempt: publicAttempt(existing),
-    }, {
-      headers: { 'cache-control': 'no-store' },
-    });
-  }
+      attempt: publicAttempt(attempt),
+    };
+  });
 
-  const attempt: OfficialAttempt = {
-    id,
-    day,
-    playerId,
-    score,
-    rank: sanitizeText(body.rank, '#--', 24),
-    percentile: Math.max(0, Math.min(100, percentile)),
-    correct,
-    total,
-    beatAi,
-    elapsedMs,
-    speedBonus,
-    timestamp: Date.now(),
-  };
-
-  store.attempts.push(attempt);
-  await writeStore(store);
-
-  return NextResponse.json({
-    accepted: true,
-    locked: true,
-    attempt: publicAttempt(attempt),
-  }, {
+  return NextResponse.json(result, {
     headers: { 'cache-control': 'no-store' },
   });
 }

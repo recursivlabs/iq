@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { readJsonStore, writeJsonStore } from '../_lib/store';
+import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -38,9 +38,20 @@ function isValidUsername(username: string) {
   return /^[a-z0-9_]{3,20}$/.test(username);
 }
 
-async function readStore(): Promise<UsernameStore> {
-  const parsed = await readJsonStore<Partial<UsernameStore>>(STORE_KEY, { claims: {} }, STORE_FILE);
+function normalizeStore(parsed: Partial<UsernameStore>): UsernameStore {
   return { claims: parsed.claims && typeof parsed.claims === 'object' ? parsed.claims : {} };
+}
+
+async function readStore(): Promise<UsernameStore> {
+  return normalizeStore(await readJsonStore<Partial<UsernameStore>>(STORE_KEY, { claims: {} }, STORE_FILE));
+}
+
+async function updateStore<R>(updater: (store: UsernameStore) => R) {
+  return await updateJsonStore<Partial<UsernameStore>, R>(STORE_KEY, { claims: {} }, STORE_FILE, (parsed) => {
+    const store = normalizeStore(parsed);
+    const result = updater(store);
+    return { value: store, result };
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -69,25 +80,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
   }
 
-  const store = await readStore();
-  const existing = store.claims[username];
-  if (existing && existing.playerId !== playerId) {
-    return NextResponse.json({ error: `@${username} is taken.` }, { status: 409 });
-  }
+  const result = await updateStore((store) => {
+    const existing = store.claims[username];
+    if (existing && existing.playerId !== playerId) {
+      return { status: 409, body: { error: `@${username} is taken.` } };
+    }
 
-  const claim: UsernameClaim = {
-    username,
-    playerId,
-    displayName: cleanDisplayName(body?.displayName, username),
-    claimedAt: existing?.claimedAt || Date.now(),
-  };
-  store.claims[username] = claim;
-  await writeJsonStore(STORE_KEY, store, STORE_FILE);
+    const claim: UsernameClaim = {
+      username,
+      playerId,
+      displayName: cleanDisplayName(body?.displayName, username),
+      claimedAt: existing?.claimedAt || Date.now(),
+    };
+    store.claims[username] = claim;
+    return { status: 200, body: { ok: true, claim } };
+  });
 
-  return NextResponse.json({
-    ok: true,
-    claim,
-  }, {
+  return NextResponse.json(result.body, {
+    status: result.status,
     headers: { 'cache-control': 'no-store' },
   });
 }

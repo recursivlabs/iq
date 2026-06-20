@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { readJsonStore, writeJsonStore } from '../_lib/store';
+import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,16 +52,27 @@ function isSession(value: unknown): value is PresenceSession {
     && typeof session.lastSeen === 'number';
 }
 
-async function readStore(): Promise<PresenceStore> {
-  const parsed = await readJsonStore<Partial<PresenceStore>>(STORE_KEY, emptyStore(), STORE_FILE);
+function normalizeStore(parsed: Partial<PresenceStore>): PresenceStore {
   return {
     sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter(isSession).slice(-MAX_SESSIONS) : [],
   };
 }
 
-async function writeStore(store: PresenceStore) {
+async function readStore(): Promise<PresenceStore> {
+  return normalizeStore(await readJsonStore<Partial<PresenceStore>>(STORE_KEY, emptyStore(), STORE_FILE));
+}
+
+function trimStore(store: PresenceStore) {
   store.sessions = store.sessions.slice(-MAX_SESSIONS);
-  await writeJsonStore(STORE_KEY, store, STORE_FILE);
+  return store;
+}
+
+async function updateStore<R>(updater: (store: PresenceStore) => R) {
+  return await updateJsonStore<Partial<PresenceStore>, R>(STORE_KEY, emptyStore(), STORE_FILE, (parsed) => {
+    const store = normalizeStore(parsed);
+    const result = updater(store);
+    return { value: trimStore(store), result };
+  });
 }
 
 function pruneSessions(sessions: PresenceSession[], now: number) {
@@ -84,9 +95,10 @@ function responseFor(store: PresenceStore, now: number) {
 
 export async function GET() {
   const now = Date.now();
-  const store = await readStore();
-  store.sessions = pruneSessions(store.sessions, now);
-  await writeStore(store);
+  const store = await updateStore((current) => {
+    current.sessions = pruneSessions(current.sessions, now);
+    return current;
+  });
   return responseFor(store, now);
 }
 
@@ -99,7 +111,6 @@ export async function POST(request: NextRequest) {
   }
 
   const now = Date.now();
-  const store = await readStore();
   const session: PresenceSession = {
     id: sessionId,
     playerId,
@@ -107,9 +118,11 @@ export async function POST(request: NextRequest) {
     path: sanitizePath(body?.path),
     lastSeen: now,
   };
-  const sessions = pruneSessions(store.sessions, now).filter((existing) => existing.id !== sessionId);
-  sessions.push(session);
-  store.sessions = sessions;
-  await writeStore(store);
+  const store = await updateStore((current) => {
+    const sessions = pruneSessions(current.sessions, now).filter((existing) => existing.id !== sessionId);
+    sessions.push(session);
+    current.sessions = sessions;
+    return current;
+  });
   return responseFor(store, now);
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readReminderStore, writeReminderStore } from '../../_lib/reminders';
+import { readReminderStore, updateReminderStore } from '../../_lib/reminders';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -49,6 +49,7 @@ export async function POST(request: Request) {
   const store = await readReminderStore();
   let sent = 0;
   let skipped = 0;
+  const sentIds = new Set<string>();
   for (const reminder of store.reminders) {
     if (sameUtcDay(reminder.lastSentAt, now)) {
       skipped += 1;
@@ -57,12 +58,20 @@ export async function POST(request: Request) {
     const ok = await sendReminder(reminder.email, reminder.groupCode, reminder.groupName).catch(() => false);
     if (ok) {
       reminder.lastSentAt = now;
+      sentIds.add(reminder.id);
       sent += 1;
     } else {
       skipped += 1;
     }
   }
-  await writeReminderStore(store);
+  if (sentIds.size) {
+    await updateReminderStore((current) => {
+      for (const reminder of current.reminders) {
+        if (sentIds.has(reminder.id)) reminder.lastSentAt = now;
+      }
+      return null;
+    });
+  }
 
   return NextResponse.json({ ok: true, sent, skipped }, {
     headers: { 'cache-control': 'no-store' },

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { readJsonStore, writeJsonStore } from '../_lib/store';
+import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -163,16 +163,27 @@ function isSocialEntry(value: unknown): value is SocialEntry {
     && typeof entry.timestamp === 'number';
 }
 
-async function readStore(): Promise<LeaderboardStore> {
-  const parsed = await readJsonStore<Partial<LeaderboardStore>>(STORE_KEY, emptyStore(), STORE_FILE);
+function normalizeStore(parsed: Partial<LeaderboardStore>): LeaderboardStore {
   return {
     entries: Array.isArray(parsed.entries) ? parsed.entries.filter(isSocialEntry).slice(-MAX_ENTRIES) : [],
   };
 }
 
-async function writeStore(store: LeaderboardStore) {
+async function readStore(): Promise<LeaderboardStore> {
+  return normalizeStore(await readJsonStore<Partial<LeaderboardStore>>(STORE_KEY, emptyStore(), STORE_FILE));
+}
+
+function trimStore(store: LeaderboardStore) {
   store.entries = store.entries.slice(-MAX_ENTRIES);
-  await writeJsonStore(STORE_KEY, store, STORE_FILE);
+  return store;
+}
+
+async function updateStore<R>(updater: (store: LeaderboardStore) => R) {
+  return await updateJsonStore<Partial<LeaderboardStore>, R>(STORE_KEY, emptyStore(), STORE_FILE, (parsed) => {
+    const store = normalizeStore(parsed);
+    const result = updater(store);
+    return { value: trimStore(store), result };
+  });
 }
 
 function boardRows(entries: SocialEntry[]) {
@@ -319,24 +330,25 @@ export async function POST(request: NextRequest) {
     geo: sanitizeGeo(body.geo),
   };
 
-  const store = await readStore();
-  const existingIndex = store.entries.findIndex((item) => item.id === entry.id);
-  if (existingIndex >= 0) {
-    entry.timestamp = store.entries[existingIndex].timestamp;
-    store.entries[existingIndex] = { ...store.entries[existingIndex], displayName: entry.displayName, username: entry.username, groupName: entry.groupName, geo: entry.geo };
-  } else {
-    store.entries.push(entry);
-  }
-  await writeStore(store);
-  const responseEntries = includeAgents ? [...seededAgentEntries(day), ...store.entries] : store.entries;
+  const result = await updateStore((store) => {
+    const existingIndex = store.entries.findIndex((item) => item.id === entry.id);
+    if (existingIndex >= 0) {
+      entry.timestamp = store.entries[existingIndex].timestamp;
+      store.entries[existingIndex] = { ...store.entries[existingIndex], displayName: entry.displayName, username: entry.username, groupName: entry.groupName, geo: entry.geo };
+    } else {
+      store.entries.push(entry);
+    }
+    const responseEntries = includeAgents ? [...seededAgentEntries(day), ...store.entries] : store.entries;
+    return {
+      accepted: existingIndex < 0,
+      entry: existingIndex >= 0 ? store.entries[existingIndex] : entry,
+      global: globalRows(responseEntries, day),
+      group: groupCode ? groupRows(responseEntries, day, groupCode) : [],
+      geography: geographyRows(responseEntries, day),
+    };
+  });
 
-  return NextResponse.json({
-    accepted: existingIndex < 0,
-    entry: existingIndex >= 0 ? store.entries[existingIndex] : entry,
-    global: globalRows(responseEntries, day),
-    group: groupCode ? groupRows(responseEntries, day, groupCode) : [],
-    geography: geographyRows(responseEntries, day),
-  }, {
+  return NextResponse.json(result, {
     headers: { 'cache-control': 'no-store' },
   });
 }

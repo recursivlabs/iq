@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { readJsonStore, writeJsonStore } from '../_lib/store';
+import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -103,16 +103,27 @@ function emptyStore(): ProfileStore {
   return { profiles: [] };
 }
 
-async function readStore() {
-  const parsed = await readJsonStore<Partial<ProfileStore>>(STORE_KEY, emptyStore(), STORE_FILE);
+function normalizeStore(parsed: Partial<ProfileStore>): ProfileStore {
   return {
     profiles: Array.isArray(parsed.profiles) ? parsed.profiles.filter((profile) => profile && typeof profile === 'object').slice(-MAX_PROFILES) as PublicProfile[] : [],
   };
 }
 
-async function writeStore(store: ProfileStore) {
+async function readStore() {
+  return normalizeStore(await readJsonStore<Partial<ProfileStore>>(STORE_KEY, emptyStore(), STORE_FILE));
+}
+
+function trimStore(store: ProfileStore) {
   store.profiles = store.profiles.slice(-MAX_PROFILES);
-  await writeJsonStore(STORE_KEY, store, STORE_FILE);
+  return store;
+}
+
+async function updateStore<R>(updater: (store: ProfileStore) => R) {
+  return await updateJsonStore<Partial<ProfileStore>, R>(STORE_KEY, emptyStore(), STORE_FILE, (parsed) => {
+    const store = normalizeStore(parsed);
+    const result = updater(store);
+    return { value: trimStore(store), result };
+  });
 }
 
 function publicProfile(profile: PublicProfile) {
@@ -147,9 +158,10 @@ export async function POST(request: NextRequest) {
   if (!profile) {
     return NextResponse.json({ error: 'Invalid profile.' }, { status: 400 });
   }
-  const store = await readStore();
-  const profiles = store.profiles.filter((item) => item.id !== profile.id && item.slug !== profile.slug);
-  profiles.push(profile);
-  await writeStore({ profiles });
+  await updateStore((store) => {
+    store.profiles = store.profiles.filter((item) => item.id !== profile.id && item.slug !== profile.slug);
+    store.profiles.push(profile);
+    return null;
+  });
   return NextResponse.json({ profile: publicProfile(profile) || { slug: profile.slug, profilePublic: false } }, { headers: { 'cache-control': 'no-store' } });
 }

@@ -227,7 +227,7 @@ async function sourceAudit() {
 
   assert(attempts.includes("STORE_KEY = 'world-iq:official-attempts:v1'"), 'Attempt lock API stores official attempts under a dedicated key.');
   assert(attempts.includes('accepted: false') && attempts.includes('locked: true'), 'Attempt lock API returns an existing lock instead of accepting duplicates.');
-  assert(attempts.includes('readJsonStore') && attempts.includes('writeJsonStore'), 'Attempt lock API uses the shared Redis-backed store.');
+  assert(attempts.includes('readJsonStore') && attempts.includes('updateJsonStore'), 'Attempt lock API uses the shared serialized store.');
 
   assert(username.includes('isValidUsername') && username.includes('status: 409'), 'Username API validates format and rejects claims owned by another player.');
   assert(profiles.includes('publicProfile(profile)') && profiles.includes('profilePublic'), 'Profile API applies public/privacy controls before returning profiles.');
@@ -253,7 +253,10 @@ async function sourceAudit() {
   assert(store.includes('UPSTASH_REDIS_REST_URL') && store.includes('KV_REST_API_URL') && store.includes('REDIS_URL'), 'Store supports Redis/Upstash/Vercel KV configuration.');
   assert(store.includes("path.join('/tmp'"), 'Store has only an ephemeral /tmp fallback when Redis is not configured.');
   assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes("['GET', key]"), 'Persistent store health verifies Redis/KV with a write/read round trip.');
+  assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('releaseRedisLock'), 'Shared store serializes read-modify-write updates locally and with Redis locks.');
   assert(health.includes('launchReady') && health.includes('verified') && health.includes('status = storage.persistent && !storage.verified ? 503 : 200'), 'Health API exposes launch readiness and fails broken persistent storage configs.');
+  assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
+  assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
 
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL) {
     const message = 'No Redis/KV env is visible in this shell; production must configure one or leaderboard/map/profile writes are only ephemeral per runtime.';
