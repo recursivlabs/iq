@@ -343,11 +343,12 @@ async function sourceAudit() {
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
   assert(app.includes('function groupRoomNumber') && app.includes('groupRoomNumber(group.code)'), 'Friend groups render stable unique room identifiers in the sidebar list.');
+  assert(app.includes('return `Group ${groupRoomNumber(code)}`') && app.includes('className="group-room-tag"'), 'Newly created friend groups get stable visible room numbers in the sidebar list.');
   assert(app.includes('function navigateGroupRankings') && app.includes('groupRankingsPath(cleaned)') && app.includes('navigateGroupRankings(cleaned)'), 'Opening a listed friend group lands on its durable rankings URL.');
   assert(app.includes('command-panel sidebar-nav') && app.includes('command-scroll') && app.includes('role="navigation"'), 'Navigation renders as a left sidebar drawer with scrollable app navigation.');
   assert(app.includes('command-room-card') && app.includes('Current room') && app.includes('command-profile-meta'), 'Sidebar includes a structured command-center room and identity summary.');
   assert(app.includes('formatGroupCreatedAt') && app.includes('groupShareUrl(group.code)') && app.includes('Invite-only'), 'Friend groups are listed with distinct invite-only room metadata.');
-  assert(app.includes('No seeded agents.') && app.includes('Rooms are invite-only and stay empty until real players open your link.'), 'Friend-room UI promises real invited players instead of seeded agents.');
+  assert(app.includes('Active private group') && app.includes('Only people who open this link appear here.') && app.includes('No seeded agents.') && app.includes('Rooms are invite-only and stay empty until real players open your link.'), 'Friend-room UI promises link-only real invited players instead of seeded agents.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');

@@ -251,7 +251,7 @@ nav .nav-cta,
   top: 0;
   bottom: 0;
   z-index: 31;
-  width: min(460px, 100vw);
+  width: min(440px, calc(100vw - 18px));
   border: 1px solid rgba(255, 255, 255, .12);
   border-left: 0;
   border-radius: 0 12px 12px 0;
@@ -268,8 +268,8 @@ nav .nav-cta,
   overflow-y: auto;
   display: grid;
   align-content: start;
-  gap: 14px;
-  padding: 14px;
+  gap: 16px;
+  padding: 16px;
 }
 
 .command-profile {
@@ -339,11 +339,11 @@ nav .nav-cta,
 .command-actions button,
 .command-group-list button,
 .command-section-head button {
-  min-height: 50px;
+  min-height: 54px;
   border: 0;
   border-radius: 0;
   background: #0e1012;
-  padding: 0 14px;
+  padding: 0 16px;
   text-align: left;
   width: 100%;
 }
@@ -392,7 +392,8 @@ nav .nav-cta,
 
 .command-section-head button {
   width: auto;
-  min-height: 34px;
+  min-height: 40px;
+  padding: 0 13px;
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 3px;
   background: rgba(255, 255, 255, .035);
@@ -401,8 +402,8 @@ nav .nav-cta,
 
 .command-room-card {
   display: grid;
-  gap: 8px;
-  padding: 14px;
+  gap: 10px;
+  padding: 16px;
   border: 1px solid rgba(255, 255, 255, .11);
   border-radius: 8px;
   background:
@@ -446,7 +447,7 @@ nav .nav-cta,
 }
 
 .command-room-card button {
-  min-height: 42px;
+  min-height: 48px;
   border: 1px solid rgba(255, 255, 255, .18);
   border-radius: 4px;
   background: rgba(255, 255, 255, .055);
@@ -455,19 +456,21 @@ nav .nav-cta,
 }
 
 .command-group-list {
+  min-height: 0;
   display: grid;
+  align-content: start;
   gap: 1px;
   border: 1px solid rgba(255, 255, 255, .08);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-y: auto;
   background: rgba(255, 255, 255, .08);
 }
 
 .command-group-list button {
-  min-height: 104px;
+  min-height: 118px;
   display: grid;
   align-content: center;
-  gap: 5px;
+  gap: 7px;
 }
 
 .group-row-top {
@@ -505,9 +508,20 @@ nav .nav-cta,
   color: #777d82;
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 9.5px;
+  line-height: 1.35;
   letter-spacing: .1em;
   text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.command-group-list code {
+  color: #aeb4b8;
+  letter-spacing: .08em;
   white-space: nowrap;
+}
+
+.group-room-tag {
+  color: #aeb4b8;
 }
 
 .full {
@@ -1298,8 +1312,8 @@ nav .nav-cta,
   }
 
   .command-panel {
-    width: min(390px, 100vw);
-    border-radius: 0;
+    width: min(390px, calc(100vw - 8px));
+    border-radius: 0 12px 12px 0;
   }
 
   .command-grid button,
@@ -1309,11 +1323,11 @@ nav .nav-cta,
   }
 
   .command-scroll {
-    padding: 10px;
+    padding: 12px;
   }
 
   .command-group-list button {
-    min-height: 98px;
+    min-height: 112px;
   }
 
   nav button {
