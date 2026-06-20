@@ -13,6 +13,7 @@ const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
 const healthPath = path.join(root, 'src/app/api/health/route.ts');
+const playerAuthPath = path.join(root, 'src/app/api/_lib/playerAuth.ts');
 const usernamePath = path.join(root, 'src/app/api/username/route.ts');
 const profilesPath = path.join(root, 'src/app/api/profiles/route.ts');
 const roomMessagesPath = path.join(root, 'src/app/api/rooms/messages/route.ts');
@@ -219,6 +220,7 @@ async function sourceAudit() {
   const attempts = source(attemptsPath);
   const store = source(storePath);
   const health = source(healthPath);
+  const playerAuth = source(playerAuthPath);
   const geo = source(geoPath);
   const username = source(usernamePath);
   const profiles = source(profilesPath);
@@ -248,6 +250,7 @@ async function sourceAudit() {
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(healthPath), 'Storage health API route exists.');
+  assert(existsSync(playerAuthPath), 'Shared player auth validator exists.');
   assert(existsSync(usernamePath), 'Username API route exists.');
   assert(existsSync(profilesPath), 'Profile API route exists.');
   assert(existsSync(roomMessagesPath), 'Room message API route exists.');
@@ -372,9 +375,10 @@ async function sourceAudit() {
   assert(profiles.includes('publicProfile(profile)') && profiles.includes('profilePublic'), 'Profile API applies public/privacy controls before returning profiles.');
   assert(profiles.includes('MAX_PROFILE_ATTEMPTS') && profiles.includes('MAX_PROFILE_ANSWERS') && profiles.includes('MAX_PROFILE_SCORE'), 'Profile API clamps public score/history metadata to the supported daily-history range.');
   assert(profiles.includes('xVerified: false') && !profiles.includes('Boolean(value.xVerified)') && profiles.includes('normalizeProfile(profile as Record<string, unknown>)'), 'Profile API does not trust client-submitted X badges or legacy stored profile flags.');
-  assert(profiles.includes('PLAYER_API_KEY_COOKIE') && profiles.includes('Connect an IQ WARS account before saving a profile.'), 'Profile write API requires a connected IQ WARS account cookie.');
+  assert(playerAuth.includes('PLAYER_API_KEY_COOKIE') && playerAuth.includes('/api/v1/users/me') && playerAuth.includes('status: 401') && playerAuth.includes('status: 503'), 'Shared player auth validator verifies Recursiv player keys and fails closed.');
+  assert(profiles.includes('validatePlayerAccount') && profiles.includes('Connect an IQ WARS account before saving a profile.'), 'Profile write API requires a verified IQ WARS player account.');
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
-  assert(roomMessages.includes('PLAYER_API_KEY_COOKIE') && roomMessages.includes('Connect an IQ WARS account before posting room chat.'), 'Room chat write API requires a connected IQ WARS account cookie.');
+  assert(roomMessages.includes('validatePlayerAccount') && roomMessages.includes('Connect an IQ WARS account before posting room chat.'), 'Room chat write API requires a verified IQ WARS player account.');
   assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
   assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
   assert(reminders.includes('shouldSendConfirmation') && reminders.includes('confirmationSentAt'), 'Reminder signup only sends confirmation email until a reminder has a recorded confirmation.');
@@ -405,6 +409,7 @@ async function sourceAudit() {
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
+  assert(audit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && audit.includes('Live authenticated social-write success checks skipped'), 'Live audit only runs authenticated social-write success checks with a real audit player key.');
   assert(audit.includes("['/privacy'") && audit.includes("['/terms'") && audit.includes("['/blog/best-online-iq-test'") && audit.includes('assertLivePage'), 'Live audit covers the public page route surface.');
 
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL) {
@@ -463,7 +468,9 @@ async function liveAudit() {
     timeZone: 'America/New_York',
     source: 'audit',
   };
-  const playerCookieHeaders = { Cookie: 'iqwars_player_api_key=audit-player-key' };
+  const auditPlayerApiKey = process.env.IQWARS_AUDIT_PLAYER_API_KEY || '';
+  const canAuditAuthenticatedSocialWrites = Boolean(auditPlayerApiKey);
+  const playerCookieHeaders = { Cookie: `iqwars_player_api_key=${auditPlayerApiKey || 'audit-player-key'}` };
 
   const before = await requestJson(`${origin}/api/leaderboards?day=${day}&group=${group}&agents=false`);
   assert(before.response.ok, 'Live leaderboard GET accepts agents=false.');
@@ -534,71 +541,86 @@ async function liveAudit() {
   });
   assert(unauthenticatedProfilePost.response.status === 401, 'Live profile API rejects anonymous profile writes.');
 
-  const profilePost = await requestJson(`${origin}/api/profiles`, {
-    method: 'POST',
-    headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      id: playerId,
-      slug: profileSlug,
-      username,
-      displayName: 'Audit Player',
-      bio: 'Launch audit profile',
-      city: 'New York',
-      country: 'United States',
-      score: 137,
-      best: 137,
-      rank: '#13,700',
-      attempts: 1,
-      answers: 12,
-      profilePublic: true,
-      showLocation: true,
-      showXBadge: false,
-      showHistory: true,
-    }),
-  });
-  assert(profilePost.response.ok && profilePost.data.profile?.slug === profileSlug, 'Live profile API accepts a public audit profile.');
-  const profileGet = await requestJson(`${origin}/api/profiles?slug=${profileSlug}`);
-  assert(profileGet.response.ok && profileGet.data.profile?.score === 137 && profileGet.data.profile?.city === 'New York', 'Live profile API reads the submitted public profile with visible location.');
+  if (canAuditAuthenticatedSocialWrites) {
+    const profilePost = await requestJson(`${origin}/api/profiles`, {
+      method: 'POST',
+      headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: playerId,
+        slug: profileSlug,
+        username,
+        displayName: 'Audit Player',
+        bio: 'Launch audit profile',
+        city: 'New York',
+        country: 'United States',
+        score: 137,
+        best: 137,
+        rank: '#13,700',
+        attempts: 1,
+        answers: 12,
+        profilePublic: true,
+        showLocation: true,
+        showXBadge: false,
+        showHistory: true,
+      }),
+    });
+    assert(profilePost.response.ok && profilePost.data.profile?.slug === profileSlug, 'Live profile API accepts a public audit profile.');
+    const profileGet = await requestJson(`${origin}/api/profiles?slug=${profileSlug}`);
+    assert(profileGet.response.ok && profileGet.data.profile?.score === 137 && profileGet.data.profile?.city === 'New York', 'Live profile API reads the submitted public profile with visible location.');
 
-  const spoofProfilePost = await requestJson(`${origin}/api/profiles`, {
-    method: 'POST',
-    headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      id: `${playerId}-spoof`,
-      slug: spoofProfileSlug,
-      username: `${username}_spoof`,
-      displayName: 'Spoof Audit',
-      bio: 'Spoof profile should be normalized',
-      city: 'New York',
-      country: 'United States',
-      xHandle: 'audit_x',
-      xVerified: true,
-      score: 999,
-      best: 1000,
-      rank: 'not-a-rank',
-      attempts: 9999,
-      answers: 999999,
-      profilePublic: true,
-      showLocation: true,
-      showXBadge: true,
-      showHistory: true,
-      agent: true,
-    }),
-  });
-  assert(spoofProfilePost.response.ok, 'Live profile API accepts but sanitizes a spoofed profile payload.');
-  const spoofProfileGet = await requestJson(`${origin}/api/profiles?slug=${spoofProfileSlug}`);
-  const spoofProfile = spoofProfileGet.data?.profile || {};
-  assert(
-    spoofProfileGet.response.ok
-    && spoofProfile.xVerified === false
-    && spoofProfile.agent !== true
-    && spoofProfile.score <= 155
-    && spoofProfile.best <= 155
-    && spoofProfile.attempts <= 60
-    && spoofProfile.answers <= 720
-    && spoofProfile.rank === null,
-    'Live profile API strips spoofed badges/agent flags and clamps impossible score history.'
-  );
+    const spoofProfilePost = await requestJson(`${origin}/api/profiles`, {
+      method: 'POST',
+      headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: `${playerId}-spoof`,
+        slug: spoofProfileSlug,
+        username: `${username}_spoof`,
+        displayName: 'Spoof Audit',
+        bio: 'Spoof profile should be normalized',
+        city: 'New York',
+        country: 'United States',
+        xHandle: 'audit_x',
+        xVerified: true,
+        score: 999,
+        best: 1000,
+        rank: 'not-a-rank',
+        attempts: 9999,
+        answers: 999999,
+        profilePublic: true,
+        showLocation: true,
+        showXBadge: true,
+        showHistory: true,
+        agent: true,
+      }),
+    });
+    assert(spoofProfilePost.response.ok, 'Live profile API accepts but sanitizes a spoofed profile payload.');
+    const spoofProfileGet = await requestJson(`${origin}/api/profiles?slug=${spoofProfileSlug}`);
+    const spoofProfile = spoofProfileGet.data?.profile || {};
+    assert(
+      spoofProfileGet.response.ok
+      && spoofProfile.xVerified === false
+      && spoofProfile.agent !== true
+      && spoofProfile.score <= 155
+      && spoofProfile.best <= 155
+      && spoofProfile.attempts <= 60
+      && spoofProfile.answers <= 720
+      && spoofProfile.rank === null,
+      'Live profile API strips spoofed badges/agent flags and clamps impossible score history.'
+    );
+  } else {
+    const invalidProfilePost = await requestJson(`${origin}/api/profiles`, {
+      method: 'POST',
+      headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: playerId,
+        slug: profileSlug,
+        username,
+        displayName: 'Audit Player',
+      }),
+    });
+    assert([401, 503].includes(invalidProfilePost.response.status), 'Live profile API rejects invalid player-key cookies.');
+    warn('Live authenticated social-write success checks skipped because IQWARS_AUDIT_PLAYER_API_KEY is not configured.');
+  }
 
   const roomMissing = await requestJson(`${origin}/api/rooms/messages`);
   assert(roomMissing.response.status === 400, 'Live room message API rejects missing room reads.');
@@ -613,9 +635,15 @@ async function liveAudit() {
     headers: { ...playerCookieHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({ groupCode: group, playerId, displayName: 'Audit Player', username, body: roomBody }),
   });
-  assert(roomPost.response.ok && roomPost.data.message?.body === roomBody, 'Live room message API accepts a sanitized room message.');
-  const roomGet = await requestJson(`${origin}/api/rooms/messages?group=${group}`);
-  assert(roomGet.response.ok && (roomGet.data.messages || []).some((message) => message.body === roomBody), 'Live room message API reads messages for the requested room.');
+  if (canAuditAuthenticatedSocialWrites) {
+    assert(roomPost.response.ok && roomPost.data.message?.body === roomBody, 'Live room message API accepts a sanitized room message.');
+    const roomGet = await requestJson(`${origin}/api/rooms/messages?group=${group}`);
+    assert(roomGet.response.ok && (roomGet.data.messages || []).some((message) => message.body === roomBody), 'Live room message API reads messages for the requested room.');
+  } else {
+    assert([401, 503].includes(roomPost.response.status), 'Live room message API rejects invalid player-key cookies.');
+    const roomGet = await requestJson(`${origin}/api/rooms/messages?group=${group}`);
+    assert(roomGet.response.ok, 'Live room message API still allows public room reads after invalid write rejection.');
+  }
 
   const presenceMissing = await requestJson(`${origin}/api/presence`, {
     method: 'POST',

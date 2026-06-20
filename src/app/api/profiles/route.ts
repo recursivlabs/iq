@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
+import { validatePlayerAccount } from '../_lib/playerAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -38,7 +39,6 @@ const MAX_PROFILE_ATTEMPTS = 60;
 const MAX_PROFILE_ANSWERS = MAX_PROFILE_ATTEMPTS * 12;
 const MIN_PROFILE_SCORE = 70;
 const MAX_PROFILE_SCORE = 155;
-const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
 
 const SEEDED_AGENT_PROFILES: PublicProfile[] = [
   { id: 'agent-euclid', slug: 'agent_euclid', username: 'agent_euclid', displayName: 'Agent Euclid', bio: 'Seeded test profile. Pattern speed, geometry, and clean-room reasoning.', city: 'New York', country: 'United States', xHandle: null, xVerified: false, score: 142, best: 142, rank: '#8,210', attempts: 18, answers: 216, profilePublic: true, showLocation: true, showXBadge: false, showHistory: true, updatedAt: 0, agent: true },
@@ -74,10 +74,6 @@ function cleanOptionalText(value: unknown, max = 160) {
 function cleanNumber(value: unknown, min: number, max: number) {
   const next = Number(value);
   return Number.isFinite(next) ? Math.max(min, Math.min(max, Math.round(next))) : null;
-}
-
-function hasPlayerSession(request: NextRequest) {
-  return Boolean(request.cookies.get(PLAYER_API_KEY_COOKIE)?.value);
 }
 
 function cleanRank(value: unknown) {
@@ -180,8 +176,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!hasPlayerSession(request)) {
-    return NextResponse.json({ error: 'Connect an IQ WARS account before saving a profile.' }, { status: 401 });
+  const account = await validatePlayerAccount(request);
+  if (!account.ok) {
+    const error = account.status === 401
+      ? 'Connect an IQ WARS account before saving a profile.'
+      : account.error;
+    return NextResponse.json({ error }, { status: account.status });
   }
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
