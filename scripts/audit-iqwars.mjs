@@ -369,6 +369,8 @@ async function sourceAudit() {
   assert(app.includes('command-panel sidebar-nav') && app.includes('Left sidebar') && app.includes('command-scroll') && app.includes('role="navigation"'), 'Navigation renders as a left sidebar drawer with scrollable app navigation.');
   assert(app.includes('command-room-card') && app.includes('No active group') && app.includes('command-profile-meta'), 'Sidebar includes a structured command-center room and identity summary.');
   assert(app.includes('formatGroupCreatedAt') && app.includes('groupShareUrl(group.code)') && app.includes('Invite-only') && app.includes('Real players only'), 'Friend groups are listed with distinct invite-only real-player room metadata.');
+  assert(app.includes('command-group-item') && app.includes('command-group-actions') && app.includes('copyListedGroupLink(group.code)'), 'Friend group sidebar rows are listed items with separate open-board and copy-link actions.');
+  assert(app.includes("copy('No agents')") && app.includes('Open board') && app.includes('Copy link'), 'Friend group rows explicitly avoid agents and expose direct open/copy controls.');
   assert(app.includes('Active private group') && app.includes('Only real people who open this link appear here.') && app.includes('No seeded agents in private groups.') && app.includes('Each new group gets a different invite link and starts empty until real players open it.'), 'Friend-room UI promises link-only real invited players instead of seeded agents.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');

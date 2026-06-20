@@ -3656,6 +3656,7 @@ export default function Home({
   const [reminderState, setReminderState] = React.useState('Remind me tomorrow');
   const [inviteState, setInviteState] = React.useState('Copy link');
   const [inviteFallbackUrl, setInviteFallbackUrl] = React.useState('');
+  const [copiedGroupCode, setCopiedGroupCode] = React.useState('');
   const [recursivAccount, setRecursivAccount] = React.useState<RecursivAccountRecord | null>(null);
   const [authEmail, setAuthEmail] = React.useState('');
   const [authCode, setAuthCode] = React.useState('');
@@ -4388,6 +4389,25 @@ export default function Home({
     await copyGroupLink(groupCode);
   }
 
+  async function copyListedGroupLink(code: string) {
+    const cleaned = cleanGroupCode(code);
+    if (!cleaned) return;
+    const url = groupShareUrl(cleaned);
+    setCopiedGroupCode(cleaned);
+    try {
+      await copyTextToClipboard(url);
+      playInteractionSound('success');
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          setCopiedGroupCode((current) => current === cleaned ? '' : current);
+        }, 1800);
+      }
+    } catch {
+      setInviteFallbackUrl(url);
+      playInteractionSound('tap');
+    }
+  }
+
   function handleRoomMessageDraft(value: string) {
     setRoomMessageDraft(value.slice(0, 240));
     setRoomMessageState('Post');
@@ -4673,12 +4693,13 @@ export default function Home({
             onClick={() => setNavOpen((open) => !open)}
           >
             <span className="menu-mark" aria-hidden="true"><i /><i /><i /></span>
+            <span className="command-toggle-label">{copy('Menu')}</span>
           </button>
         </div>
         {navOpen ? (
           <>
           <button className="command-backdrop" aria-label={copy('Close command center')} onClick={() => setNavOpen(false)} />
-          <aside className="command-panel sidebar-nav" role="dialog" aria-label={copy('IQ WARS command center')}>
+          <aside className="command-panel sidebar-nav" role="navigation" aria-label={copy('IQ WARS command center')}>
             <div className="command-panel-head">
               <div>
                 <strong>IQ WARS</strong>
@@ -4723,15 +4744,19 @@ export default function Home({
                 </div>
                 <div className="command-group-list">
                   {groupRecords.length > 0 ? groupRecords.map((group) => (
-                    <button key={group.code} className={group.code === groupCode ? 'active' : ''} onClick={() => openGroup(group.code, group.name)}>
+                    <article key={group.code} className={`command-group-item ${group.code === groupCode ? 'active' : ''}`}>
                       <div className="group-row-top">
                         <strong>{group.name}</strong>
                         <em>{group.code === groupCode ? copy('Active') : copy('Private')}</em>
                       </div>
                       <span className="group-room-tag">{groupRoomIdentity(group.code)} · {formatGroupCreatedAt(group.createdAt)}</span>
-                      <span>{copy('Invite-only')} · {copy('Real players only')} · {group.code === groupCode ? activeGroupScoreLabel : copy('Tap for today\'s friend board')}</span>
+                      <span>{copy('Invite-only')} · {copy('Real players only')} · {copy('No agents')} · {group.code === groupCode ? activeGroupScoreLabel : copy('Open for today\'s friend board')}</span>
                       <code>{groupShareUrl(group.code).replace(/^https?:\/\//, '')}</code>
-                    </button>
+                      <div className="command-group-actions">
+                        <button onClick={() => openGroup(group.code, group.name)}>{copy(group.code === groupCode ? 'View board' : 'Open board')}</button>
+                        <button className="copy-link" onClick={() => copyListedGroupLink(group.code)}>{copy(copiedGroupCode === group.code ? 'Copied' : 'Copy link')}</button>
+                      </div>
+                    </article>
                   )) : (
                     <div className="command-empty">
                       <strong>{copy('No groups yet.')}</strong>
@@ -5681,12 +5706,14 @@ export default function Home({
           box-shadow: 0 0 16px rgba(244,245,246,.68);
         }
         .command-toggle {
-          display: inline-grid;
-          place-items: center;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 11px;
           min-height: 48px;
-          width: 48px;
-          min-width: 48px;
-          padding: 0;
+          width: auto;
+          min-width: 108px;
+          padding: 0 14px;
           border: 1px solid rgba(255,255,255,.16);
           border-radius: 4px;
           background: rgba(255,255,255,.035);
@@ -5705,6 +5732,16 @@ export default function Home({
           height: 1px;
           background: #f4f5f6;
           box-shadow: 0 0 10px rgba(244,245,246,.38);
+        }
+        .command-toggle-label {
+          color: #d8dcde;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: .18em;
+          line-height: 1;
+          text-transform: uppercase;
+          white-space: nowrap;
         }
         .command-id {
           display: grid;
@@ -5737,10 +5774,10 @@ export default function Home({
           top: 0;
           bottom: 0;
           z-index: 31;
-          width: min(500px, calc(100vw - 14px));
+          width: min(460px, calc(100vw - 10px));
           border: 1px solid rgba(255,255,255,.12);
           border-left: 0;
-          border-radius: 0 18px 18px 0;
+          border-radius: 0 16px 16px 0;
           background: rgba(7,8,10,.98);
           box-shadow: 34px 0 100px rgba(0,0,0,.68), inset 1px 0 0 rgba(255,255,255,.06);
           backdrop-filter: blur(22px);
@@ -5868,7 +5905,7 @@ export default function Home({
         }
         .command-grid button,
         .command-actions button,
-        .command-group-list button,
+        .command-group-actions button,
         .command-section-head button {
           min-height: 58px;
           border: 0;
@@ -5880,7 +5917,7 @@ export default function Home({
           width: 100%;
         }
         .command-grid button.active,
-        .command-group-list button.active {
+        .command-group-item.active {
           border-color: rgba(255,255,255,.36);
           background: rgba(255,255,255,.08);
           color: #f4f5f6;
@@ -5982,11 +6019,14 @@ export default function Home({
           overflow-y: auto;
           background: rgba(255,255,255,.08);
         }
-        .command-group-list button {
-          min-height: 134px;
+        .command-group-item {
+          min-height: 154px;
           display: grid;
-          gap: 8px;
+          gap: 9px;
           align-content: center;
+          padding: 14px;
+          background: #0e1012;
+          border: 1px solid transparent;
         }
         .group-row-top {
           min-width: 0;
@@ -6034,6 +6074,28 @@ export default function Home({
         }
         .group-room-tag {
           color: #aeb4b8;
+        }
+        .command-group-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          margin-top: 3px;
+        }
+        .command-group-actions button {
+          min-height: 40px;
+          padding: 0 10px;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 4px;
+          background: rgba(255,255,255,.035);
+          color: #dfe2e4;
+          font-size: 9px;
+          letter-spacing: .14em;
+          justify-content: center;
+          text-align: center;
+        }
+        .command-group-actions .copy-link {
+          color: #f4f5f6;
+          background: rgba(255,255,255,.06);
         }
         .command-empty {
           border: 0;
@@ -7921,24 +7983,27 @@ export default function Home({
           }
           .command-toggle {
             min-height: 42px;
-            width: 42px;
             min-width: 42px;
+            padding: 0 10px;
+          }
+          .command-toggle-label {
+            display: none;
           }
           .command-panel {
-            width: min(430px, calc(100vw - 4px));
-            border-radius: 0 16px 16px 0;
+            width: min(430px, calc(100vw - 2px));
+            border-radius: 0 14px 14px 0;
           }
           .command-grid button,
           .command-actions button,
-          .command-group-list button {
+          .command-group-actions button {
             min-height: 54px;
           }
           .command-scroll {
             padding: 14px;
             gap: 14px;
           }
-          .command-group-list button {
-            min-height: 128px;
+          .command-group-item {
+            min-height: 148px;
           }
           nav button {
             white-space: nowrap;
