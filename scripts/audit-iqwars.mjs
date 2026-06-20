@@ -14,6 +14,7 @@ const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
 const healthPath = path.join(root, 'src/app/api/health/route.ts');
 const readyPath = path.join(root, 'src/app/api/ready/route.ts');
+const recursivConfigPath = path.join(root, 'src/app/api/_lib/recursivConfig.ts');
 const playerAuthPath = path.join(root, 'src/app/api/_lib/playerAuth.ts');
 const usernamePath = path.join(root, 'src/app/api/username/route.ts');
 const profilesPath = path.join(root, 'src/app/api/profiles/route.ts');
@@ -222,6 +223,7 @@ async function sourceAudit() {
   const store = source(storePath);
   const health = source(healthPath);
   const ready = source(readyPath);
+  const recursivConfig = source(recursivConfigPath);
   const playerAuth = source(playerAuthPath);
   const geo = source(geoPath);
   const username = source(usernamePath);
@@ -253,6 +255,7 @@ async function sourceAudit() {
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(healthPath), 'Storage health API route exists.');
   assert(existsSync(readyPath), 'Launch readiness API route exists.');
+  assert(existsSync(recursivConfigPath), 'Shared Recursiv project auth verifier exists.');
   assert(existsSync(playerAuthPath), 'Shared player auth validator exists.');
   assert(existsSync(usernamePath), 'Username API route exists.');
   assert(existsSync(profilesPath), 'Profile API route exists.');
@@ -423,8 +426,9 @@ async function sourceAudit() {
   assert(store.includes('if (!config) return undefined') && store.includes('if (rest !== undefined) return rest'), 'Redis REST command routing preserves nil command results.');
   assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes("['GET', key]"), 'Persistent store health verifies Redis/KV with a write/read round trip.');
   assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('releaseRedisLock'), 'Shared store serializes read-modify-write updates locally and with Redis locks.');
-  assert(health.includes('launchReady') && health.includes('verified') && health.includes('status = storage.persistent && !storage.verified ? 503 : 200'), 'Health API exposes launch readiness and fails broken persistent storage configs.');
-  assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage is launch-ready.');
+  assert(recursivConfig.includes('verifyRecursivProjectAuth') && recursivConfig.includes('/api/v1/users/me') && recursivConfig.includes('/api/v1/databases') && recursivConfig.includes('projectAccess'), 'Recursiv project auth verifier checks both API-key validity and IQ WARS project access.');
+  assert(health.includes('launchReady') && health.includes('verified') && health.includes('verifyRecursivProjectAuth') && health.includes('recursivConfiguredButBroken'), 'Health API exposes launch readiness and fails broken persistent storage or configured Recursiv auth.');
+  assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('verifyRecursivProjectAuth') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage and Recursiv project access are launch-ready.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
@@ -502,21 +506,33 @@ async function liveAudit() {
   assert(health.response.ok && health.data.ok === true, 'Live health endpoint responds when storage is not misconfigured.');
   const persistent = Boolean(health.data.storage?.persistent);
   const verified = Boolean(health.data.storage?.verified);
-  const launchReady = Boolean(health.data.storage?.launchReady);
+  const storageLaunchReady = Boolean(health.data.storage?.launchReady);
   const provider = String(health.data.storage?.provider || 'unknown');
-  if (persistent && verified && launchReady) {
+  const recursivConfigured = Boolean(health.data.recursiv?.configured);
+  const recursivVerified = Boolean(health.data.recursiv?.verified);
+  const recursivProjectAccess = Boolean(health.data.recursiv?.projectAccess);
+  const recursivLaunchReady = recursivConfigured && recursivVerified && recursivProjectAccess;
+  const launchReady = Boolean(health.data.launchReady) && storageLaunchReady && recursivLaunchReady;
+  if (persistent && verified && storageLaunchReady) {
     pass(`Live storage is persistent and round-trip verified (${provider}).`);
   } else if (requirePersistent) {
     failures.push(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
   } else {
     warn(`Live storage is not launch-persistent and verified (${provider}); configure Redis/KV envs before launch.`);
   }
+  if (recursivLaunchReady) {
+    pass('Live Recursiv API key is valid and can access the IQ WARS project.');
+  } else if (requirePersistent) {
+    failures.push(`Live Recursiv project auth is not launch-ready (${health.data.recursiv?.error || 'not_ready'}).`);
+  } else {
+    warn(`Live Recursiv project auth is not launch-ready (${health.data.recursiv?.error || 'not_ready'}).`);
+  }
 
   const ready = await requestJson(`${origin}/api/ready`);
   if (persistent && verified && launchReady) {
-    assert(ready.response.ok && ready.data.ok === true && ready.data.launchReady === true, 'Live readiness endpoint passes only when launch storage is verified.');
+    assert(ready.response.ok && ready.data.ok === true && ready.data.launchReady === true, 'Live readiness endpoint passes only when storage and Recursiv project access are verified.');
   } else {
-    assert(ready.response.status === 503 && ready.data.launchReady === false, 'Live readiness endpoint fails closed until launch storage is verified.');
+    assert(ready.response.status === 503 && ready.data.launchReady === false, 'Live readiness endpoint fails closed until storage and Recursiv project access are verified.');
   }
 
   const usernameInvalid = await requestJson(`${origin}/api/username?username=ab`);

@@ -25,7 +25,7 @@ pnpm audit:launch
 Production exposes two operational checks:
 
 - `/api/health` returns liveness and storage diagnostics. It may return `200` while `launchReady:false` so the app can remain inspectable during setup.
-- `/api/ready` is the strict release/monitoring gate. It returns `503` until persistent Redis/KV storage is configured and round-trip verified.
+- `/api/ready` is the strict release/monitoring gate. It returns `503` until persistent Redis/KV storage is configured, round-trip verified, and the Recursiv project API key can access the IQ WARS project.
 
 `audit:launch` requires persistent storage. Configure one of these production env sets on Vercel before launch:
 
@@ -34,6 +34,13 @@ Production exposes two operational checks:
 - `REDIS_URL`
 
 Without Redis/KV, leaderboards, geography maps, profiles, usernames, presence, reminders, and room messages fall back to serverless `/tmp` storage and are not reliable across deployments or runtime instances.
+
+The Recursiv envs must point to the same IQ WARS project:
+
+- `IQWARS_RECURSIV_PROJECT_ID`
+- `IQWARS_RECURSIV_API_KEY`
+
+`/api/health` reports `recursiv.verified` and `recursiv.projectAccess`; both must be true before launch.
 
 Recommended Vercel setup path:
 

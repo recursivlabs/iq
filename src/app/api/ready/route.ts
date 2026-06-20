@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
+import { verifyRecursivProjectAuth } from '../_lib/recursivConfig';
 import { verifyPersistentStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET() {
-  const storage = await verifyPersistentStore();
-  const launchReady = storage.persistent && storage.verified;
+  const [storage, recursiv] = await Promise.all([
+    verifyPersistentStore(),
+    verifyRecursivProjectAuth(),
+  ]);
+  const launchReady = storage.persistent && storage.verified && recursiv.verified && recursiv.projectAccess;
 
   return NextResponse.json({
     ok: launchReady,
@@ -18,6 +22,13 @@ export async function GET() {
         persistent: storage.persistent,
         verified: storage.verified,
         error: storage.error,
+      },
+      recursiv: {
+        origin: recursiv.origin,
+        configured: recursiv.configured,
+        verified: recursiv.verified,
+        projectAccess: recursiv.projectAccess,
+        error: recursiv.error,
       },
     },
   }, {
