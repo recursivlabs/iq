@@ -900,7 +900,23 @@ function cleanGroupCode(value: string | null | undefined) {
 
 function groupNameFromCode(code: string) {
   if (!code) return '';
+  if (code.startsWith('room-')) {
+    const suffix = code.replace(/^room-/, '').toUpperCase();
+    return `Room ${suffix.slice(-6)}`;
+  }
   return code.split('-').filter(Boolean).map((part) => part.slice(0, 1).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function groupRoomNumber(code: string) {
+  return `${(hashNumber(cleanGroupCode(code) || 'room') % 9000) + 1000}`;
+}
+
+function groupPath(code: string) {
+  return `/g/${cleanGroupCode(code)}`;
+}
+
+function groupRankingsPath(code: string) {
+  return `/rankings?g=${encodeURIComponent(cleanGroupCode(code))}`;
 }
 
 function randomRoomCode(existingCodes: string[] = []) {
@@ -3956,6 +3972,24 @@ export default function Home({
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   }
 
+  function navigateGroupRankings(code: string) {
+    const cleaned = cleanGroupCode(code);
+    if (!cleaned) {
+      navigateView('rankings');
+      return;
+    }
+    setNavOpen(false);
+    setView('rankings');
+    setActiveBlogSlug('');
+    if (typeof window !== 'undefined') {
+      const path = groupRankingsPath(cleaned);
+      if (`${window.location.pathname}${window.location.search}` !== path) {
+        window.history.pushState({}, '', path);
+      }
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    }
+  }
+
   function openBlogArticle(slug: string) {
     setActiveBlogSlug(slug);
     setView('blog');
@@ -4053,7 +4087,11 @@ export default function Home({
         setLeaderboard(getLeaderboardEntries());
         setOfficialSnapshot(readOfficialRank());
         setOfficialHistory(readOfficialHistory());
-        navigateView('rankings');
+        if (groupCode) {
+          navigateGroupRankings(groupCode);
+        } else {
+          navigateView('rankings');
+        }
       });
     }
   }
@@ -4268,7 +4306,7 @@ export default function Home({
     setGroupRecords(writeStoredGroup(cleaned, displayName));
     void refreshSocialBoards(cleaned);
     void refreshRoomMessages(cleaned);
-    navigateView('rankings');
+    navigateGroupRankings(cleaned);
   }
 
   async function createGroup() {
@@ -4285,7 +4323,7 @@ export default function Home({
     setInviteFallbackUrl('');
     setGroupRecords(writeStoredGroup(code, name));
     if (typeof window !== 'undefined' && view === 'test') {
-      window.history.replaceState({}, '', `/g/${code}`);
+      window.history.replaceState({}, '', groupPath(code));
     }
     const officialRank = readOfficialRank();
     if (officialRank?.day === localDayKey()) {
@@ -4565,6 +4603,8 @@ export default function Home({
   const navStatus = recursivAccount ? copy('Logged in') : copy('Logged out');
   const liveCountLabel = `${livePresence.active.toLocaleString()} ${copy('live')}`;
   const commandLabel = `${copy('Open command center')}: ${navIdentity}, ${copy('Score')} ${navScore}`;
+  const activeGroupRealScores = groupCode ? displayBoards.group.filter((entry) => !entry.playerId.startsWith('agent-')).length : 0;
+  const activeGroupScoreLabel = activeGroupRealScores === 1 ? '1 real score today' : `${activeGroupRealScores} real scores today`;
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -4602,7 +4642,11 @@ export default function Home({
                 <span className={`account-light ${recursivAccount ? 'on' : ''}`} aria-hidden="true" />
                 <div>
                   <strong>{navIdentity}</strong>
-                  <span>{navStatus} · {copy('Score')} {navScore} · {copy('Auto')} {localeLabel(locale)}</span>
+                  <div className="command-profile-meta">
+                    <span>{navStatus}</span>
+                    <span>{copy('Score')} {navScore}</span>
+                    <span>{copy('Auto')} {localeLabel(locale)}</span>
+                  </div>
                 </div>
               </div>
               <div className="command-grid" role="navigation" aria-label={copy('Primary navigation')}>
@@ -4621,12 +4665,23 @@ export default function Home({
                   <span>{copy('Friend groups')} · {groupRecords.length}</span>
                   <button onClick={createGroup}>{copy('New room')}</button>
                 </div>
+                <div className="command-room-card">
+                  <span>{copy('Current room')}</span>
+                  <strong>{groupCode ? groupName : copy('No active room')}</strong>
+                  <code>{groupCode ? groupShareUrl(groupCode).replace(/^https?:\/\//, '') : copy('Create a private room')}</code>
+                  <p>{groupCode ? `${activeGroupScoreLabel}. ${copy('No seeded agents.')}` : copy('Rooms are invite-only and stay empty until real players open your link.')}</p>
+                  <button className="copy-link" onClick={groupCode ? copyInvite : createGroup}>{copy(groupCode ? inviteState : 'Create & copy link')}</button>
+                </div>
                 <div className="command-group-list">
                   {groupRecords.length > 0 ? groupRecords.map((group) => (
                     <button key={group.code} className={group.code === groupCode ? 'active' : ''} onClick={() => openGroup(group.code, group.name)}>
-                      <strong>{group.name}</strong>
-                      <span>{formatGroupCreatedAt(group.createdAt)} · {copy('Private room')}</span>
-                      <code>/g/{group.code}</code>
+                      <div className="group-row-top">
+                        <strong>{group.name}</strong>
+                        <em>{group.code === groupCode ? copy('Active') : `#${groupRoomNumber(group.code)}`}</em>
+                      </div>
+                      <span>{formatGroupCreatedAt(group.createdAt)} · {copy('Invite-only')}</span>
+                      <span>{group.code === groupCode ? activeGroupScoreLabel : copy('Open to view today\'s board')}</span>
+                      <code>{groupShareUrl(group.code).replace(/^https?:\/\//, '')}</code>
                     </button>
                   )) : (
                     <div className="command-empty">
@@ -5708,12 +5763,23 @@ export default function Home({
           text-overflow: ellipsis;
           white-space: nowrap;
         }
-        .command-profile span {
-          display: block;
-          margin-top: 5px;
-          color: #777d82;
-          font-size: 10px;
-          letter-spacing: .13em;
+        .command-profile-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+          margin-top: 8px;
+        }
+        .command-profile-meta span {
+          display: inline-flex;
+          align-items: center;
+          min-height: 24px;
+          padding: 0 8px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 999px;
+          color: #9ba1a6;
+          font-size: 9px;
+          letter-spacing: .12em;
+          background: rgba(255,255,255,.025);
         }
         .command-grid {
           display: grid;
@@ -5746,7 +5812,7 @@ export default function Home({
         .command-groups {
           min-height: 0;
           display: grid;
-          grid-template-rows: auto minmax(0, 1fr);
+          grid-template-rows: auto auto minmax(0, 1fr);
           gap: 9px;
         }
         .command-section-head {
@@ -5769,6 +5835,56 @@ export default function Home({
           border-radius: 3px;
           background: rgba(255,255,255,.035);
         }
+        .command-room-card {
+          display: grid;
+          gap: 8px;
+          padding: 14px;
+          border: 1px solid rgba(255,255,255,.11);
+          border-radius: 8px;
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.065), rgba(255,255,255,.018)),
+            #0e1012;
+        }
+        .command-room-card > span {
+          color: #777d82;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9px;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+        }
+        .command-room-card strong {
+          overflow: hidden;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 16px;
+          font-weight: 700;
+          letter-spacing: .08em;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .command-room-card code {
+          overflow: hidden;
+          color: #b7bdc1;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          letter-spacing: .08em;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .command-room-card p {
+          margin: 0;
+          color: #8f969b;
+          font-size: 11px;
+          line-height: 1.45;
+        }
+        .command-room-card button {
+          min-height: 42px;
+          border: 1px solid rgba(255,255,255,.18);
+          border-radius: 4px;
+          background: rgba(255,255,255,.055);
+          color: #f4f5f6;
+          text-align: center;
+        }
         .command-group-list {
           min-height: 0;
           display: grid;
@@ -5780,10 +5896,17 @@ export default function Home({
           background: rgba(255,255,255,.08);
         }
         .command-group-list button {
-          min-height: 78px;
+          min-height: 104px;
           display: grid;
-          gap: 4px;
+          gap: 5px;
           align-content: center;
+        }
+        .group-row-top {
+          min-width: 0;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 10px;
         }
         .command-group-list strong,
         .command-empty strong {
@@ -5795,6 +5918,14 @@ export default function Home({
           letter-spacing: .04em;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+        .group-row-top em {
+          color: #dfe2e4;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 9px;
+          font-style: normal;
+          letter-spacing: .14em;
+          text-transform: uppercase;
         }
         .command-group-list span,
         .command-empty span,
@@ -7714,7 +7845,7 @@ export default function Home({
             padding: 10px;
           }
           .command-group-list button {
-            min-height: 74px;
+            min-height: 98px;
           }
           nav button {
             white-space: nowrap;

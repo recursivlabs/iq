@@ -305,12 +305,24 @@ nav .nav-cta,
   white-space: nowrap;
 }
 
-.command-profile span {
-  display: block;
-  margin-top: 5px;
-  color: #777d82;
-  font-size: 10px;
-  letter-spacing: .13em;
+.command-profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.command-profile-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 999px;
+  color: #9ba1a6;
+  font-size: 9px;
+  letter-spacing: .12em;
+  background: rgba(255, 255, 255, .025);
 }
 
 .command-grid {
@@ -336,7 +348,8 @@ nav .nav-cta,
   width: 100%;
 }
 
-.command-grid button.active {
+.command-grid button.active,
+.command-group-list button.active {
   border-color: rgba(255, 255, 255, .36);
   background: rgba(255, 255, 255, .08);
   color: #f4f5f6;
@@ -361,6 +374,7 @@ nav .nav-cta,
 .command-groups {
   min-height: 0;
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 9px;
 }
 
@@ -385,6 +399,61 @@ nav .nav-cta,
   color: #f4f5f6;
 }
 
+.command-room-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 8px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, .065), rgba(255, 255, 255, .018)),
+    #0e1012;
+}
+
+.command-room-card > span {
+  color: #777d82;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.command-room-card strong {
+  overflow: hidden;
+  color: #f4f5f6;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-room-card code {
+  overflow: hidden;
+  color: #b7bdc1;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-room-card p {
+  margin: 0;
+  color: #8f969b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.command-room-card button {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .055);
+  color: #f4f5f6;
+  text-align: center;
+}
+
 .command-group-list {
   display: grid;
   gap: 1px;
@@ -395,10 +464,18 @@ nav .nav-cta,
 }
 
 .command-group-list button {
-  min-height: 78px;
+  min-height: 104px;
   display: grid;
   align-content: center;
-  gap: 4px;
+  gap: 5px;
+}
+
+.group-row-top {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
 }
 
 .command-group-list strong,
@@ -410,6 +487,15 @@ nav .nav-cta,
   letter-spacing: .04em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.group-row-top em {
+  color: #dfe2e4;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: .14em;
+  text-transform: uppercase;
 }
 
 .command-group-list span,
@@ -1227,7 +1313,7 @@ nav .nav-cta,
   }
 
   .command-group-list button {
-    min-height: 74px;
+    min-height: 98px;
   }
 
   nav button {

@@ -236,8 +236,12 @@ async function sourceAudit() {
   assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
+  assert(app.includes('function groupRoomNumber') && app.includes('groupRoomNumber(group.code)'), 'Friend groups render stable unique room identifiers in the sidebar list.');
+  assert(app.includes('function navigateGroupRankings') && app.includes('groupRankingsPath(cleaned)') && app.includes('navigateGroupRankings(cleaned)'), 'Opening a listed friend group lands on its durable rankings URL.');
   assert(app.includes('command-panel sidebar-nav') && app.includes('command-scroll') && app.includes('role="navigation"'), 'Navigation renders as a left sidebar drawer with scrollable app navigation.');
-  assert(app.includes('formatGroupCreatedAt') && app.includes('/g/{group.code}') && app.includes('New rooms start empty'), 'Friend groups are listed with distinct room metadata and empty-room copy.');
+  assert(app.includes('command-room-card') && app.includes('Current room') && app.includes('command-profile-meta'), 'Sidebar includes a structured command-center room and identity summary.');
+  assert(app.includes('formatGroupCreatedAt') && app.includes('groupShareUrl(group.code)') && app.includes('Invite-only'), 'Friend groups are listed with distinct invite-only room metadata.');
+  assert(app.includes('No seeded agents.') && app.includes('Rooms are invite-only and stay empty until real players open your link.'), 'Friend-room UI promises real invited players instead of seeded agents.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
   assert(leaderboard.includes("!entry.playerId.startsWith('agent-')"), 'Friend group leaderboard excludes seeded agent players.');
