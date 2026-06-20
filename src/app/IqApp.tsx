@@ -964,19 +964,8 @@ function projectGlobePoint(lon: number, lat: number) {
   };
 }
 
-function buildGlobeRegions(geography: SocialBoards['geography'], fallbackGeo: GeoSnapshot | null): GlobeRegion[] {
+function buildGlobeRegions(geography: SocialBoards['geography']): GlobeRegion[] {
   const rows = [...geography.countries, ...geography.cities.slice(0, 8), ...geography.towns.slice(0, 5)];
-  if (!rows.length && fallbackGeo) {
-    rows.push({
-      id: fallbackGeo.countryCode || fallbackGeo.city || fallbackGeo.timeZone || 'local',
-      kind: fallbackGeo.countryCode ? 'country' : 'city',
-      label: fallbackGeo.city || fallbackGeo.country || fallbackGeo.timeZone || 'Local signal',
-      detail: [fallbackGeo.region, fallbackGeo.countryCode || fallbackGeo.country].filter(Boolean).join(' · ') || fallbackGeo.source,
-      score: 100,
-      entries: 1,
-      topScore: 100,
-    });
-  }
 
   const maxEntries = Math.max(1, ...rows.map((row) => row.entries));
   return rows
@@ -2190,7 +2179,7 @@ function GeographyLeaderboard({ locale, geography }: { locale: LocaleKey; geogra
           </article>
         ))}
       </div>
-      {!hasAny ? <p className="trust-note">{copy('No location prompt is required. IQ WARS uses edge geography when available and timezone as a fallback.')}</p> : null}
+      {!hasAny ? <p className="trust-note">{copy('No location prompt is required. Official scores use edge geography when available and timezone as a fallback; empty boards stay empty until ranked attempts land.')}</p> : null}
     </section>
   );
 }
@@ -2198,14 +2187,12 @@ function GeographyLeaderboard({ locale, geography }: { locale: LocaleKey; geogra
 function GeoGlobePanel({
   locale,
   geography,
-  fallbackGeo,
 }: {
   locale: LocaleKey;
   geography: SocialBoards['geography'];
-  fallbackGeo: GeoSnapshot | null;
 }) {
   const copy = (text: string) => translate(locale, text);
-  const regions = React.useMemo(() => buildGlobeRegions(geography, fallbackGeo), [geography, fallbackGeo]);
+  const regions = React.useMemo(() => buildGlobeRegions(geography), [geography]);
   const topRegion = regions[0] || null;
   const totalEntries = regions.reduce((total, region) => total + region.entries, 0);
 
@@ -2253,7 +2240,7 @@ function GeoGlobePanel({
 
 function RankingsGlobeHero({ locale, geography, global }: { locale: LocaleKey; geography: SocialBoards['geography']; global: SocialEntry[] }) {
   const copy = (text: string) => translate(locale, text);
-  const regions = React.useMemo(() => buildGlobeRegions(geography, null), [geography]);
+  const regions = React.useMemo(() => buildGlobeRegions(geography), [geography]);
   const topRegion = regions[0] || null;
   const topScore = global[0]?.score || topRegion?.topScore || 0;
   const activeSignals = Math.max(global.length, regions.reduce((total, region) => total + region.entries, 0));
@@ -2852,7 +2839,6 @@ function StatusRail({
   officialRank,
   officialHistory,
   geography,
-  geoSnapshot,
   groupCode,
   groupName,
   playerName,
@@ -2877,7 +2863,6 @@ function StatusRail({
   officialRank: OfficialRankRecord | null;
   officialHistory: OfficialRankRecord[];
   geography: SocialBoards['geography'];
-  geoSnapshot: GeoSnapshot | null;
   groupCode: string | null;
   groupName: string;
   playerName: string;
@@ -2907,7 +2892,7 @@ function StatusRail({
 
   return (
     <aside className="status-rail" aria-label="IQ WARS session and subscription">
-      <GeoGlobePanel locale={locale} geography={geography} fallbackGeo={geoSnapshot} />
+      <GeoGlobePanel locale={locale} geography={geography} />
 
       <section className={`rail-panel score-evidence-${evidenceClass}`}>
         <p className="rail-label">{copy('Session')}</p>
@@ -4526,7 +4511,6 @@ export default function Home({
             officialRank={officialSnapshot}
             officialHistory={officialHistory}
             geography={displayBoards.geography}
-            geoSnapshot={geoSnapshot}
             groupCode={groupCode || null}
             groupName={groupName}
             playerName={playerName}

@@ -185,6 +185,10 @@ async function sourceAudit() {
   assert(stableOrder.includes('chooseQuestionSet') && stableOrder.includes('targetCount'), 'Stable question order selects a fixed-size rotating question set before ordering it.');
   assert(app.includes('function permutedQuestionOrder') && stableOrder.includes('permutedQuestionOrder'), 'Question order is fully permuted per player/day after selecting the rotating starter.');
 
+  const buildGlobe = functionText(findFunction(ts, tree, 'buildGlobeRegions'), app);
+  assert(buildGlobe.includes('geography.countries') && buildGlobe.includes('geography.cities.slice') && buildGlobe.includes('geography.towns.slice'), 'Globe regions derive only from ranked geography board rows.');
+  assert(!buildGlobe.includes('fallbackGeo') && !buildGlobe.includes('Local signal') && !buildGlobe.includes('score: 100'), 'Globe heat never fabricates a local fallback region or score.');
+
   const result = app.slice(app.indexOf('function Result('), app.indexOf('function Runner('));
   assert(result.includes('readOfficialRank()') && result.includes("setResultStatus('practice')"), 'Retakes after a locked daily result are marked practice.');
   assert(result.includes('claimServerOfficialAttempt') && result.includes('syncLocalOfficialLock(officialRank)'), 'First official completion claims the server attempt lock before local official sync.');
