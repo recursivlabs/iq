@@ -487,7 +487,7 @@ async function liveAudit() {
 
   const groupPage = await requestText(`${origin}/g/${group}`);
   assert(groupPage.response.ok && groupPage.text.includes('Audit'), 'Live /g/[group] route renders the unique group name.');
-  assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-scroll') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as a scrollable sidebar drawer launcher, not a cramped identity dropdown.');
+  assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-toggle') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as an icon sidebar launcher, not a cramped identity dropdown.');
   assert(groupPage.text.includes('Only people who open this link'), 'Live friend room copy promises link-only real-player membership.');
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
