@@ -366,6 +366,9 @@ async function sourceAudit() {
   assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
+  assert(app.includes('function syncOfficialRankToGroup') && app.includes('submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name })'), 'Opening a friend room can backfill today\'s saved official score into that room.');
+  assert(app.includes('if (code) syncOfficialRankToGroup(code, name)') && app.includes('syncOfficialRankToGroup(queryGroup, name)'), 'Route and query room joins sync today\'s official score before refreshing the room board.');
+  assert(app.includes('syncOfficialRankToGroup(cleaned, displayName)') && app.includes('syncOfficialRankToGroup(code, name)'), 'Sidebar room opens and newly created rooms share the same score sync path.');
   assert(app.includes('function groupRoomNumber') && app.includes('function groupInviteKey') && app.includes('function groupRoomIdentity'), 'Friend groups render stable room numbers plus invite keys in the sidebar list.');
   assert(app.includes('return `Group ${groupInviteKey(code)}`') && app.includes('groupRoomIdentity(group.code)') && app.includes('className="group-room-tag"'), 'Newly created friend groups get distinct visible invite-key identities in the sidebar list.');
   assert(app.includes('function navigateGroupRankings') && app.includes('groupRankingsPath(cleaned)') && app.includes('navigateGroupRankings(cleaned)'), 'Opening a listed friend group lands on its durable rankings URL.');

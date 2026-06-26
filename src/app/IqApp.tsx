@@ -3721,6 +3721,7 @@ export default function Home({
     setGroupCode(code);
     setGroupName(name);
     setGroupRecords(code ? writeStoredGroup(code, name) : readStoredGroups());
+    if (code) syncOfficialRankToGroup(code, name);
   }, [initialGroupCode]);
 
   React.useEffect(() => {
@@ -3731,7 +3732,7 @@ export default function Home({
     setGroupCode(queryGroup);
     setGroupName(name);
     setGroupRecords(writeStoredGroup(queryGroup, name));
-    void refreshSocialBoards(queryGroup);
+    syncOfficialRankToGroup(queryGroup, name);
     void refreshRoomMessages(queryGroup);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4124,6 +4125,17 @@ export default function Home({
     }
   }
 
+  function syncOfficialRankToGroup(code: string, name: string) {
+    const cleaned = cleanGroupCode(code);
+    if (!cleaned) return;
+    const officialRank = readOfficialRank();
+    if (officialRank?.day === localDayKey()) {
+      void submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name }).finally(() => refreshSocialBoards(cleaned));
+    } else {
+      void refreshSocialBoards(cleaned);
+    }
+  }
+
   function handleLeaderboard(_entry?: LeaderboardEntry, officialRank?: OfficialRankRecord) {
     setLeaderboard(getLeaderboardEntries());
     setOfficialSnapshot(readOfficialRank());
@@ -4351,7 +4363,7 @@ export default function Home({
     setRoomMessageDraft('');
     setRoomMessageState('Post');
     setGroupRecords(writeStoredGroup(cleaned, displayName));
-    void refreshSocialBoards(cleaned);
+    syncOfficialRankToGroup(cleaned, displayName);
     void refreshRoomMessages(cleaned);
     navigateGroupRankings(cleaned);
   }
@@ -4372,12 +4384,7 @@ export default function Home({
     if (typeof window !== 'undefined' && view === 'test') {
       window.history.replaceState({}, '', groupPath(code));
     }
-    const officialRank = readOfficialRank();
-    if (officialRank?.day === localDayKey()) {
-      void submitOfficialResult(officialRank, { groupCode: code, groupName: name }).finally(() => refreshSocialBoards(code));
-    } else {
-      void refreshSocialBoards(code);
-    }
+    syncOfficialRankToGroup(code, name);
     await copyGroupLink(code);
   }
 
