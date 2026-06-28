@@ -409,7 +409,11 @@ async function sourceAudit() {
   assert(profiles.includes('validatePlayerAccount') && profiles.includes('Connect an IQ WARS account before saving a profile.'), 'Profile write API requires a verified IQ WARS player account.');
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
   assert(roomMessages.includes('validatePlayerAccount') && roomMessages.includes('Connect an IQ WARS account before posting room chat.'), 'Room chat write API requires a verified IQ WARS player account.');
-  assert(presence.includes('ACTIVE_WINDOW_MS') && presence.includes('pruneSessions'), 'Presence API prunes stale sessions before counting live users.');
+  assert(presence.includes('ACTIVE_WINDOW_MS = 45_000') && presence.includes('RETAIN_WINDOW_MS = 180_000') && presence.includes('MAX_SESSIONS = 10_000'), 'Presence API defines explicit active, retention, and maximum session windows.');
+  assert(presence.includes('function pruneSessions') && presence.includes('now - session.lastSeen <= RETAIN_WINDOW_MS') && presence.includes('slice(-MAX_SESSIONS)'), 'Presence API prunes stale retained sessions and caps stored sessions.');
+  assert(presence.includes('function activeCount') && presence.includes('now - session.lastSeen <= ACTIVE_WINDOW_MS'), 'Presence API counts only actively heartbeating sessions.');
+  assert(presence.includes('current.sessions = pruneSessions(current.sessions, now)') && presence.includes('filter((existing) => existing.id !== sessionId)') && presence.includes('sessions.push(session)'), 'Presence POST prunes stale sessions and replaces duplicate session ids before adding a heartbeat.');
+  assert(app.includes('window.setInterval(heartbeat, 20_000)') && app.includes("document.visibilityState === 'visible'") && app.includes("aria-label={copy('Live users')}"), 'Client sends regular presence heartbeats, refreshes on visible tab, and exposes a live-user pill.');
   assert(reminders.includes('validEmail') && reminders.includes('sendConfirmation'), 'Reminder API validates email and stores daily reminders.');
   assert(reminders.includes('shouldSendConfirmation') && reminders.includes('confirmationSentAt'), 'Reminder signup only sends confirmation email until a reminder has a recorded confirmation.');
   assert(remindersLib.includes('MAX_REMINDERS') && remindersLib.includes('normalizeReminder') && remindersLib.includes('validEmail') && remindersLib.includes('new Map'), 'Reminder store normalizes, dedupes, and bounds reminder records before reads and writes.');
@@ -723,6 +727,13 @@ async function liveAudit() {
     body: JSON.stringify({ sessionId: `audit-session-${randomUUID()}`, playerId, username, path: `/g/${group}` }),
   });
   assert(presencePost.response.ok && Number(presencePost.data.active) >= 1, 'Live presence API records a heartbeat and returns active count.');
+  const presenceLoadSessions = await Promise.all(Array.from({ length: 8 }, (_item, index) => requestJson(`${origin}/api/presence`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: `audit-load-session-${randomUUID()}-${index}`, playerId: `${playerId}-presence-${index}`, username, path: `/g/${group}?ignored=true` }),
+  })));
+  const activeAfterPresenceLoad = Math.max(...presenceLoadSessions.map((item) => Number(item.data?.active) || 0));
+  assert(presenceLoadSessions.every((item) => item.response.ok) && activeAfterPresenceLoad >= 8, 'Live presence API handles concurrent heartbeat load and counts active sessions.');
 
   const reminderInvalid = await requestJson(`${origin}/api/reminders`, {
     method: 'POST',
