@@ -370,8 +370,8 @@ async function sourceAudit() {
   assert(app.includes('if (code) syncOfficialRankToGroup(code, name)') && app.includes('syncOfficialRankToGroup(queryGroup, name)'), 'Route and query room joins sync today\'s official score before refreshing the room board.');
   assert(app.includes('syncOfficialRankToGroup(cleaned, displayName)') && app.includes('syncOfficialRankToGroup(code, name)'), 'Sidebar room opens and newly created rooms share the same score sync path.');
   assert(leaderboard.includes('function groupAllTimeRows') && leaderboard.includes('groupAllTime: groupCode ? groupAllTimeRows'), 'Friend room API returns an all-time room record board alongside today\'s board.');
-  assert(app.includes('groupAllTime: SocialEntry[]') && app.includes('displayBoards.groupAllTime') && app.includes("copy('Room records')"), 'Friend room rankings render persistent room records in addition to today\'s scores.');
-  assert(app.includes('function RoomRecordStrip') && app.includes('Ongoing room highscore') && app.includes('All previous official scores stay here as all-time bests while today still resets.'), 'Friend room rankings surface all-time highscores as a primary room summary above the daily board.');
+  assert(app.includes('groupAllTime: SocialEntry[]') && app.includes('displayBoards.groupAllTime') && app.includes("copy('All-time room highscores')"), 'Friend room rankings render persistent room records in addition to today\'s scores.');
+  assert(app.includes('function RoomRecordStrip') && app.includes('Ongoing room highscore') && app.includes('Old official scores stay on this same room link as all-time bests. Today still resets every day.'), 'Friend room rankings surface all-time highscores as a primary room summary above the daily board.');
   assert(app.includes('function groupRoomNumber') && app.includes('function groupInviteKey') && app.includes('function groupRoomIdentity'), 'Friend groups render stable room numbers plus invite keys in the sidebar list.');
   assert(app.includes('return `Group ${groupInviteKey(code)}`') && app.includes('groupRoomIdentity(group.code)') && app.includes('className="group-room-tag"'), 'Newly created friend groups get distinct visible invite-key identities in the sidebar list.');
   assert(app.includes('function navigateGroupRankings') && app.includes('groupRankingsPath(cleaned)') && app.includes('navigateGroupRankings(cleaned)'), 'Opening a listed friend group lands on its durable rankings URL.');
@@ -1001,12 +1001,12 @@ async function liveAudit() {
   assert(geoCheck.response.ok && Boolean(geoCheck.data.city || geoCheck.data.town), 'Live geo endpoint returns usable city/town signal from edge or timezone data.');
 
   const groupPage = await requestText(`${origin}/g/${group}`);
-  assert(groupPage.response.ok && groupPage.text.includes('Audit') && groupPage.text.includes('Room records'), 'Live /g/[group] route renders the unique group rankings and room records.');
+  assert(groupPage.response.ok && groupPage.text.includes('Audit') && /Room records|All-time room highscores|Best scores ever in this room/.test(groupPage.text), 'Live /g/[group] route renders the unique group rankings and room records.');
   assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-toggle') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as an icon sidebar launcher, not a cramped identity dropdown.');
   assert(groupPage.text.includes('Only real people who open this link'), 'Live friend room copy promises link-only real-player membership.');
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
-  assert(rankings.response.ok && rankings.text.includes('Audit') && rankings.text.includes('friend rankings') && rankings.text.includes('Room records'), 'Live rankings route opens the requested friend board with room records.');
+  assert(rankings.response.ok && rankings.text.includes('Audit') && /friend rankings|Today(?:'|&apos;|&#x27;)s room board|Today resets daily/.test(rankings.text) && /Room records|All-time room highscores|Best scores ever in this room/.test(rankings.text), 'Live rankings route opens the requested friend board with room records.');
 
   const publicPages = [
     ['/', ['Lock answer'], 'Live home route renders the playable test above the fold.'],

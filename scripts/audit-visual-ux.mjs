@@ -366,9 +366,9 @@ function evaluationScript(routeId, viewportId) {
         geographyBoard: rect(geographyBoard),
         geographyBoardText: text(geographyBoard).slice(0, 1800),
         geoColumns,
-        visibleRoomRecords: /Room records/i.test(text(document.body)),
+        visibleRoomRecords: /Room records|All-time room highscores|Best scores ever in this room/i.test(text(document.body)),
         visibleRoomHighscore: /Ongoing room highscore|Room highscore|all-time room highscore/i.test(text(document.body)),
-        visibleFriendRankings: /friend rankings/i.test(text(document.body)),
+        visibleFriendRankings: /friend rankings|Today's room board|Today resets daily/i.test(text(document.body)),
         visibleGlobe: /World signal|Global signal|Geography|Countries|Cities|Towns/i.test(text(document.body)) || Boolean(document.querySelector('.geo-globe, .rankings-globe, .globe')),
         overflows,
       });
@@ -674,7 +674,7 @@ function assertRoomFixture(state, viewportId, routeId) {
   if (metricValue(state, 'Today') === String(roomFixture.todayCount)) pass(`${prefix} renders live room today count`, { expected: roomFixture.todayCount });
   else fail(`${prefix} renders live room today count`, { expected: roomFixture.todayCount, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
 
-  if (metricValue(state, 'All-time') === String(roomFixture.allTimeCount)) pass(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount });
+  if (metricValue(state, 'All-time') === String(roomFixture.allTimeCount) || metricValue(state, 'All-time records') === String(roomFixture.allTimeCount)) pass(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount });
   else fail(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
 
   if (roomFixture.topRecordScore === null) return;

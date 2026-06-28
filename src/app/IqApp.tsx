@@ -2270,9 +2270,9 @@ function RoomRecordStrip({
     <section className="leaderboard room-record-strip" aria-label={copy('Ongoing room highscore')}>
       <div className="section-head">
         <div>
-          <p className="kicker">{copy('Room highscore')}</p>
-          <h2>{topRecord ? `${topRecord.score} ${copy('is the room record.')}` : copy('No all-time room record yet.')}</h2>
-          <p>{copy('All previous official scores stay here as all-time bests while today still resets.')}</p>
+          <p className="kicker">{copy('All-time room highscore')}</p>
+          <h2>{topRecord ? `${copy('Room record')}: ${topRecord.score}` : copy('No all-time room record yet.')}</h2>
+          <p>{copy('Old official scores stay on this same room link as all-time bests. Today still resets every day.')}</p>
         </div>
         <button className={`secondary copy-link ${ctaCopied ? 'copied' : ''}`} onClick={onCopyInvite}>{copy(inviteState)}</button>
       </div>
@@ -2284,9 +2284,9 @@ function RoomRecordStrip({
           <em>{copy(todayCount === 1 ? 'official score' : 'official scores')}</em>
         </div>
         <div>
-          <span>{copy('All-time')}</span>
+          <span>{copy('All-time records')}</span>
           <strong>{records.length}</strong>
-          <em>{copy(records.length === 1 ? 'room highscore' : 'room highscores')}</em>
+          <em>{copy(records.length === 1 ? 'best score' : 'best scores')}</em>
         </div>
         <div>
           <span>{copy('Current record')}</span>
@@ -4803,16 +4803,16 @@ export default function Home({
   const activeGroupRealScores = groupCode ? displayBoards.group.filter((entry) => !entry.playerId.startsWith('agent-')).length : 0;
   const activeGroupRecords = groupCode ? displayBoards.groupAllTime.filter((entry) => !entry.playerId.startsWith('agent-')).length : 0;
   const activeGroupScoreLabel = activeGroupRealScores === 1 ? '1 real score today' : `${activeGroupRealScores} real scores today`;
-  const activeGroupRecordLabel = activeGroupRecords === 1 ? '1 room record' : `${activeGroupRecords} room records`;
+  const activeGroupRecordLabel = activeGroupRecords === 1 ? '1 all-time record' : `${activeGroupRecords} all-time records`;
   const topRoomRecord = groupCode ? displayBoards.groupAllTime.find((entry) => !entry.playerId.startsWith('agent-')) || null : null;
   const friendRoomEmptyDetail = groupCode
     ? topRoomRecord
-      ? `No one has locked today yet. The all-time room highscore is still on this room page: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}.`
+      ? `No one has locked today yet. The all-time room highscore stays on this same room link: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}.`
       : 'Private rooms start empty. Send the link; only real players who open it and finish today appear here.'
     : 'Create a room link for the group chat. The room board appears as soon as invited players finish today.';
   const roomRecordDescription = topRoomRecord
-    ? `Ongoing room highscore: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}. The best official score for each player stays here across days while today still resets.`
-    : 'The best official room score for each player stays here across days, so the invite link keeps its history while today still resets.';
+    ? `Ongoing room highscore: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}. The all-time board keeps each player's best official room score across days while today's board resets.`
+    : 'The all-time board keeps each player\'s best official room score across days, so the invite link keeps its history while today still resets.';
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -4994,9 +4994,9 @@ export default function Home({
           ) : null}
           <SocialLeaderboard
             locale={locale}
-            kicker={copy('Primary loop')}
-            title={groupCode ? `${groupName} ${copy('friend rankings')}` : copy('Create a friend room for today.')}
-            description={groupCode ? `${copy('This is the board that matters after a run: one invite link, one official attempt each, and the room ranked by today\'s score.')} ${copy('Only real people who open this link appear here.')}` : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
+            kicker={copy(groupCode ? 'Today\'s room board' : 'Primary loop')}
+            title={groupCode ? `${groupName} ${copy('today')}` : copy('Create a friend room for today.')}
+            description={groupCode ? `${copy('Today resets daily: one invite link, one official attempt each, ranked by today\'s score.')} ${copy('The all-time room highscores stay below on this same link.')}` : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
             entries={displayBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
             emptyDetail={friendRoomEmptyDetail}
@@ -5008,8 +5008,8 @@ export default function Home({
           {groupCode ? (
             <SocialLeaderboard
               locale={locale}
-              kicker={copy('Room records')}
-              title={copy('All-time high scores for this room.')}
+              kicker={copy('All-time room highscores')}
+              title={copy('Best scores ever in this room.')}
               description={roomRecordDescription}
               entries={displayBoards.groupAllTime}
               empty={copy('No room records yet.')}
