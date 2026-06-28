@@ -136,6 +136,36 @@ function soundAuditScript({ soundEnabled = true } = {}) {
   `;
 }
 
+function loggedInSettingsStorageScript() {
+  return `
+    (() => {
+      window.localStorage.setItem('world-iq-player-id', 'settings-matrix-audit');
+      window.localStorage.setItem('world-iq-player-name', 'Settings Matrix Audit');
+      window.localStorage.setItem('world-iq-player-username', 'settings_matrix');
+      window.localStorage.setItem('world-iq-recursiv-account', JSON.stringify({
+        email: 'settings-matrix@iqwars.app',
+        name: 'Settings Matrix',
+        updatedAt: Date.now()
+      }));
+      window.localStorage.setItem('world-iq-player-settings', JSON.stringify({
+        profilePublic: true,
+        showLocation: false,
+        showXBadge: false,
+        showScoreHistory: true,
+        showAgentActivity: false,
+        labModesEnabled: false,
+        soundEnabled: true,
+        reducedMotion: false,
+        highContrast: false,
+        dailyReminder: false,
+        analyticsEnabled: true,
+        emailUpdates: false,
+        shareScoreByDefault: true
+      }));
+    })();
+  `;
+}
+
 function lockedDailyStorageScript({ loggedIn = false } = {}) {
   return `
     (() => {
@@ -443,6 +473,7 @@ function evaluationScript(routeId, viewportId) {
         return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && Number(s.opacity || 1) > 0.01;
       };
       const runner = document.querySelector('.runner-panel');
+      const main = document.querySelector('main');
       const matrix = document.querySelector('.matrix');
       const questionPad = document.querySelector('.question-pad');
       const options = [...document.querySelectorAll('.option')];
@@ -505,6 +536,27 @@ function evaluationScript(routeId, viewportId) {
         bar: rect(item.querySelector('i')),
         rect: rect(item),
       }));
+      const settingToggles = [...document.querySelectorAll('.setting-toggle')].map((item) => {
+        const input = item.querySelector('input');
+        return {
+          key: item.getAttribute('data-setting') || '',
+          label: text(item.querySelector('strong')),
+          description: text(item.querySelector('em')),
+          checked: Boolean(input?.checked),
+          rect: rect(item),
+        };
+      });
+      let storedSettings = null;
+      try {
+        storedSettings = JSON.parse(window.localStorage.getItem('world-iq-player-settings') || 'null');
+      } catch {
+        storedSettings = null;
+      }
+      const firstSymbol = document.querySelector('.symbol');
+      const runnerStyle = runner ? getComputedStyle(runner) : null;
+      const optionStyle = options[0] ? getComputedStyle(options[0]) : null;
+      const symbolStyle = firstSymbol ? getComputedStyle(firstSymbol) : null;
+      const settingsPanelStyle = document.querySelector('.settings-panel') ? getComputedStyle(document.querySelector('.settings-panel')) : null;
       const bodyBg = getComputedStyle(document.body).backgroundColor;
       const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
       const optionRects = options.map(rect).filter(Boolean);
@@ -526,6 +578,8 @@ function evaluationScript(routeId, viewportId) {
         htmlLocale: document.documentElement.dataset.locale || '',
         mainLang: document.querySelector('main')?.getAttribute('lang') || '',
         mainLocale: document.querySelector('main')?.getAttribute('data-locale') || '',
+        mainClassName: String(main?.className || ''),
+        mainDataset: main ? { ...main.dataset } : {},
         viewport,
         bodyBg,
         htmlBg,
@@ -549,6 +603,7 @@ function evaluationScript(routeId, viewportId) {
         commandScroll: rect(commandScroll),
         closeCommand: rect(closeCommand),
         commandNavButtonCount: commandNavButtons.length,
+        commandNavLabels: commandNavButtons.map(text),
         answerFeedback: rect(answerFeedback),
         answerFeedbackText: text(answerFeedback),
         lockedScoreGrid: rect(lockedScoreGrid),
@@ -578,6 +633,15 @@ function evaluationScript(routeId, viewportId) {
         profilePanelText: text(profilePanel).slice(0, 1600),
         profileStats,
         profileHistoryDays,
+        settingToggles,
+        storedSettings,
+        settingsEffects: {
+          symbolAnimationName: symbolStyle?.animationName || '',
+          symbolAnimationDuration: symbolStyle?.animationDuration || '',
+          optionTransitionDuration: optionStyle?.transitionDuration || '',
+          runnerBorderColor: runnerStyle?.borderColor || '',
+          settingsPanelBorderColor: settingsPanelStyle?.borderColor || '',
+        },
         visibleRoomRecords: /Room records|All-time room highscores|Best scores ever in this room/i.test(text(document.body)),
         visibleRoomHighscore: /Ongoing room highscore|Ongoing room record|Room highscore|all-time room highscore|ongoing highscore race/i.test(text(document.body)),
         visibleFriendRankings: /friend rankings|Today's room board|Today resets daily/i.test(text(document.body)),
@@ -744,6 +808,38 @@ async function pointerClickButton(send, matchText) {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 }).catch(() => null);
   await sleep(500);
   return point;
+}
+
+async function toggleAllVisibleSettings(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const rows = [...document.querySelectorAll('.setting-toggle')];
+        const before = rows.map((row) => {
+          const input = row.querySelector('input');
+          return { key: row.getAttribute('data-setting') || '', checked: Boolean(input?.checked) };
+        });
+        for (const row of rows) {
+          const input = row.querySelector('input');
+          if (input) input.click();
+        }
+        const after = rows.map((row) => {
+          const input = row.querySelector('input');
+          return { key: row.getAttribute('data-setting') || '', checked: Boolean(input?.checked) };
+        });
+        let storedSettings = null;
+        try {
+          storedSettings = JSON.parse(window.localStorage.getItem('world-iq-player-settings') || 'null');
+        } catch {
+          storedSettings = null;
+        }
+        return JSON.stringify({ clicked: rows.length, before, after, storedSettings });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(500);
+  return JSON.parse(result.result.value);
 }
 
 async function openCommandCenter(send) {
@@ -994,6 +1090,80 @@ function lockedCellValue(state, label) {
 function profileStatValue(state, label) {
   const stat = (state.profileStats || []).find((item) => item.label.toLowerCase() === label.toLowerCase());
   return stat ? stat.value : null;
+}
+
+function settingChecked(state, key) {
+  const setting = (state.settingToggles || []).find((item) => item.key === key);
+  return setting ? setting.checked : null;
+}
+
+function assertSettingsInitial(state, viewportId) {
+  const prefix = `${viewportId} settings matrix`;
+  if (/Standard controls for a public daily game/i.test(state.bodyText) && (state.settingToggles || []).length >= 12) pass(`${prefix} renders the standard logged-in settings surface`, { count: state.settingToggles.length });
+  else fail(`${prefix} renders the standard logged-in settings surface`, { count: state.settingToggles?.length, text: state.bodyText.slice(0, 900) });
+
+  const expectedDefaults = {
+    profilePublic: true,
+    showLocation: false,
+    showScoreHistory: true,
+    soundEnabled: true,
+    labModesEnabled: false,
+    reducedMotion: false,
+    highContrast: false,
+    shareScoreByDefault: true,
+    dailyReminder: false,
+    emailUpdates: false,
+    analyticsEnabled: true,
+    showAgentActivity: false,
+  };
+  const mismatches = Object.entries(expectedDefaults).filter(([key, expected]) => settingChecked(state, key) !== expected);
+  if (!mismatches.length) pass(`${prefix} loads expected default privacy/game settings`, expectedDefaults);
+  else fail(`${prefix} loads expected default privacy/game settings`, { mismatches, toggles: state.settingToggles });
+
+  if (state.mainDataset?.highContrast === 'false' && state.mainDataset?.reducedMotion === 'false' && state.mainDataset?.soundEnabled === 'true' && state.mainDataset?.analyticsEnabled === 'true') pass(`${prefix} exposes default shell state for accessibility and privacy`, state.mainDataset);
+  else fail(`${prefix} exposes default shell state for accessibility and privacy`, { dataset: state.mainDataset, className: state.mainClassName });
+}
+
+function assertSettingsPersisted(state, viewportId) {
+  const prefix = `${viewportId} settings matrix`;
+  const expected = {
+    profilePublic: false,
+    showLocation: true,
+    showScoreHistory: false,
+    soundEnabled: false,
+    labModesEnabled: true,
+    reducedMotion: true,
+    highContrast: true,
+    shareScoreByDefault: false,
+    dailyReminder: true,
+    emailUpdates: true,
+    analyticsEnabled: false,
+    showAgentActivity: true,
+  };
+  const domMismatches = Object.entries(expected).filter(([key, value]) => settingChecked(state, key) !== value);
+  if (!domMismatches.length) pass(`${prefix} persists every visible toggle after reload`, expected);
+  else fail(`${prefix} persists every visible toggle after reload`, { domMismatches, toggles: state.settingToggles });
+
+  const storageMismatches = Object.entries(expected).filter(([key, value]) => state.storedSettings?.[key] !== value);
+  if (!storageMismatches.length) pass(`${prefix} writes every visible toggle to local settings storage`, expected);
+  else fail(`${prefix} writes every visible toggle to local settings storage`, { storageMismatches, storedSettings: state.storedSettings });
+
+  if (state.mainDataset?.highContrast === 'true' && state.mainDataset?.reducedMotion === 'true' && state.mainDataset?.soundEnabled === 'false' && state.mainDataset?.analyticsEnabled === 'false') pass(`${prefix} exposes persisted shell state for high contrast, reduced motion, sound, and analytics`, state.mainDataset);
+  else fail(`${prefix} exposes persisted shell state for high contrast, reduced motion, sound, and analytics`, { dataset: state.mainDataset, className: state.mainClassName });
+}
+
+function assertSettingsEffects(state, viewportId) {
+  const prefix = `${viewportId} settings matrix`;
+  if (/settings-high-contrast/.test(state.mainClassName) && /settings-reduced-motion/.test(state.mainClassName) && /settings-sound-off/.test(state.mainClassName) && /settings-analytics-off/.test(state.mainClassName)) pass(`${prefix} applies settings classes to the app shell`, { className: state.mainClassName });
+  else fail(`${prefix} applies settings classes to the app shell`, { className: state.mainClassName, dataset: state.mainDataset });
+
+  if (state.settingsEffects?.symbolAnimationName === 'none') pass(`${prefix} disables background symbol animation when reduced motion is enabled`, state.settingsEffects);
+  else fail(`${prefix} disables background symbol animation when reduced motion is enabled`, state.settingsEffects);
+
+  const border = state.settingsEffects?.runnerBorderColor || '';
+  const alpha = Number(border.match(/rgba\(\s*255,\s*255,\s*255,\s*([0-9.]+)\s*\)/)?.[1] || 0);
+  if (border === 'rgb(255, 255, 255)' || alpha >= 0.2) pass(`${prefix} strengthens panel borders when high contrast is enabled`, { border });
+  else fail(`${prefix} strengthens panel borders when high contrast is enabled`, state.settingsEffects);
 }
 
 function assertIqProfileHistory(state, viewportId) {
@@ -1372,6 +1542,102 @@ async function auditIqProfileHistory(viewport) {
     const fileName = `${label}-${viewport.id}.png`;
     await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
     pass(`${viewport.id} ${label} screenshot captured`, { file: path.join(outDir, fileName) });
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
+async function auditSettingsMatrix(viewport) {
+  const base = origin.replace(/\/$/, '');
+  const label = 'settings-matrix';
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    const seed = await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${loggedInSettingsStorageScript()}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+    await client.send('Page.navigate', { url: `${base}/settings` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    if (seed?.identifier) {
+      await client.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: seed.identifier }).catch(() => null);
+    }
+
+    const initialState = await evaluate(client.send, label, viewport.id);
+    assertCommon(initialState, label, viewport.id);
+    assertSettingsInitial(initialState, viewport.id);
+
+    const toggled = await toggleAllVisibleSettings(client.send);
+    if (toggled.clicked >= 12) pass(`${viewport.id} settings matrix toggles every visible setting`, { clicked: toggled.clicked, after: toggled.after });
+    else fail(`${viewport.id} settings matrix toggles every visible setting`, toggled);
+
+    await client.send('Page.reload', { ignoreCache: true });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const persistedState = await evaluate(client.send, label, `${viewport.id}-persisted`);
+    assertCommon(persistedState, label, viewport.id);
+    assertSettingsPersisted(persistedState, viewport.id);
+
+    const commandOpened = await openCommandCenter(client.send);
+    if (commandOpened.opened) {
+      const commandState = await evaluate(client.send, label, `${viewport.id}-command`);
+      if ((commandState.commandNavLabels || []).includes('AI') && (commandState.commandNavLabels || []).includes('Sprint')) pass(`${viewport.id} settings matrix reveals lab modes only after the logged-in setting is enabled`, { labels: commandState.commandNavLabels });
+      else fail(`${viewport.id} settings matrix reveals lab modes only after the logged-in setting is enabled`, { labels: commandState.commandNavLabels, command: commandState.commandPanelText.slice(0, 900) });
+      await closeCommandCenter(client.send);
+    } else {
+      fail(`${viewport.id} settings matrix can open command center after settings persist`, commandOpened);
+    }
+
+    const settingsScreenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    await writeFile(path.join(outDir, `${label}-${viewport.id}.png`), Buffer.from(settingsScreenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} settings screenshot captured`, { file: path.join(outDir, `${label}-${viewport.id}.png`) });
+
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const homeState = await evaluate(client.send, `${label}-home`, viewport.id);
+    assertCommon(homeState, `${label}-home`, viewport.id);
+    assertHome(homeState, viewport.id, 'settings matrix home');
+    assertSettingsEffects(homeState, viewport.id);
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+
+    const homeScreenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    await writeFile(path.join(outDir, `${label}-home-${viewport.id}.png`), Buffer.from(homeScreenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} home screenshot captured`, { file: path.join(outDir, `${label}-home-${viewport.id}.png`) });
   } finally {
     client.close();
     await closeTarget(target);
@@ -2037,6 +2303,7 @@ for (const viewport of viewports) {
   await auditCreateCopyRoomLink(viewport, { mode: 'denied' });
   await auditGroupCommandCenter(viewport);
   await auditIqProfileHistory(viewport);
+  await auditSettingsMatrix(viewport);
   for (const route of routes) {
     await auditRoute(route, viewport);
   }

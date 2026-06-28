@@ -2689,9 +2689,21 @@ function AccountGate({ locale, title, body, onConnect }: { locale: LocaleKey; ti
   );
 }
 
-function SettingToggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (value: boolean) => void }) {
+function SettingToggle({
+  settingKey,
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  settingKey: keyof PlayerSettings;
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
   return (
-    <label className="setting-toggle">
+    <label className="setting-toggle" data-setting={settingKey}>
       <span>
         <strong>{label}</strong>
         <em>{description}</em>
@@ -2728,25 +2740,25 @@ function SettingsView({
       <div className="settings-grid">
         <div className="settings-panel">
           <p className="rail-label">{copy('Profile')}</p>
-          <SettingToggle label={copy('Public profile')} description={copy('Allow your share link to show username, score, and selected optional fields.')} checked={settings.profilePublic} onChange={(value) => onSetting('profilePublic', value)} />
-          <SettingToggle label={copy('Show location')} description={copy('Show optional/inferred city and country on your public profile.')} checked={settings.showLocation} onChange={(value) => onSetting('showLocation', value)} />
-          <SettingToggle label={copy('Show score history')} description={copy('Include daily profile history when that view is available.')} checked={settings.showScoreHistory} onChange={(value) => onSetting('showScoreHistory', value)} />
+          <SettingToggle settingKey="profilePublic" label={copy('Public profile')} description={copy('Allow your share link to show username, score, and selected optional fields.')} checked={settings.profilePublic} onChange={(value) => onSetting('profilePublic', value)} />
+          <SettingToggle settingKey="showLocation" label={copy('Show location')} description={copy('Show optional/inferred city and country on your public profile.')} checked={settings.showLocation} onChange={(value) => onSetting('showLocation', value)} />
+          <SettingToggle settingKey="showScoreHistory" label={copy('Show score history')} description={copy('Include daily profile history when that view is available.')} checked={settings.showScoreHistory} onChange={(value) => onSetting('showScoreHistory', value)} />
           <span className="fine-print">{profileUrlText}</span>
         </div>
         <div className="settings-panel">
           <p className="rail-label">{copy('Game')}</p>
-          <SettingToggle label={copy('Sound')} description={copy('Subtle interaction audio layer.')} checked={settings.soundEnabled} onChange={(value) => onSetting('soundEnabled', value)} />
-          <SettingToggle label={copy('Optional lab modes')} description={copy('Show AI blind-spot and sprint practice tabs only outside friend rooms.')} checked={settings.labModesEnabled} onChange={(value) => onSetting('labModesEnabled', value)} />
-          <SettingToggle label={copy('Reduced motion')} description={copy('Prefer calmer animation where supported.')} checked={settings.reducedMotion} onChange={(value) => onSetting('reducedMotion', value)} />
-          <SettingToggle label={copy('High contrast')} description={copy('Reserve stronger contrast for readability.')} checked={settings.highContrast} onChange={(value) => onSetting('highContrast', value)} />
-          <SettingToggle label={copy('Share score by default')} description={copy('Prefer scorecard copy after the official daily run.')} checked={settings.shareScoreByDefault} onChange={(value) => onSetting('shareScoreByDefault', value)} />
+          <SettingToggle settingKey="soundEnabled" label={copy('Sound')} description={copy('Subtle interaction audio layer.')} checked={settings.soundEnabled} onChange={(value) => onSetting('soundEnabled', value)} />
+          <SettingToggle settingKey="labModesEnabled" label={copy('Optional lab modes')} description={copy('Show AI blind-spot and sprint practice tabs only outside friend rooms.')} checked={settings.labModesEnabled} onChange={(value) => onSetting('labModesEnabled', value)} />
+          <SettingToggle settingKey="reducedMotion" label={copy('Reduced motion')} description={copy('Prefer calmer animation where supported.')} checked={settings.reducedMotion} onChange={(value) => onSetting('reducedMotion', value)} />
+          <SettingToggle settingKey="highContrast" label={copy('High contrast')} description={copy('Reserve stronger contrast for readability.')} checked={settings.highContrast} onChange={(value) => onSetting('highContrast', value)} />
+          <SettingToggle settingKey="shareScoreByDefault" label={copy('Share score by default')} description={copy('Prefer scorecard copy after the official daily run.')} checked={settings.shareScoreByDefault} onChange={(value) => onSetting('shareScoreByDefault', value)} />
         </div>
         <div className="settings-panel">
           <p className="rail-label">{copy('Privacy & notices')}</p>
-          <SettingToggle label={copy('Daily reminders')} description={copy('Use the reminder email field for one daily prompt.')} checked={settings.dailyReminder} onChange={(value) => onSetting('dailyReminder', value)} />
-          <SettingToggle label={copy('Email updates')} description={copy('Receive occasional product and ranking updates.')} checked={settings.emailUpdates} onChange={(value) => onSetting('emailUpdates', value)} />
-          <SettingToggle label={copy('Analytics')} description={copy('Allow aggregate product analytics to improve IQ WARS.')} checked={settings.analyticsEnabled} onChange={(value) => onSetting('analyticsEnabled', value)} />
-          <SettingToggle label={copy('Show agent activity')} description={copy('Include seeded test agents in rankings while the network grows.')} checked={settings.showAgentActivity} onChange={(value) => onSetting('showAgentActivity', value)} />
+          <SettingToggle settingKey="dailyReminder" label={copy('Daily reminders')} description={copy('Use the reminder email field for one daily prompt.')} checked={settings.dailyReminder} onChange={(value) => onSetting('dailyReminder', value)} />
+          <SettingToggle settingKey="emailUpdates" label={copy('Email updates')} description={copy('Receive occasional product and ranking updates.')} checked={settings.emailUpdates} onChange={(value) => onSetting('emailUpdates', value)} />
+          <SettingToggle settingKey="analyticsEnabled" label={copy('Analytics')} description={copy('Allow aggregate product analytics to improve IQ WARS.')} checked={settings.analyticsEnabled} onChange={(value) => onSetting('analyticsEnabled', value)} />
+          <SettingToggle settingKey="showAgentActivity" label={copy('Show agent activity')} description={copy('Include seeded test agents in rankings while the network grows.')} checked={settings.showAgentActivity} onChange={(value) => onSetting('showAgentActivity', value)} />
         </div>
       </div>
     </section>
@@ -4837,8 +4849,24 @@ export default function Home({
     ? `Ongoing room highscore: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}. The all-time board keeps each player's best official room score across days while today's board resets.`
     : 'The all-time board keeps each player\'s best official room score across days, so the invite link keeps its history while today still resets.';
 
+  const shellClassName = [
+    settings.highContrast ? 'settings-high-contrast' : '',
+    settings.reducedMotion ? 'settings-reduced-motion' : '',
+    settings.soundEnabled ? 'settings-sound-on' : 'settings-sound-off',
+    settings.analyticsEnabled ? 'settings-analytics-on' : 'settings-analytics-off',
+  ].filter(Boolean).join(' ');
+
   return (
-    <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
+    <main
+      className={shellClassName}
+      lang={locale}
+      data-locale={locale}
+      data-high-contrast={settings.highContrast ? 'true' : 'false'}
+      data-reduced-motion={settings.reducedMotion ? 'true' : 'false'}
+      data-sound-enabled={settings.soundEnabled ? 'true' : 'false'}
+      data-analytics-enabled={settings.analyticsEnabled ? 'true' : 'false'}
+      onPointerDownCapture={handleInteractionPointerDown}
+    >
       <nav className={navOpen ? 'nav-open' : ''}>
         <button className="brand" onClick={() => {
           setMode('world');
@@ -5786,6 +5814,75 @@ export default function Home({
           background-size: 64px 64px;
           mask-image: radial-gradient(120% 90% at 50% 30%, #000 40%, transparent 78%);
           z-index: 0;
+        }
+        main.settings-high-contrast {
+          background:
+            radial-gradient(120% 86% at 50% -12%, #1d2024 0%, #090a0c 42%, #020303 100%);
+          color: #ffffff;
+        }
+        main.settings-high-contrast::before {
+          background-image:
+            linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+        }
+        main.settings-high-contrast .leaderboard,
+        main.settings-high-contrast .features,
+        main.settings-high-contrast .profile-panel,
+        main.settings-high-contrast .social-hub,
+        main.settings-high-contrast .account-gate,
+        main.settings-high-contrast .rankings-globe-hero,
+        main.settings-high-contrast .profile-card,
+        main.settings-high-contrast .settings-panel,
+        main.settings-high-contrast .legal-page,
+        main.settings-high-contrast .rail-panel,
+        main.settings-high-contrast .runner-panel {
+          border-color: rgba(255,255,255,.24);
+          background: linear-gradient(160deg, rgba(26,29,33,.94), rgba(5,6,7,.94));
+          box-shadow: 0 30px 82px rgba(0,0,0,.68), inset 0 1px 0 rgba(255,255,255,.12);
+        }
+        main.settings-high-contrast .kicker,
+        main.settings-high-contrast .rail-label,
+        main.settings-high-contrast .setting-toggle strong,
+        main.settings-high-contrast .command-profile strong,
+        main.settings-high-contrast .leader-score strong,
+        main.settings-high-contrast h2,
+        main.settings-high-contrast .question-head h2 {
+          color: #ffffff;
+        }
+        main.settings-high-contrast .setting-toggle em,
+        main.settings-high-contrast .section-head p,
+        main.settings-high-contrast .profile-card p,
+        main.settings-high-contrast .settings-page p,
+        main.settings-high-contrast .trust-note,
+        main.settings-high-contrast .fine-print {
+          color: #d6d9db;
+        }
+        main.settings-high-contrast .setting-toggle,
+        main.settings-high-contrast .leaderboard-row,
+        main.settings-high-contrast .option,
+        main.settings-high-contrast .tile,
+        main.settings-high-contrast .command-group-item {
+          border-color: rgba(255,255,255,.22);
+        }
+        main.settings-high-contrast .setting-toggle input {
+          accent-color: #ffffff;
+        }
+        main.settings-reduced-motion *,
+        main.settings-reduced-motion *::before,
+        main.settings-reduced-motion *::after {
+          scroll-behavior: auto !important;
+          transition-duration: .001ms !important;
+          transition-delay: 0ms !important;
+        }
+        main.settings-reduced-motion .symbol,
+        main.settings-reduced-motion .globe-sphere::before,
+        main.settings-reduced-motion .globe-grid.longitude,
+        main.settings-reduced-motion .globe-region {
+          animation: none !important;
+        }
+        main.settings-reduced-motion .answer-footer .primary:not(:disabled),
+        main.settings-reduced-motion .option:active {
+          transform: none;
         }
         nav,
         .test-surface,
