@@ -36,6 +36,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function todayKey(date = new Date()) {
+  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+}
+
+function clearAuditPlayerStorageScript() {
+  return `
+    (() => {
+      [
+        'world-iq-official-rank',
+        'world-iq-official-history',
+        'world-iq-play-usage',
+        'world-iq-free-play-date',
+        'world-iq-player-id',
+        'world-iq-player-name',
+        'world-iq-player-username',
+        'world-iq-leaderboard'
+      ].forEach((key) => window.localStorage.removeItem(key));
+    })();
+  `;
+}
+
 function pass(message, details = null) {
   results.push({ ok: true, message, details });
   console.log(`PASS ${message}${details ? ` ${JSON.stringify(details)}` : ''}`);
@@ -150,6 +171,12 @@ async function openTarget(url) {
 async function closeTarget(target) {
   if (!target?.id) return;
   await fetch(`${debugBase}/json/close/${encodeURIComponent(target.id)}`).catch(() => null);
+}
+
+async function requestJson(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  const data = await response.json().catch(() => null);
+  return { response, data };
 }
 
 function createClient(wsUrl) {
@@ -742,6 +769,7 @@ async function auditRoute(route, viewport) {
     await client.send('Runtime.enable');
     await client.send('Network.enable');
     await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', { source: clearAuditPlayerStorageScript() });
     await client.send('Emulation.setDeviceMetricsOverride', {
       width: viewport.width,
       height: viewport.height,
@@ -827,9 +855,89 @@ async function auditRoute(route, viewport) {
   }
 }
 
+async function auditLateRoomJoinSync() {
+  const base = origin.replace(/\/$/, '');
+  const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const group = `audit-late-${suffix}`.slice(0, 32);
+  const playerId = `visual-late-${suffix}`.slice(0, 72);
+  const displayName = 'Late Sync Audit';
+  const username = `late_${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 12)}`.toLowerCase();
+  const day = todayKey();
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        (() => {
+          const pad = (value) => String(value).padStart(2, '0');
+          const now = new Date();
+          const day = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+          window.localStorage.setItem('world-iq-player-id', ${JSON.stringify(playerId)});
+          window.localStorage.setItem('world-iq-player-name', ${JSON.stringify(displayName)});
+          window.localStorage.setItem('world-iq-player-username', ${JSON.stringify(username)});
+          window.localStorage.setItem('world-iq-official-rank', JSON.stringify({
+            day,
+            score: 200,
+            rank: '#1',
+            percentile: 99.9,
+            correct: 10,
+            total: 12,
+            beatAi: 3,
+            elapsedMs: 270000,
+            speedBonus: 99,
+            timestamp: Date.now()
+          }));
+        })();
+      `,
+    });
+    await client.send('Page.navigate', { url: `${base}/g/${group}` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    let synced = null;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const result = await requestJson(`${base}/api/leaderboards?day=${encodeURIComponent(day)}&group=${encodeURIComponent(group)}&agents=false`);
+      const groupRows = Array.isArray(result.data?.group) ? result.data.group : [];
+      const allTimeRows = Array.isArray(result.data?.groupAllTime) ? result.data.groupAllTime : [];
+      const row = [...groupRows, ...allTimeRows].find((entry) => entry.playerId === playerId);
+      if (result.response.ok && row) {
+        synced = { row, groupRows: groupRows.length, allTimeRows: allTimeRows.length };
+        break;
+      }
+      await sleep(500);
+    }
+
+    if (synced?.row?.score === 137 && synced.row.groupCode === group) {
+      pass('late room join sync writes today\'s saved official score into the production room API', { group, playerId, score: synced.row.score, groupRows: synced.groupRows, allTimeRows: synced.allTimeRows });
+    } else {
+      fail('late room join sync writes today\'s saved official score into the production room API', { group, playerId, synced });
+    }
+
+    const state = await evaluate(client.send, 'late-room-join', 'desktop');
+    if (state.bodyText.includes(username) && state.bodyText.includes('137')) {
+      pass('late room join sync renders the synced player score on the room page', { group, username });
+    } else {
+      fail('late room join sync renders the synced player score on the room page', { group, username, text: state.bodyText.slice(0, 1200) });
+    }
+
+    if (client.events.exceptions.length) fail('late room join sync has no runtime exceptions', client.events.exceptions.slice(0, 3));
+    else pass('late room join sync has no runtime exceptions');
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
 await mkdir(outDir, { recursive: true });
 roomFixture = await loadRoomFixture();
 await ensureChrome();
+await auditLateRoomJoinSync();
+roomFixture = await loadRoomFixture();
 
 for (const viewport of viewports) {
   for (const route of routes) {
