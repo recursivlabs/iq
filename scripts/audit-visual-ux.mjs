@@ -25,6 +25,7 @@ const routes = [
 
 const results = [];
 let roomFixture = null;
+let geographyFixture = null;
 
 function valueAfter(flag) {
   const index = args.lastIndexOf(flag);
@@ -56,6 +57,10 @@ async function loadRoomFixture() {
     }
     const group = Array.isArray(data.group) ? data.group : [];
     const groupAllTime = Array.isArray(data.groupAllTime) ? data.groupAllTime : [];
+    const geography = data.geography && typeof data.geography === 'object' ? data.geography : {};
+    const countries = Array.isArray(geography.countries) ? geography.countries : [];
+    const cities = Array.isArray(geography.cities) ? geography.cities : [];
+    const towns = Array.isArray(geography.towns) ? geography.towns : [];
     const topRecord = groupAllTime[0] || null;
     const fixture = {
       room,
@@ -66,7 +71,18 @@ async function loadRoomFixture() {
       topRecordName: topRecord ? (topRecord.username ? `@${topRecord.username}` : topRecord.displayName) : null,
       topRecordDay: topRecord?.day ?? null,
     };
+    geographyFixture = {
+      globalCount: Array.isArray(data.global) ? data.global.length : 0,
+      countriesCount: countries.length,
+      citiesCount: cities.length,
+      townsCount: towns.length,
+      expectedRegionMarkers: Math.min(18, countries.length + cities.slice(0, 8).length + towns.slice(0, 5).length),
+      topCountry: countries[0] || null,
+      topCity: cities[0] || null,
+      topTown: towns[0] || null,
+    };
     pass('production room fixture API exposes daily and all-time boards', fixture);
+    pass('production geography fixture API exposes real geography boards', geographyFixture);
     return fixture;
   } catch (error) {
     fail('production room fixture API is readable for visual audit', { error: error instanceof Error ? error.message : String(error) });
@@ -248,6 +264,20 @@ function evaluationScript(routeId, viewportId) {
       const primaryRoomBoard = document.querySelector('.primary-board');
       const primaryRoomRows = [...document.querySelectorAll('.primary-board .leaderboard-row')].length;
       const primaryRoomEmpty = document.querySelector('.primary-board .empty-board');
+      const rankingsGlobeHero = document.querySelector('.rankings-globe-hero');
+      const rankingsGlobe = document.querySelector('.rankings-globe');
+      const rankingsRegions = [...document.querySelectorAll('.rankings-region')].filter(visible);
+      const rankingGlobeStats = [...document.querySelectorAll('.ranking-globe-stats div')].map((item) => ({
+        value: text(item.querySelector('strong')),
+        label: text(item.querySelector('span')),
+      }));
+      const geographyBoard = document.querySelector('.geography-board');
+      const geoColumns = [...document.querySelectorAll('.geo-column')].map((item) => ({
+        label: text(item.querySelector('.geo-column-head span')),
+        count: text(item.querySelector('.geo-column-head strong')),
+        rows: [...item.querySelectorAll('.geo-rows .leaderboard-row')].length,
+        text: text(item).slice(0, 900),
+      }));
       const bodyBg = getComputedStyle(document.body).backgroundColor;
       const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
       const optionRects = options.map(rect).filter(Boolean);
@@ -301,6 +331,14 @@ function evaluationScript(routeId, viewportId) {
         primaryRoomBoardText: text(primaryRoomBoard).slice(0, 1200),
         primaryRoomRows,
         primaryRoomEmptyText: text(primaryRoomEmpty),
+        rankingsGlobeHero: rect(rankingsGlobeHero),
+        rankingsGlobe: rect(rankingsGlobe),
+        rankingsRegionCount: rankingsRegions.length,
+        rankingsRegionRects: rankingsRegions.map(rect).filter(Boolean).slice(0, 8),
+        rankingGlobeStats,
+        geographyBoard: rect(geographyBoard),
+        geographyBoardText: text(geographyBoard).slice(0, 1800),
+        geoColumns,
         visibleRoomRecords: /Room records/i.test(text(document.body)),
         visibleRoomHighscore: /Ongoing room highscore|Room highscore|all-time room highscore/i.test(text(document.body)),
         visibleFriendRankings: /friend rankings/i.test(text(document.body)),
@@ -632,6 +670,45 @@ function assertRoomFixture(state, viewportId, routeId) {
   }
 }
 
+function geoColumn(state, label) {
+  return (state.geoColumns || []).find((column) => column.label.toLowerCase() === label.toLowerCase()) || null;
+}
+
+function statValue(state, label) {
+  const stat = (state.rankingGlobeStats || []).find((item) => item.label.toLowerCase() === label.toLowerCase());
+  return stat ? stat.value : null;
+}
+
+function assertGeographyFixture(state, viewportId, routeId) {
+  if (!geographyFixture) return;
+  const prefix = `${viewportId} ${routeId}`;
+  if (state.rankingsGlobeHero && state.rankingsGlobeHero.width >= Math.min(300, state.viewport.width - 30) && state.rankingsGlobeHero.height >= 260) pass(`${prefix} renders a prominent rankings globe hero`, state.rankingsGlobeHero);
+  else fail(`${prefix} renders a prominent rankings globe hero`, { hero: state.rankingsGlobeHero, viewport: state.viewport });
+
+  if (state.rankingsGlobe && state.rankingsGlobe.width >= 220 && state.rankingsGlobe.height >= 220) pass(`${prefix} renders a visible spherical globe`, state.rankingsGlobe);
+  else fail(`${prefix} renders a visible spherical globe`, { globe: state.rankingsGlobe });
+
+  if (state.rankingsRegionCount >= geographyFixture.expectedRegionMarkers) pass(`${prefix} renders live geography region markers`, { expected: geographyFixture.expectedRegionMarkers, actual: state.rankingsRegionCount });
+  else fail(`${prefix} renders live geography region markers`, { expected: geographyFixture.expectedRegionMarkers, actual: state.rankingsRegionCount, rects: state.rankingsRegionRects });
+
+  const signals = Number(statValue(state, 'signals'));
+  if (Number.isFinite(signals) && signals >= geographyFixture.globalCount) pass(`${prefix} renders live signal count in globe stats`, { expectedAtLeast: geographyFixture.globalCount, actual: signals });
+  else fail(`${prefix} renders live signal count in globe stats`, { expectedAtLeast: geographyFixture.globalCount, stats: state.rankingGlobeStats });
+
+  for (const [label, expected, top] of [
+    ['Countries', geographyFixture.countriesCount, geographyFixture.topCountry],
+    ['Cities', geographyFixture.citiesCount, geographyFixture.topCity],
+    ['Towns', geographyFixture.townsCount, geographyFixture.topTown],
+  ]) {
+    const column = geoColumn(state, label);
+    if (column && column.count === String(expected) && column.rows === expected) pass(`${prefix} renders ${label.toLowerCase()} geography rows from live API`, { expected, top: top?.label || null });
+    else fail(`${prefix} renders ${label.toLowerCase()} geography rows from live API`, { expected, column, columns: state.geoColumns });
+    if (!top) continue;
+    if (state.geographyBoardText.includes(top.label) && state.geographyBoardText.includes(String(top.score)) && state.geographyBoardText.includes(String(top.topScore))) pass(`${prefix} renders top ${label.toLowerCase()} score metadata`, { label: top.label, score: top.score, topScore: top.topScore });
+    else fail(`${prefix} renders top ${label.toLowerCase()} score metadata`, { top, text: state.geographyBoardText });
+  }
+}
+
 function assertRoom(state, viewportId) {
   const prefix = `${viewportId} room`;
   if (state.visibleFriendRankings) pass(`${prefix} opens friend rankings context`);
@@ -652,6 +729,7 @@ function assertRankings(state, viewportId) {
   if (state.visibleRoomHighscore) pass(`${prefix} preserves ongoing room highscore summary`);
   else fail(`${prefix} preserves ongoing room highscore summary`, { bodyText: state.bodyText.slice(0, 700) });
   assertRoomFixture(state, viewportId, 'rankings');
+  assertGeographyFixture(state, viewportId, 'rankings');
 }
 
 async function auditRoute(route, viewport) {
