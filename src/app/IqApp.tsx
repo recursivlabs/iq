@@ -3756,8 +3756,46 @@ export default function Home({
   const [publicProfile, setPublicProfile] = React.useState<PublicProfileRecord | null>(null);
   const [publicProfileState, setPublicProfileState] = React.useState(initialProfileSlug ? 'Loading profile' : '');
   const [navOpen, setNavOpen] = React.useState(false);
+  const commandToggleRef = React.useRef<HTMLButtonElement | null>(null);
+  const commandPanelRef = React.useRef<HTMLElement | null>(null);
+  const closeCommandRef = React.useRef<HTMLButtonElement | null>(null);
   const [livePresence, setLivePresence] = React.useState<LivePresence>({ active: 1, updatedAt: 0, source: 'local' });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
+
+  function closeNavMenu() {
+    setNavOpen(false);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => commandToggleRef.current?.focus(), 0);
+    }
+  }
+
+  function handleCommandKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeNavMenu();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const panel = commandPanelRef.current;
+    if (!panel) return;
+    const focusable = Array.from(panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      });
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   React.useEffect(() => {
     const detected = detectBrowserLocale();
@@ -3800,6 +3838,12 @@ export default function Home({
     setGroupRecords(code ? writeStoredGroup(code, name) : readStoredGroups());
     if (code) syncOfficialRankToGroup(code, name);
   }, [initialGroupCode]);
+
+  React.useEffect(() => {
+    if (!navOpen || typeof window === 'undefined') return undefined;
+    const id = window.setTimeout(() => closeCommandRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [navOpen]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -4785,10 +4829,17 @@ export default function Home({
             {liveCountLabel}
           </span>
           <button
+            ref={commandToggleRef}
             className={`command-toggle ${recursivAccount ? 'logged-in' : 'logged-out'}`}
             aria-expanded={navOpen}
             aria-label={commandLabel}
             onClick={() => setNavOpen((open) => !open)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setNavOpen((open) => !open);
+              }
+            }}
           >
             <span className="menu-mark" aria-hidden="true"><i /><i /><i /></span>
             <span className="command-toggle-label">{copy('Menu')}</span>
@@ -4796,14 +4847,14 @@ export default function Home({
         </div>
         {navOpen ? (
           <>
-          <button className="command-backdrop" aria-label={copy('Close command center')} onClick={() => setNavOpen(false)} />
-          <aside className="command-panel sidebar-nav" role="navigation" aria-label={copy('IQ WARS command center')}>
+          <button className="command-backdrop" aria-label={copy('Close command center')} onClick={closeNavMenu} />
+          <aside ref={commandPanelRef} className="command-panel sidebar-nav" role="navigation" aria-label={copy('IQ WARS command center')} onKeyDown={handleCommandKeyDown}>
             <div className="command-panel-head">
               <div>
                 <strong>IQ WARS</strong>
                 <span>{copy('Left sidebar')}</span>
               </div>
-              <button className="close-command" onClick={() => setNavOpen(false)} aria-label={copy('Close command center')}>X</button>
+              <button ref={closeCommandRef} className="close-command" onClick={closeNavMenu} aria-label={copy('Close command center')}>X</button>
             </div>
             <div className="command-scroll">
               <div className="command-profile">

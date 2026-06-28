@@ -355,6 +355,94 @@ async function closeCommandCenter(send) {
   await sleep(250);
 }
 
+async function pressKey(send, key, code, windowsVirtualKeyCode, modifiers = 0) {
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode, modifiers });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode, nativeVirtualKeyCode: windowsVirtualKeyCode, modifiers });
+  await sleep(220);
+}
+
+async function focusCommandToggle(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const button = document.querySelector('.command-toggle');
+        if (!button) return JSON.stringify({ focused: false, reason: 'missing command toggle' });
+        button.focus();
+        return JSON.stringify({ focused: document.activeElement === button });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(150);
+  return JSON.parse(result.result.value);
+}
+
+async function activeElementState(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const text = (el) => (el && el.textContent || '').replace(/\\s+/g, ' ').trim();
+        const visible = (el) => {
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && Number(s.opacity || 1) > 0.01;
+        };
+        const active = document.activeElement;
+        const panel = document.querySelector('.command-panel');
+        const popover = document.querySelector('.proof-popover');
+        return JSON.stringify({
+          tag: active?.tagName || '',
+          className: String(active?.className || ''),
+          text: text(active).slice(0, 120),
+          ariaLabel: active?.getAttribute?.('aria-label') || '',
+          inCommandPanel: Boolean(panel && active && panel.contains(active)),
+          commandPanelVisible: visible(panel),
+          proofPopoverVisible: visible(popover),
+          proofPopoverText: text(popover).slice(0, 500),
+        });
+      })()
+    `,
+    returnByValue: true,
+  });
+  return JSON.parse(result.result.value);
+}
+
+async function auditCommandKeyboard(send, routeId, viewportId) {
+  const prefix = `${viewportId} ${routeId}`;
+  const focused = await focusCommandToggle(send);
+  if (!focused.focused) {
+    fail(`${prefix} command center toggle receives keyboard focus`, focused);
+    return;
+  }
+  pass(`${prefix} command center toggle receives keyboard focus`);
+
+  await pressKey(send, 'Enter', 'Enter', 13);
+  let active = await activeElementState(send);
+  if (active.commandPanelVisible && active.inCommandPanel && /close-command/.test(active.className)) pass(`${prefix} keyboard opens command center and moves focus to close`, active);
+  else fail(`${prefix} keyboard opens command center and moves focus to close`, active);
+
+  await pressKey(send, 'Tab', 'Tab', 9, 8);
+  active = await activeElementState(send);
+  if (active.commandPanelVisible && active.inCommandPanel && !/command-backdrop/.test(active.className)) pass(`${prefix} Shift+Tab wraps inside command center`, active);
+  else fail(`${prefix} Shift+Tab wraps inside command center`, active);
+
+  await pressKey(send, 'Tab', 'Tab', 9);
+  active = await activeElementState(send);
+  if (active.commandPanelVisible && active.inCommandPanel && /close-command/.test(active.className)) pass(`${prefix} Tab wraps from final command item back to close`, active);
+  else fail(`${prefix} Tab wraps from final command item back to close`, active);
+
+  await pressKey(send, 'Tab', 'Tab', 9);
+  active = await activeElementState(send);
+  if (active.commandPanelVisible && active.inCommandPanel && !/close-command/.test(active.className)) pass(`${prefix} Tab reaches primary sidebar controls`, active);
+  else fail(`${prefix} Tab reaches primary sidebar controls`, active);
+
+  await pressKey(send, 'Escape', 'Escape', 27);
+  active = await activeElementState(send);
+  if (!active.commandPanelVisible && /command-toggle/.test(active.className)) pass(`${prefix} Escape closes command center and restores menu focus`, active);
+  else fail(`${prefix} Escape closes command center and restores menu focus`, active);
+}
+
 async function hoverProofPill(send) {
   const result = await send('Runtime.evaluate', {
     expression: `
@@ -374,6 +462,22 @@ async function hoverProofPill(send) {
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 }).catch(() => null);
   await sleep(300);
   return point;
+}
+
+async function focusProofPill(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const pill = document.querySelector('.proof-pill');
+        if (!pill) return JSON.stringify({ focused: false, reason: 'missing proof pill' });
+        pill.focus();
+        return JSON.stringify({ focused: document.activeElement === pill });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(300);
+  return JSON.parse(result.result.value);
 }
 
 function assertCommon(state, routeId, viewportId) {
@@ -444,10 +548,10 @@ function assertWrongFeedback(state, viewportId) {
   else fail(`${prefix} exposes a proof affordance after answer lock`, { bodyText: state.bodyText.slice(0, 700) });
 }
 
-function assertProofPopover(state, viewportId) {
+function assertProofPopover(state, viewportId, trigger = 'hover') {
   const prefix = `${viewportId} home`;
-  if (state.proofPopoverVisible && /Visual proof|Formal proof|Answer checksum/i.test(state.proofPopoverText)) pass(`${prefix} proof detail opens on hover`, { text: state.proofPopoverText.slice(0, 260) });
-  else fail(`${prefix} proof detail opens on hover`, { visible: state.proofPopoverVisible, text: state.proofPopoverText?.slice(0, 500), rect: state.proofPopover });
+  if (state.proofPopoverVisible && /Visual proof|Formal proof|Answer checksum/i.test(state.proofPopoverText)) pass(`${prefix} proof detail opens on ${trigger}`, { text: state.proofPopoverText.slice(0, 260) });
+  else fail(`${prefix} proof detail opens on ${trigger}`, { visible: state.proofPopoverVisible, text: state.proofPopoverText?.slice(0, 500), rect: state.proofPopover });
 }
 
 function assertRoom(state, viewportId) {
@@ -503,6 +607,7 @@ async function auditRoute(route, viewport) {
       fail(`${viewport.id} ${route.id} command center opens as a left sidebar`, commandOpened);
     }
     await closeCommandCenter(client.send);
+    await auditCommandKeyboard(client.send, route.id, viewport.id);
     if (route.checks.includes('home')) {
       const settledState = await evaluate(client.send, route.id, viewport.id);
       assertHome(settledState, viewport.id);
@@ -515,7 +620,10 @@ async function auditRoute(route, viewport) {
       assertWrongFeedback(feedbackState, viewport.id);
       const hovered = await hoverProofPill(client.send);
       if (!hovered.hovered) fail(`${viewport.id} home proof detail opens on hover`, hovered);
-      else assertProofPopover(await evaluate(client.send, route.id, `${viewport.id}-proof-hover`), viewport.id);
+      else assertProofPopover(await evaluate(client.send, route.id, `${viewport.id}-proof-hover`), viewport.id, 'hover/tap');
+      const proofFocused = await focusProofPill(client.send);
+      if (!proofFocused.focused) fail(`${viewport.id} home proof detail opens on keyboard focus`, proofFocused);
+      else assertProofPopover(await evaluate(client.send, route.id, `${viewport.id}-proof-focus`), viewport.id, 'keyboard focus');
       for (let questionNumber = 2; questionNumber <= homeQuestionChecks; questionNumber += 1) {
         const advanced = await clickPrimaryButton(client.send, 'next question');
         if (!advanced.clicked) {
