@@ -2271,20 +2271,20 @@ function RoomRecordStrip({
       <div className="section-head">
         <div>
           <p className="kicker">{copy('All-time room highscore')}</p>
-          <h2>{topRecord ? `${copy('Room record')}: ${topRecord.score}` : copy('No all-time room record yet.')}</h2>
-          <p>{copy('Old official scores stay on this same room link as all-time bests. Today still resets every day.')}</p>
+          <h2>{topRecord ? `${copy('Ongoing room record')}: ${topRecord.score}` : copy('No all-time room record yet.')}</h2>
+          <p>{copy('This room keeps old scores for the ongoing highscore race. The daily board still resets every day.')}</p>
         </div>
         <button className={`secondary copy-link ${ctaCopied ? 'copied' : ''}`} onClick={onCopyInvite}>{copy(inviteState)}</button>
       </div>
       {showFallbackUrl ? <code className="copy-fallback-link">{fallbackUrl}</code> : null}
       <div className="room-record-metrics">
         <div>
-          <span>{copy('Today')}</span>
+          <span>{copy('Daily race')}</span>
           <strong>{todayCount}</strong>
           <em>{copy(todayCount === 1 ? 'official score' : 'official scores')}</em>
         </div>
         <div>
-          <span>{copy('All-time records')}</span>
+          <span>{copy('Room bests')}</span>
           <strong>{records.length}</strong>
           <em>{copy(records.length === 1 ? 'best score' : 'best scores')}</em>
         </div>
@@ -3682,7 +3682,10 @@ function Runner({
               ].filter(Boolean).join(' ')}
               disabled={Boolean(feedback)}
               onClick={() => {
-                if (!feedback) setSelected(index);
+                if (!feedback) {
+                  setSelected(index);
+                  if (soundEnabled) onSound('select');
+                }
               }}
             >
               <PatternTileView tile={item} selected={selected === index || Boolean(feedback && index === current.answerIndex)} />
@@ -4207,10 +4210,7 @@ export default function Home({
     const action = target?.closest('button, a, input');
     if (!action) return;
     if (action instanceof HTMLButtonElement && action.disabled) return;
-    if (action.closest('.option')) {
-      playInteractionSound('select');
-      return;
-    }
+    if (action.closest('.option')) return;
     if (action.closest('.answer-footer')) return;
     if (action.closest('.copy-link')) {
       playInteractionSound('copy');
@@ -4489,7 +4489,7 @@ export default function Home({
     try {
       await copyTextToClipboard(url);
       setInviteState('Link copied');
-      playInteractionSound('success');
+      playInteractionSound('copy');
       resetInviteStateSoon('Link copied');
     } catch {
       setInviteState('Link ready');
@@ -4549,7 +4549,7 @@ export default function Home({
     setCopiedGroupCode(cleaned);
     try {
       await copyTextToClipboard(url);
-      playInteractionSound('success');
+      playInteractionSound('copy');
       if (typeof window !== 'undefined') {
         window.setTimeout(() => {
           setCopiedGroupCode((current) => current === cleaned ? '' : current);

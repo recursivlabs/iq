@@ -55,8 +55,83 @@ function clearAuditPlayerStorageScript() {
         'world-iq-group-name',
         'world-iq-groups',
         'world-iq-leaderboard',
-        'world-iq-recursiv-account'
+        'world-iq-recursiv-account',
+        'world-iq-player-settings'
       ].forEach((key) => window.localStorage.removeItem(key));
+    })();
+  `;
+}
+
+function soundAuditScript({ soundEnabled = true } = {}) {
+  return `
+    (() => {
+      const pad = (value) => String(value).padStart(2, '0');
+      const now = new Date();
+      const day = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+      window.localStorage.setItem('world-iq-player-settings', JSON.stringify({ soundEnabled: ${soundEnabled ? 'true' : 'false'} }));
+      window.localStorage.setItem('world-iq-player-id', ${JSON.stringify(`sound-audit-${soundEnabled ? 'on' : 'off'}`)});
+      window.localStorage.setItem('world-iq-question-order-v3:world', JSON.stringify({
+        day,
+        mode: 'world',
+        order: ['world-01', 'world-02', 'world-03', 'world-04', 'world-05', 'world-06', 'world-07', 'world-08', 'world-09', 'world-10', 'world-11', 'world-12']
+      }));
+      window.__iqwarsAudioEvents = [];
+      class FakeAudioParam {
+        constructor(owner, name) { this.owner = owner; this.name = name; }
+        setValueAtTime(value, time) {
+          if (this.name === 'frequency') this.owner.frequencyValue = Number(value);
+          return value;
+        }
+        exponentialRampToValueAtTime(value, time) {
+          if (this.name === 'frequency' && !this.owner.frequencyValue) this.owner.frequencyValue = Number(value);
+          return value;
+        }
+      }
+      class FakeNode {
+        connect() { return this; }
+        disconnect() { return undefined; }
+      }
+      class FakeGain extends FakeNode {
+        constructor() {
+          super();
+          this.gain = new FakeAudioParam(this, 'gain');
+        }
+      }
+      class FakeFilter extends FakeNode {
+        constructor() {
+          super();
+          this.type = 'lowpass';
+          this.frequency = new FakeAudioParam(this, 'frequency');
+        }
+      }
+      class FakeOscillator extends FakeNode {
+        constructor() {
+          super();
+          this.type = 'sine';
+          this.frequencyValue = 0;
+          this.frequency = new FakeAudioParam(this, 'frequency');
+          this.onended = null;
+        }
+        start(time) {
+          window.__iqwarsAudioEvents.push({ type: this.type, frequency: this.frequencyValue, time: Number(time || 0) });
+        }
+        stop() {
+          if (typeof this.onended === 'function') window.setTimeout(() => this.onended(), 0);
+        }
+      }
+      class FakeAudioContext {
+        constructor() {
+          this.currentTime = 0;
+          this.state = 'running';
+          this.destination = {};
+        }
+        resume() { this.state = 'running'; return Promise.resolve(); }
+        createGain() { return new FakeGain(); }
+        createBiquadFilter() { return new FakeFilter(); }
+        createOscillator() { return new FakeOscillator(); }
+      }
+      Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext });
+      Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: FakeAudioContext });
     })();
   `;
 }
@@ -452,7 +527,7 @@ function evaluationScript(routeId, viewportId) {
         geographyBoardText: text(geographyBoard).slice(0, 1800),
         geoColumns,
         visibleRoomRecords: /Room records|All-time room highscores|Best scores ever in this room/i.test(text(document.body)),
-        visibleRoomHighscore: /Ongoing room highscore|Room highscore|all-time room highscore/i.test(text(document.body)),
+        visibleRoomHighscore: /Ongoing room highscore|Ongoing room record|Room highscore|all-time room highscore|ongoing highscore race/i.test(text(document.body)),
         visibleFriendRankings: /friend rankings|Today's room board|Today resets daily/i.test(text(document.body)),
         visibleGlobe: /World signal|Global signal|Geography|Countries|Cities|Towns/i.test(text(document.body)) || Boolean(document.querySelector('.geo-globe, .rankings-globe, .globe')),
         overflows,
@@ -517,6 +592,106 @@ async function clickPrimaryButton(send, matchText) {
   });
   await sleep(500);
   return JSON.parse(result.result.value);
+}
+
+async function clickOptionOnly(send, index = 0) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const options = [...document.querySelectorAll('.option')];
+        const option = options[${Number(index)}];
+        if (!option) return JSON.stringify({ clicked: false, reason: 'missing option', index: ${Number(index)}, optionCount: options.length });
+        const disabled = option.disabled;
+        if (!disabled) option.click();
+        return JSON.stringify({ clicked: !disabled, disabled, index: ${Number(index)}, optionCount: options.length });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(350);
+  return JSON.parse(result.result.value);
+}
+
+async function clickLockAnswer(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const lock = [...document.querySelectorAll('button.primary')].find((button) => /lock answer|fijar respuesta/i.test(clean(button.textContent)));
+        if (!lock) return JSON.stringify({ clicked: false, reason: 'missing lock' });
+        const disabled = lock.disabled;
+        if (!disabled) lock.click();
+        return JSON.stringify({ clicked: !disabled, disabled, text: clean(lock.textContent) });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(700);
+  return JSON.parse(result.result.value);
+}
+
+async function clearAudioEvents(send) {
+  await send('Runtime.evaluate', {
+    expression: "window.__iqwarsAudioEvents = []; true",
+    returnByValue: true,
+  }).catch(() => null);
+}
+
+async function audioState(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => JSON.stringify({
+        events: Array.isArray(window.__iqwarsAudioEvents) ? window.__iqwarsAudioEvents : [],
+        bodyText: (document.body.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 700)
+      }))()
+    `,
+    returnByValue: true,
+  });
+  return JSON.parse(result.result.value);
+}
+
+function hasFrequencies(state, expected) {
+  const actual = (state.events || []).map((event) => Number(event.frequency)).filter(Number.isFinite);
+  return expected.every((frequency) => actual.some((value) => Math.abs(value - frequency) <= 1));
+}
+
+function assertAudioCue(state, label, expected) {
+  if (hasFrequencies(state, expected)) pass(`${label} emits expected audio cue`, { expected, actual: (state.events || []).map((event) => event.frequency) });
+  else fail(`${label} emits expected audio cue`, { expected, events: state.events, bodyText: state.bodyText });
+}
+
+function assertNoAudioCue(state, label) {
+  if (!state.events || state.events.length === 0) pass(`${label} stays silent when sound is disabled`);
+  else fail(`${label} stays silent when sound is disabled`, { events: state.events, bodyText: state.bodyText });
+}
+
+async function pointerClickButton(send, matchText) {
+  const pointResult = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const wanted = ${JSON.stringify(matchText)}.toLowerCase();
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const matches = [...document.querySelectorAll('button')].filter((candidate) => clean(candidate.textContent).toLowerCase().includes(wanted));
+        const isVisible = (candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight && rect.right >= 0 && rect.left <= window.innerWidth;
+        };
+        const button = matches.find(isVisible) || matches[0];
+        if (!button) return JSON.stringify({ clicked: false, reason: 'missing button', wanted });
+        button.scrollIntoView({ block: 'center', inline: 'center' });
+        const rect = button.getBoundingClientRect();
+        return JSON.stringify({ clicked: true, text: clean(button.textContent), x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      })()
+    `,
+    returnByValue: true,
+  });
+  const point = JSON.parse(pointResult.result.value);
+  if (!point.clicked) return point;
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y }).catch(() => null);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 }).catch(() => null);
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 }).catch(() => null);
+  await sleep(500);
+  return point;
 }
 
 async function openCommandCenter(send) {
@@ -811,10 +986,10 @@ function metricValue(state, label) {
 function assertRoomFixture(state, viewportId, routeId) {
   if (!roomFixture) return;
   const prefix = `${viewportId} ${routeId}`;
-  if (metricValue(state, 'Today') === String(roomFixture.todayCount)) pass(`${prefix} renders live room today count`, { expected: roomFixture.todayCount });
+  if (metricValue(state, 'Today') === String(roomFixture.todayCount) || metricValue(state, 'Daily race') === String(roomFixture.todayCount)) pass(`${prefix} renders live room today count`, { expected: roomFixture.todayCount });
   else fail(`${prefix} renders live room today count`, { expected: roomFixture.todayCount, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
 
-  if (metricValue(state, 'All-time') === String(roomFixture.allTimeCount) || metricValue(state, 'All-time records') === String(roomFixture.allTimeCount)) pass(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount });
+  if (metricValue(state, 'All-time') === String(roomFixture.allTimeCount) || metricValue(state, 'All-time records') === String(roomFixture.allTimeCount) || metricValue(state, 'Room bests') === String(roomFixture.allTimeCount)) pass(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount });
   else fail(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
 
   if (roomFixture.topRecordScore === null) return;
@@ -1059,6 +1234,134 @@ async function auditSpanishLocale(viewport) {
   } finally {
     client.close();
     await closeTarget(target);
+  }
+}
+
+async function auditSoundDesign() {
+  const base = origin.replace(/\/$/, '');
+  const viewport = viewports.find((item) => item.id === 'desktop') || viewports[0];
+  const label = 'sound-design';
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${soundAuditScript({ soundEnabled: true })}\n${inviteClipboardScript({ mode: 'success' })}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    assertCommon(await evaluate(client.send, label, viewport.id), label, viewport.id);
+
+    await clearAudioEvents(client.send);
+    const selected = await clickOptionOnly(client.send, 0);
+    if (selected.clicked) pass('sound design answer option can be selected for audio proof', selected);
+    else fail('sound design answer option can be selected for audio proof', selected);
+    assertAudioCue(await audioState(client.send), 'sound design option selection', [520, 780]);
+
+    await clearAudioEvents(client.send);
+    const wrongLock = await clickLockAnswer(client.send);
+    if (wrongLock.clicked) pass('sound design wrong answer lock is clickable', wrongLock);
+    else fail('sound design wrong answer lock is clickable', wrongLock);
+    const wrongState = await audioState(client.send);
+    assertAudioCue(wrongState, 'sound design wrong answer', [196, 147]);
+    if (/Not quite|Correct answer/i.test(wrongState.bodyText)) pass('sound design wrong cue is tied to wrong-answer feedback');
+    else fail('sound design wrong cue is tied to wrong-answer feedback', { bodyText: wrongState.bodyText });
+
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    await clearAudioEvents(client.send);
+    const correctSelected = await clickOptionOnly(client.send, 1);
+    if (correctSelected.clicked) pass('sound design correct answer option can be selected', correctSelected);
+    else fail('sound design correct answer option can be selected', correctSelected);
+    await clearAudioEvents(client.send);
+    const correctLock = await clickLockAnswer(client.send);
+    if (correctLock.clicked) pass('sound design correct answer lock is clickable', correctLock);
+    else fail('sound design correct answer lock is clickable', correctLock);
+    const correctState = await audioState(client.send);
+    assertAudioCue(correctState, 'sound design correct answer', [740, 1110]);
+    if (/Correct|Clean read/i.test(correctState.bodyText)) pass('sound design success cue is tied to correct-answer feedback');
+    else fail('sound design success cue is tied to correct-answer feedback', { bodyText: correctState.bodyText });
+
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    await clearAudioEvents(client.send);
+    const inviteClicked = await clickCreateRoomLink(client.send);
+    if (inviteClicked.clicked) pass('sound design invite copy action is clickable', inviteClicked);
+    else fail('sound design invite copy action is clickable', inviteClicked);
+    assertAudioCue(await audioState(client.send), 'sound design copy action', [660, 990]);
+
+    await client.send('Page.navigate', { url: `${base}/profile` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    await clearAudioEvents(client.send);
+    const committed = await pointerClickButton(client.send, 'Connect account');
+    if (committed.clicked) pass('sound design primary account action is clickable', committed);
+    else fail('sound design primary account action is clickable', committed);
+    assertAudioCue(await audioState(client.send), 'sound design primary account action', [220, 440, 880]);
+
+    if (client.events.exceptions.length) fail('sound design enabled pass has no runtime exceptions', client.events.exceptions.slice(0, 3));
+    else pass('sound design enabled pass has no runtime exceptions');
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail('sound design enabled pass has no blocking HTTP errors', blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass('sound design enabled pass has no blocking HTTP errors');
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+
+  const disabledTarget = await openTarget('about:blank');
+  const disabledClient = createClient(disabledTarget.webSocketDebuggerUrl);
+  await disabledClient.ready;
+  try {
+    await disabledClient.send('Page.enable');
+    await disabledClient.send('Runtime.enable');
+    await disabledClient.send('Network.enable');
+    await disabledClient.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await disabledClient.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${soundAuditScript({ soundEnabled: false })}`,
+    });
+    await disabledClient.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await disabledClient.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(disabledClient.send);
+    await sleep(waitMs);
+    await clearAudioEvents(disabledClient.send);
+    await clickOptionOnly(disabledClient.send, 0);
+    await clickLockAnswer(disabledClient.send);
+    assertNoAudioCue(await audioState(disabledClient.send), 'sound design answer flow');
+
+    if (disabledClient.events.exceptions.length) fail('sound design disabled pass has no runtime exceptions', disabledClient.events.exceptions.slice(0, 3));
+    else pass('sound design disabled pass has no runtime exceptions');
+  } finally {
+    disabledClient.close();
+    await closeTarget(disabledTarget);
   }
 }
 
@@ -1581,6 +1884,7 @@ async function auditCreateCopyRoomLink(viewport, { mode = 'success' } = {}) {
 await mkdir(outDir, { recursive: true });
 roomFixture = await loadRoomFixture();
 await ensureChrome();
+await auditSoundDesign();
 await auditLateRoomJoinSync();
 roomFixture = await loadRoomFixture();
 
