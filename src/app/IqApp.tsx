@@ -232,6 +232,13 @@ const DAILY_PLAY_LIMIT = 1;
 const OFFICIAL_QUESTION_COUNT = 12;
 const MIN_OFFICIAL_NO_REPEAT_DAYS = 5;
 const GENERATED_WORLD_PUZZLE_COUNT = OFFICIAL_QUESTION_COUNT * MIN_OFFICIAL_NO_REPEAT_DAYS - 24;
+const OFFICIAL_RAMP_PLAN = [
+  { minRank: 0, maxRank: 1, take: 3 },
+  { minRank: 2, maxRank: 2, take: 6 },
+  { minRank: 3, maxRank: 3, take: 9 },
+  { minRank: 4, maxRank: 4, take: 11 },
+  { minRank: 5, maxRank: 5, take: OFFICIAL_QUESTION_COUNT },
+];
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
@@ -486,6 +493,13 @@ function generatedMatrix(cellAt: (r: number, c: number) => PatternTile) {
   ];
 }
 
+function generatedDifficulty(family: number, offset: number) {
+  if (family === 2) return offset <= 4 ? 'Foundation' : offset <= 7 ? 'Core' : 'Adaptive';
+  if (family === 3) return offset <= 3 ? 'Core' : offset <= 6 ? 'Adaptive' : 'Advanced';
+  if (family === 0) return offset <= 3 ? 'Adaptive' : offset <= 6 ? 'Advanced' : 'Frontier';
+  return offset <= 2 ? 'Advanced' : offset <= 6 ? 'Frontier' : 'Elite';
+}
+
 function generatedWorldPuzzle(index: number): Puzzle {
   const number = index + 25;
   const id = `world-${String(number).padStart(2, '0')}`;
@@ -493,7 +507,7 @@ function generatedWorldPuzzle(index: number): Puzzle {
   const offset = Math.floor(index / 4) + 1;
   const family = index % 4;
   const titlePrefix = ['Affine weave', 'Parity ladder', 'Column synthesis', 'Mirror return'][family];
-  const difficulty = index < 8 ? 'Advanced' : index < 22 ? 'Frontier' : 'Elite';
+  const difficulty = generatedDifficulty(family, offset);
   let cellAt: (r: number, c: number) => PatternTile;
   let lay: string;
   let formal: string;
@@ -912,6 +926,7 @@ const rankedWorldPuzzles: Puzzle[] = rankedWorldPuzzleIds.map((id, index) => {
     prompt: index === 0 ? 'Start with the signal. The board ramps quickly.' : source.prompt,
   };
 });
+const officialStarterPuzzles = rankedWorldPuzzles.filter((puzzle) => difficultyRank(puzzle) <= 2);
 
 function localDayKey(date = new Date()) {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
@@ -1609,6 +1624,22 @@ function difficultyRank(puzzle: Puzzle) {
   return 3;
 }
 
+function appendRampedQuestionCandidates(selected: Puzzle[], selectedIds: Set<string>, candidates: Puzzle[], targetCount: number, seed: string) {
+  for (const band of OFFICIAL_RAMP_PLAN) {
+    if (selected.length >= targetCount) break;
+    const bandTarget = Math.min(band.take, targetCount);
+    const bandCandidates = hashedPuzzleSort(`${seed}:ramp:${band.maxRank}`, candidates.filter((puzzle) => {
+      const rank = difficultyRank(puzzle);
+      return !selectedIds.has(puzzle.id) && rank >= band.minRank && rank <= band.maxRank;
+    }));
+    for (const puzzle of bandCandidates) {
+      if (selected.length >= bandTarget) break;
+      selected.push(puzzle);
+      selectedIds.add(puzzle.id);
+    }
+  }
+}
+
 function questionOrderSeed(mode: ModeKey) {
   const playerSeed = typeof window === 'undefined' ? 'server' : readPlayerId();
   return `${localDayKey()}:${mode}:${playerSeed}:question-order`;
@@ -1635,8 +1666,12 @@ function chooseQuestionSet(mode: ModeKey, puzzles: Puzzle[], starterCandidates: 
     .filter((puzzle) => !selectedIds.has(puzzle.id) && !unseen.some((candidate) => candidate.id === puzzle.id))
     .sort((a, b) => history.indexOf(b.id) - history.indexOf(a.id) || hashNumber(`${seed}:recycle:${a.id}`) - hashNumber(`${seed}:recycle:${b.id}`));
 
+  appendRampedQuestionCandidates(selected, selectedIds, unseen, targetCount, seed);
+  appendRampedQuestionCandidates(selected, selectedIds, recycled, targetCount, `${seed}:recycle`);
+
   for (const puzzle of [...unseen, ...recycled]) {
     if (selected.length >= targetCount) break;
+    if (selectedIds.has(puzzle.id)) continue;
     selected.push(puzzle);
     selectedIds.add(puzzle.id);
   }
@@ -1691,7 +1726,7 @@ function stableQuestionOrder(mode: ModeKey, puzzles: Puzzle[], starterCandidates
 function getQuestions(mode: ModeKey) {
   if (mode === 'agi') return stableQuestionOrder(mode, agiPuzzles, agiPuzzles).map(withSixOptions);
   if (mode === 'daily') return [withSixOptions(todayPuzzle())];
-  return stableQuestionOrder(mode, rankedWorldPuzzles, rankedWorldPuzzles.slice(0, 8), OFFICIAL_QUESTION_COUNT).map(withSixOptions);
+  return stableQuestionOrder(mode, rankedWorldPuzzles, officialStarterPuzzles, OFFICIAL_QUESTION_COUNT).map(withSixOptions);
 }
 
 function previewQuestions(mode: ModeKey) {
@@ -4304,11 +4339,7 @@ export default function Home({
         setLeaderboard(getLeaderboardEntries());
         setOfficialSnapshot(readOfficialRank());
         setOfficialHistory(readOfficialHistory());
-        if (groupCode) {
-          navigateGroupRankings(groupCode);
-        } else {
-          navigateView('rankings');
-        }
+        void refreshSocialBoards(groupCode || null);
       });
     }
   }

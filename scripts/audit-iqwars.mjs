@@ -165,7 +165,68 @@ function hashedSort(seed, ids) {
   return [...ids].sort((a, b) => hashNumber(`${seed}:${a}`) - hashNumber(`${seed}:${b}`) || a.localeCompare(b));
 }
 
-function simulateOfficialQuestionRotation({ ids, starterIds, questionCount, days, playerSeed }) {
+function difficultyRankFromLabel(label) {
+  const difficulty = String(label || '').toLowerCase();
+  if (difficulty.includes('calibration')) return 0;
+  if (difficulty.includes('basic') || difficulty.includes('foundation')) return 1;
+  if (difficulty.includes('core') || difficulty.includes('adaptive')) return 2;
+  if (difficulty.includes('advanced')) return 3;
+  if (difficulty.includes('hard') || difficulty.includes('frontier')) return 4;
+  if (difficulty.includes('elite')) return 5;
+  return 3;
+}
+
+function generatedDifficultyLabelFromNumber(number) {
+  const index = number - 25;
+  const family = index % 4;
+  const offset = Math.floor(index / 4) + 1;
+  if (family === 2) return offset <= 4 ? 'Foundation' : offset <= 7 ? 'Core' : 'Adaptive';
+  if (family === 3) return offset <= 3 ? 'Core' : offset <= 6 ? 'Adaptive' : 'Advanced';
+  if (family === 0) return offset <= 3 ? 'Adaptive' : offset <= 6 ? 'Advanced' : 'Frontier';
+  return offset <= 2 ? 'Advanced' : offset <= 6 ? 'Frontier' : 'Elite';
+}
+
+function officialDifficultyRanksFromSource(app, ids) {
+  const labels = new Map();
+  for (const match of app.matchAll(/id: 'world-(\d+)'[\s\S]*?difficulty: '([^']+)'/g)) {
+    labels.set(`world-${match[1].padStart(2, '0')}`, match[2]);
+  }
+
+  return Object.fromEntries(ids.map((id) => {
+    const number = Number(id.replace('world-', ''));
+    const label = labels.get(id) || (number >= 25 ? generatedDifficultyLabelFromNumber(number) : 'Advanced');
+    return [id, difficultyRankFromLabel(id === 'world-01' ? 'Calibration' : label)];
+  }));
+}
+
+const OFFICIAL_RAMP_PLAN_AUDIT = [
+  { minRank: 0, maxRank: 1, take: 3 },
+  { minRank: 2, maxRank: 2, take: 6 },
+  { minRank: 3, maxRank: 3, take: 9 },
+  { minRank: 4, maxRank: 4, take: 11 },
+  { minRank: 5, maxRank: 5, take: 12 },
+];
+
+function appendRampedIds({ selected, selectedIds, candidates, targetCount, seed, difficultyRanks }) {
+  for (const band of OFFICIAL_RAMP_PLAN_AUDIT) {
+    if (selected.length >= targetCount) break;
+    const bandTarget = Math.min(band.take, targetCount);
+    const bandCandidates = hashedSort(`${seed}:ramp:${band.maxRank}`, candidates.filter((id) => !selectedIds.has(id) && difficultyRanks[id] >= band.minRank && difficultyRanks[id] <= band.maxRank));
+    for (const id of bandCandidates) {
+      if (selected.length >= bandTarget) break;
+      selected.push(id);
+      selectedIds.add(id);
+    }
+  }
+}
+
+function orderByDifficultyRamp(ids, starterId, orderSeed, difficultyRanks) {
+  const rest = hashedSort(orderSeed, ids.filter((id) => id !== starterId))
+    .sort((a, b) => difficultyRanks[a] - difficultyRanks[b] || hashNumber(`${orderSeed}:band:${a}`) - hashNumber(`${orderSeed}:band:${b}`));
+  return starterId ? [starterId, ...rest] : rest;
+}
+
+function simulateOfficialQuestionRotation({ ids, starterIds, difficultyRanks, questionCount, days, playerSeed }) {
   let starterHistory = [];
   let setHistory = [];
   const rounds = [];
@@ -199,8 +260,12 @@ function simulateOfficialQuestionRotation({ ids, starterIds, questionCount, days
       .filter((id) => !selectedIds.has(id) && !unseen.includes(id))
       .sort((a, b) => setHistory.indexOf(b) - setHistory.indexOf(a) || hashNumber(`${seed}:recycle:${a}`) - hashNumber(`${seed}:recycle:${b}`));
 
+    appendRampedIds({ selected, selectedIds, candidates: unseen, targetCount: questionCount, seed, difficultyRanks });
+    appendRampedIds({ selected, selectedIds, candidates: recycled, targetCount: questionCount, seed: `${seed}:recycle`, difficultyRanks });
+
     for (const id of [...unseen, ...recycled]) {
       if (selected.length >= questionCount) break;
+      if (selectedIds.has(id)) continue;
       selected.push(id);
       selectedIds.add(id);
     }
@@ -209,7 +274,12 @@ function simulateOfficialQuestionRotation({ ids, starterIds, questionCount, days
       ...selected.filter((id) => ids.includes(id)),
       ...setHistory.filter((id) => ids.includes(id) && !selected.includes(id)),
     ].slice(0, ids.length);
-    rounds.push({ day, starterId, selected });
+    rounds.push({
+      day,
+      starterId,
+      selected,
+      ordered: orderByDifficultyRamp(selected, starterId, `${day}:world:${playerSeed}:question-order`, difficultyRanks),
+    });
   }
 
   return rounds;
@@ -283,6 +353,8 @@ async function sourceAudit() {
   assert(noRepeatDays === '5', 'Official question bank targets at least five full daily runs before repeating questions.');
   const generatedWorldCount = initializerText(findVariable(ts, tree, 'GENERATED_WORLD_PUZZLE_COUNT'), app);
   assert(generatedWorldCount.includes('OFFICIAL_QUESTION_COUNT * MIN_OFFICIAL_NO_REPEAT_DAYS - 24'), 'Generated official puzzle count fills the no-repeat bank beyond the 24 hand-authored puzzles.');
+  const officialRampPlan = initializerText(findVariable(ts, tree, 'OFFICIAL_RAMP_PLAN'), app);
+  assert(officialRampPlan.includes('maxRank: 1') && officialRampPlan.includes('take: 6') && officialRampPlan.includes('OFFICIAL_QUESTION_COUNT'), 'Official baseline has an explicit approachable-to-hard difficulty ramp plan.');
   assert(app.includes('showAgentActivity: false'), 'Seeded agent activity is opt-in by default.');
 
   const rankedIds = stringArrayFromVariable(ts, tree, 'rankedWorldPuzzleIds');
@@ -290,6 +362,7 @@ async function sourceAudit() {
   assert(rankedIds.length >= 60 || rankedIdsInit.includes('worldPuzzles.map((puzzle) => puzzle.id)'), 'Official world mode uses the full proof-checked bank for a five-day no-repeat window.');
   assert(!rankedIds.length || new Set(rankedIds).size === rankedIds.length, 'Explicit official world puzzle id list has no duplicates.');
   assert(app.includes('...generatedWorldPuzzles()'), 'Generated official puzzle items are included in the proof-checked world puzzle bank.');
+  assert(app.includes('function generatedDifficulty') && app.includes("offset <= 4 ? 'Foundation'") && app.includes("offset <= 6 ? 'Frontier'"), 'Generated puzzle bank is difficulty-balanced instead of starting only at hard tiers.');
 
   const proofChecks = functionText(findFunction(ts, tree, 'withProofChecks'), app);
   assert(proofChecks.includes('solutionProof.checksum') && proofChecks.includes('proofTileSignature'), 'Puzzle answer proofs are checksum-verified at module load.');
@@ -298,7 +371,9 @@ async function sourceAudit() {
   assert(app.includes('function isValidTile') && proofChecks.includes('isValidTile') && proofChecks.includes('solutionProof.lay.trim()') && proofChecks.includes('solutionProof.formal.trim()'), 'Puzzle proof checks require valid tiles and non-empty proof text.');
 
   const getQuestions = functionText(findFunction(ts, tree, 'getQuestions'), app);
-  assert(getQuestions.includes('stableQuestionOrder(mode, rankedWorldPuzzles') && getQuestions.includes('rankedWorldPuzzles.slice(0, 8)') && getQuestions.includes('OFFICIAL_QUESTION_COUNT'), 'Official question order is stable per day, 12 questions long, and starts from the calibrated starter pool.');
+  const officialStarterPuzzles = initializerText(findVariable(ts, tree, 'officialStarterPuzzles'), app);
+  assert(officialStarterPuzzles.includes('difficultyRank(puzzle) <= 2') && !officialStarterPuzzles.includes('.slice('), 'Official starter pool is limited to all approachable calibration/core puzzles.');
+  assert(getQuestions.includes('stableQuestionOrder(mode, rankedWorldPuzzles') && getQuestions.includes('officialStarterPuzzles') && getQuestions.includes('OFFICIAL_QUESTION_COUNT'), 'Official question order is stable per day, 12 questions long, and starts from the calibrated starter pool.');
   assert(getQuestions.includes('stableQuestionOrder(mode, agiPuzzles'), 'AGI lab questions use the same stable rotation helper.');
 
   const chooseStarter = functionText(findFunction(ts, tree, 'chooseStarterId'), app);
@@ -307,6 +382,7 @@ async function sourceAudit() {
   const chooseSet = functionText(findFunction(ts, tree, 'chooseQuestionSet'), app);
   assert(chooseSet.includes('readQuestionSetHistory') && chooseSet.includes('writeQuestionSetHistory'), 'Official question sets persist per-player recent question history.');
   assert(chooseSet.includes('unseenPool') && chooseSet.includes('fallbackStarterPool') && chooseSet.includes('history.indexOf(b.id) - history.indexOf(a.id)'), 'Question set selection prefers unseen questions and only recycles least-recently-seen items after the bank is exhausted.');
+  assert(app.includes('function appendRampedQuestionCandidates') && chooseSet.includes('appendRampedQuestionCandidates(selected, selectedIds, unseen') && chooseSet.includes('appendRampedQuestionCandidates(selected, selectedIds, recycled'), 'Question set selection fills official runs through the daily difficulty ramp before leftovers.');
 
   const stableOrder = functionText(findFunction(ts, tree, 'stableQuestionOrder'), app);
   assert(stableOrder.includes('readQuestionOrder') && stableOrder.includes('writeQuestionOrder'), 'Daily question order is persisted so refreshes do not reshuffle an active attempt.');
@@ -317,23 +393,31 @@ async function sourceAudit() {
   const questionCountNumber = Number(officialQuestionCount);
   const noRepeatDaysNumber = Number(noRepeatDays);
   const officialIds = officialWorldIdsFromSource(app, questionCountNumber, noRepeatDaysNumber);
-  const starterIds = officialIds.slice(0, 8);
+  const difficultyRanks = officialDifficultyRanksFromSource(app, officialIds);
+  const starterIds = officialIds.filter((id) => difficultyRanks[id] <= 2);
   const simulatedRounds = simulateOfficialQuestionRotation({
     ids: officialIds,
     starterIds,
+    difficultyRanks,
     questionCount: questionCountNumber,
     days: noRepeatDaysNumber,
     playerSeed: 'audit-player',
   });
   const simulatedSelections = simulatedRounds.flatMap((round) => round.selected);
+  const simulatedOrders = simulatedRounds.map((round) => round.ordered || round.selected);
   assert(officialIds.length >= questionCountNumber * noRepeatDaysNumber, 'Official question bank has enough source IDs for the promised no-repeat window.');
   assert(simulatedRounds.every((round) => round.selected.length === questionCountNumber && new Set(round.selected).size === questionCountNumber), 'Simulated daily official runs contain the configured number of unique questions.');
   assert(new Set(simulatedSelections).size === simulatedSelections.length, 'Simulated official question rotation has no repeated questions across the full no-repeat window.');
   assert(new Set(simulatedRounds.map((round) => round.starterId)).size === Math.min(noRepeatDaysNumber, starterIds.length), 'Simulated official starter question rotates across consecutive days.');
+  assert(simulatedOrders.every((order) => difficultyRanks[order[0]] <= 2), 'Simulated official runs start with an approachable starter instead of a hard first item.');
+  assert(simulatedOrders.every((order) => order.slice(1).every((id, index, rest) => index === 0 || difficultyRanks[rest[index - 1]] <= difficultyRanks[id])), 'Simulated official runs ramp upward by difficulty after the starter.');
+  assert(simulatedOrders.every((order) => order.slice(0, 6).every((id) => difficultyRanks[id] <= 2)), 'Simulated official runs keep the first half in calibration/core territory when unseen supply is available.');
+  assert(simulatedOrders.every((order) => order.slice(-3).some((id) => difficultyRanks[id] >= 4)), 'Simulated official runs still end with hard or frontier challenge.');
   const simulatedPlayers = Array.from({ length: 12 }, (_, index) => `audit-player-${index + 1}`);
   const simulatedFirstDays = simulatedPlayers.map((playerSeed) => simulateOfficialQuestionRotation({
     ids: officialIds,
     starterIds,
+    difficultyRanks,
     questionCount: questionCountNumber,
     days: noRepeatDaysNumber,
     playerSeed,
@@ -354,13 +438,14 @@ async function sourceAudit() {
   assert(result.includes('claimServerOfficialAttempt') && result.includes('syncLocalOfficialLock(officialRank)'), 'First official completion claims the server attempt lock before local official sync.');
   assert(result.includes('consumePlay()'), 'First official completion consumes the daily attempt locally.');
   assert(result.includes('onLeaderboard(entry, officialRank)'), 'Official completion submits into the leaderboard flow.');
+  assert(result.includes("copy(groupCode ? 'See room rankings' : 'See rankings')"), 'Official result exposes an immediate rankings CTA after the score is visible.');
 
   const runner = app.slice(app.indexOf('function Runner('), app.indexOf('export default function Home'));
   assert(runner.includes('readServerOfficialAttempt') && runner.includes('onServerAttemptLocked'), 'Runner syncs server-side daily attempt locks.');
   assert(runner.includes('locked-score-grid') && runner.includes("copy(groupCode ? 'View room rankings' : 'View rankings')") && runner.includes("copy('Unlock profile')"), 'Locked daily state shows the saved score and routes players to rankings before upgrade.');
 
   const handleLeaderboard = app.slice(app.indexOf('function handleLeaderboard'), app.indexOf('const handleUsageChange'));
-  assert(handleLeaderboard.includes("navigateView('rankings')"), 'Completing the official run routes the player to rankings.');
+  assert(handleLeaderboard.includes('refreshSocialBoards(groupCode || null)') && !handleLeaderboard.includes("navigateView('rankings')") && !handleLeaderboard.includes('navigateGroupRankings(groupCode)'), 'Completing the official run keeps the score panel visible while refreshing rankings in the background.');
   const footer = functionText(findFunction(ts, tree, 'SiteFooter'), app);
   assert(!footer.includes("onView('agents')"), 'Public footer keeps secondary agent tools out of the main logged-out loop.');
   assert(app.includes("view === 'agents' && !recursivAccount") && app.includes('Connect account to use agent tools.'), 'Agent-ready surface is gated behind account connection for logged-out visitors.');

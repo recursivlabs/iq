@@ -11,6 +11,7 @@ const debugBase = `http://127.0.0.1:${chromePort}`;
 const userDataDir = path.join(os.tmpdir(), `iqwars-chrome-${chromePort}`);
 const waitMs = Number(valueAfter('--wait-ms') || 2400);
 const homeQuestionChecks = Math.max(1, Number(valueAfter('--home-question-checks') || 3));
+const officialQuestionCount = 12;
 const playerCookieName = 'iqwars_player_api_key';
 
 const viewports = [
@@ -59,6 +60,61 @@ function clearAuditPlayerStorageScript() {
         'world-iq-recursiv-account',
         'world-iq-player-settings'
       ].forEach((key) => window.localStorage.removeItem(key));
+    })();
+  `;
+}
+
+function officialWriteStubScript() {
+  return `
+    (() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init = {}) => {
+        const url = typeof input === 'string' ? input : input && input.url ? input.url : '';
+        const method = String(init && init.method || input && input.method || 'GET').toUpperCase();
+        if (method === 'POST' && /\\/api\\/attempts(?:$|[?#])/.test(url)) {
+          let body = {};
+          try { body = JSON.parse(init.body || '{}'); } catch {}
+          return new Response(JSON.stringify({ accepted: true, attempt: body }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
+        if (method === 'POST' && /\\/api\\/leaderboards(?:$|[?#])/.test(url)) {
+          let body = {};
+          try { body = JSON.parse(init.body || '{}'); } catch {}
+          const entry = {
+            id: 'visual-full-run:' + (body.day || 'today') + ':' + (body.playerId || 'player'),
+            day: body.day || '',
+            playerId: body.playerId || 'visual-full-run',
+            displayName: body.displayName || 'Visual Full Run',
+            username: body.username || 'visual_full_run',
+            groupCode: body.groupCode || null,
+            groupName: body.groupName || null,
+            score: body.score || 100,
+            rank: body.rank || '#50,000',
+            percentile: body.percentile || 50,
+            correct: body.correct || 0,
+            total: body.total || ${officialQuestionCount},
+            beatAi: body.beatAi || 0,
+            elapsedMs: body.elapsedMs || null,
+            speedBonus: body.speedBonus || 0,
+            timestamp: Date.now(),
+            geo: body.geo || null
+          };
+          return new Response(JSON.stringify({
+            accepted: true,
+            entry,
+            global: [entry],
+            group: entry.groupCode ? [entry] : [],
+            groupAllTime: entry.groupCode ? [entry] : [],
+            geography: { countries: [], cities: [], towns: [] }
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
+        return originalFetch(input, init);
+      };
     })();
   `;
 }
@@ -538,6 +594,9 @@ function evaluationScript(routeId, viewportId) {
       const closeCommand = document.querySelector('.close-command');
       const commandNavButtons = [...document.querySelectorAll('.command-grid button')];
       const answerFeedback = document.querySelector('.answer-feedback');
+      const progressRow = document.querySelector('.progress-row');
+      const questionHead = document.querySelector('.question-head');
+      const resultPanel = document.querySelector('.runner-panel.result');
       const lockedScoreGrid = document.querySelector('.locked-score-grid');
       const lockedScoreCells = [...document.querySelectorAll('.locked-score-grid div')].map((item) => ({
         label: text(item.querySelector('span')),
@@ -664,6 +723,11 @@ function evaluationScript(routeId, viewportId) {
         commandNavLabels: commandNavButtons.map(text),
         answerFeedback: rect(answerFeedback),
         answerFeedbackText: text(answerFeedback),
+        progressText: text(progressRow),
+        questionTitle: text(questionHead?.querySelector('h2')),
+        questionDifficulty: text(questionHead?.querySelector('span')),
+        resultPanel: rect(resultPanel),
+        resultText: text(resultPanel).slice(0, 1800),
         lockedScoreGrid: rect(lockedScoreGrid),
         lockedScoreCells,
         lockedActions,
@@ -1225,6 +1289,53 @@ function assertHome(state, viewportId, label = 'home') {
   else fail(`${prefix} lock button is large and above fold`, state.lockButton);
 }
 
+function visualDifficultyRank(label) {
+  const value = String(label || '').toLowerCase();
+  if (value.includes('calibration')) return 0;
+  if (value.includes('basic') || value.includes('foundation')) return 1;
+  if (value.includes('core') || value.includes('adaptive')) return 2;
+  if (value.includes('advanced')) return 3;
+  if (value.includes('hard') || value.includes('frontier')) return 4;
+  if (value.includes('elite')) return 5;
+  return 3;
+}
+
+function assertFullOfficialRun(questionStates, resultState, viewportId) {
+  const prefix = `${viewportId} full official run`;
+  const questions = questionStates.slice(0, officialQuestionCount);
+  const titles = questions.map((state) => state.questionTitle).filter(Boolean);
+  const difficulties = questions.map((state) => state.questionDifficulty).filter(Boolean);
+  const ranks = difficulties.map(visualDifficultyRank);
+
+  if (questions.length === officialQuestionCount && titles.length === officialQuestionCount) pass(`${prefix} renders all 12 official questions`, { titles });
+  else fail(`${prefix} renders all 12 official questions`, { count: questions.length, titles, difficulties });
+
+  if (new Set(titles).size === titles.length) pass(`${prefix} uses unique question titles through the run`, { titles });
+  else fail(`${prefix} uses unique question titles through the run`, { titles });
+
+  if (ranks[0] <= 2) pass(`${prefix} starts with an approachable calibration/core item`, { first: difficulties[0] });
+  else fail(`${prefix} starts with an approachable calibration/core item`, { difficulties, ranks });
+
+  if (ranks.slice(0, 6).every((rank) => rank <= 2)) pass(`${prefix} keeps the first half in calibration/core territory`, { difficulties: difficulties.slice(0, 6) });
+  else fail(`${prefix} keeps the first half in calibration/core territory`, { difficulties, ranks });
+
+  const rest = ranks.slice(1);
+  if (rest.every((rank, index) => index === 0 || rest[index - 1] <= rank)) pass(`${prefix} ramps upward after the starter`, { difficulties });
+  else fail(`${prefix} ramps upward after the starter`, { difficulties, ranks });
+
+  if (ranks.slice(-3).some((rank) => rank >= 4)) pass(`${prefix} ends with a hard/frontier challenge`, { difficulties: difficulties.slice(-3) });
+  else fail(`${prefix} ends with a hard/frontier challenge`, { difficulties, ranks });
+
+  if (resultState.resultPanel && /Official rank locked|Today updated your developing IQ WARS profile/i.test(resultState.resultText)) pass(`${prefix} reaches the official result panel`, { result: resultState.resultText.slice(0, 500) });
+  else fail(`${prefix} reaches the official result panel`, { result: resultState.resultText, bodyText: resultState.bodyText.slice(0, 900) });
+
+  if (/Reasoning score|official time|estimated rank|IQ WARS is a competitive visual reasoning game/i.test(resultState.resultText)) pass(`${prefix} result explains score, time, rank, and caveat`, { result: resultState.resultText.slice(0, 500) });
+  else fail(`${prefix} result explains score, time, rank, and caveat`, { result: resultState.resultText });
+
+  if (/\/12\s+correct/i.test(resultState.resultText)) pass(`${prefix} result records a complete 12-answer baseline`, { result: resultState.resultText.slice(0, 500) });
+  else fail(`${prefix} result records a complete 12-answer baseline`, { result: resultState.resultText });
+}
+
 function lockedCellValue(state, label) {
   const cell = (state.lockedScoreCells || []).find((item) => item.label.toLowerCase() === label.toLowerCase());
   return cell ? cell.value : null;
@@ -1483,7 +1594,8 @@ async function auditRoute(route, viewport) {
     await client.send('Runtime.enable');
     await client.send('Network.enable');
     await client.send('Network.setCacheDisabled', { cacheDisabled: true });
-    await client.send('Page.addScriptToEvaluateOnNewDocument', { source: clearAuditPlayerStorageScript() });
+    const preloadScript = `${clearAuditPlayerStorageScript()}\n${route.checks.includes('home') && homeQuestionChecks >= officialQuestionCount ? officialWriteStubScript() : ''}`;
+    await client.send('Page.addScriptToEvaluateOnNewDocument', { source: preloadScript });
     await client.send('Emulation.setDeviceMetricsOverride', {
       width: viewport.width,
       height: viewport.height,
@@ -1510,6 +1622,7 @@ async function auditRoute(route, viewport) {
     await auditCommandKeyboard(client.send, route.id, viewport.id);
     if (route.checks.includes('home')) {
       const settledState = await evaluate(client.send, route.id, viewport.id);
+      const fullRunQuestionStates = [settledState];
       assertHome(settledState, viewport.id);
       const click = await clickOptionAndLock(client.send, 'last');
       if (click.clicked) pass(`${viewport.id} home can select and lock an answer`);
@@ -1531,15 +1644,22 @@ async function auditRoute(route, viewport) {
           break;
         }
         const questionState = await evaluate(client.send, route.id, `${viewport.id}-q${questionNumber}`);
+        fullRunQuestionStates.push(questionState);
         assertHome(questionState, viewport.id, `home question ${questionNumber}`);
-        if (questionNumber < homeQuestionChecks) {
-          const nextClick = await clickOptionAndLock(client.send, 'last');
-          if (nextClick.clicked) pass(`${viewport.id} home question ${questionNumber} can lock an answer`);
-          else {
-            fail(`${viewport.id} home question ${questionNumber} can lock an answer`, nextClick);
-            break;
-          }
+        const nextClick = await clickOptionAndLock(client.send, 'last');
+        if (nextClick.clicked) pass(`${viewport.id} home question ${questionNumber} can lock an answer`);
+        else {
+          fail(`${viewport.id} home question ${questionNumber} can lock an answer`, nextClick);
+          break;
         }
+      }
+      if (homeQuestionChecks >= officialQuestionCount) {
+        const scoreClick = await clickPrimaryButton(client.send, 'see score');
+        if (scoreClick.clicked) pass(`${viewport.id} home completes the 12-question run and opens the score`, scoreClick);
+        else fail(`${viewport.id} home completes the 12-question run and opens the score`, scoreClick);
+        await sleep(waitMs);
+        const resultState = await evaluate(client.send, route.id, `${viewport.id}-full-result`);
+        assertFullOfficialRun(fullRunQuestionStates, resultState, viewport.id);
       }
     }
     if (route.checks.includes('room')) assertRoom(state, viewport.id);
