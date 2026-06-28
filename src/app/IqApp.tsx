@@ -3486,6 +3486,7 @@ function Runner({
   const liveDelta = liveScore - 100;
   const answeredCount = visibleAnswers.length;
   const isLastQuestion = step + 1 >= questions.length;
+  const lockedOfficialRank = !isPaid && !started ? readOfficialRank() : null;
 
   React.useEffect(() => {
     const usage = readPlayUsage();
@@ -3608,8 +3609,30 @@ function Runner({
       <div className="runner-panel gate">
         <p className="kicker">{copy(modes[mode].label)}</p>
         <h2>{copy('Your one official attempt today is locked.')}</h2>
-        <p className="free-note">{copy('Free players get one full official IQ WARS run per day. Unlock a paid profile for archive access, private reports, and extra practice, or come back tomorrow.')}</p>
-        <button className="primary full" onClick={onUnlock}>{copy('Unlock profile')}</button>
+        <p className="free-note">{copy(lockedOfficialRank
+          ? 'Your score is saved for today. Rankings, friend rooms, and the all-time room board keep moving after the run.'
+          : 'Free players get one full official IQ WARS run per day. Rankings and friend rooms stay open after the run.')}</p>
+        {lockedOfficialRank ? (
+          <div className="locked-score-grid" aria-label={copy('Today\'s locked score')}>
+            <div>
+              <span>{copy('Score')}</span>
+              <strong>{lockedOfficialRank.score}</strong>
+            </div>
+            <div>
+              <span>{copy('Rank')}</span>
+              <strong>{lockedOfficialRank.rank}</strong>
+            </div>
+            <div>
+              <span>{copy('Accuracy')}</span>
+              <strong>{lockedOfficialRank.correct}/{lockedOfficialRank.total}</strong>
+            </div>
+          </div>
+        ) : null}
+        <div className="locked-actions">
+          <button className="primary full" onClick={onRankings}>{copy(groupCode ? 'View room rankings' : 'View rankings')}</button>
+          <button className="secondary full" onClick={onUnlock}>{copy('Unlock profile')}</button>
+        </div>
+        <p className="trust-note">{copy(groupCode ? 'This room link keeps today\'s board and the all-time highscores visible.' : 'Come back tomorrow for the next official score update.')}</p>
       </div>
     );
   }
@@ -6349,6 +6372,45 @@ export default function Home({
         .runner-panel.result {
           padding: clamp(24px, 4vw, 40px);
         }
+        .locked-score-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          margin: 18px 0;
+        }
+        .locked-score-grid div {
+          min-height: 74px;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 4px;
+          padding: 11px;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.015)),
+            rgba(255,255,255,.025);
+          display: grid;
+          align-content: space-between;
+        }
+        .locked-score-grid span,
+        .locked-score-grid strong,
+        .locked-actions .secondary {
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        }
+        .locked-score-grid span {
+          color: #9fa4a8;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0;
+          text-transform: uppercase;
+        }
+        .locked-score-grid strong {
+          color: #f4f5f6;
+          font-size: 22px;
+          line-height: 1;
+        }
+        .locked-actions {
+          display: grid;
+          gap: 10px;
+          margin-top: 16px;
+        }
         .kicker,
         .progress-row span,
         .question-head span,
@@ -8320,6 +8382,34 @@ export default function Home({
             display: flex;
             flex-direction: column;
             overflow: hidden;
+          }
+          .test-surface .runner-panel.gate {
+            justify-content: center;
+            gap: 8px;
+          }
+          .runner-panel.gate .free-note,
+          .runner-panel.gate .trust-note {
+            margin: 0;
+            line-height: 1.35;
+          }
+          .locked-score-grid {
+            margin: 8px 0;
+            gap: 6px;
+          }
+          .locked-score-grid div {
+            min-height: 58px;
+            padding: 8px;
+          }
+          .locked-score-grid span {
+            font-size: 8px;
+            letter-spacing: 0;
+          }
+          .locked-score-grid strong {
+            font-size: 18px;
+          }
+          .locked-actions {
+            gap: 8px;
+            margin-top: 6px;
           }
           .progress-row {
             gap: 6px;

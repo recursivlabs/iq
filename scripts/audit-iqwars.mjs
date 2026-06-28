@@ -354,6 +354,7 @@ async function sourceAudit() {
 
   const runner = app.slice(app.indexOf('function Runner('), app.indexOf('export default function Home'));
   assert(runner.includes('readServerOfficialAttempt') && runner.includes('onServerAttemptLocked'), 'Runner syncs server-side daily attempt locks.');
+  assert(runner.includes('locked-score-grid') && runner.includes("copy(groupCode ? 'View room rankings' : 'View rankings')") && runner.includes("copy('Unlock profile')"), 'Locked daily state shows the saved score and routes players to rankings before upgrade.');
 
   const handleLeaderboard = app.slice(app.indexOf('function handleLeaderboard'), app.indexOf('const handleUsageChange'));
   assert(handleLeaderboard.includes("navigateView('rankings')"), 'Completing the official run routes the player to rankings.');

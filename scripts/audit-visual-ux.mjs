@@ -51,8 +51,43 @@ function clearAuditPlayerStorageScript() {
         'world-iq-player-id',
         'world-iq-player-name',
         'world-iq-player-username',
-        'world-iq-leaderboard'
+        'world-iq-leaderboard',
+        'world-iq-recursiv-account'
       ].forEach((key) => window.localStorage.removeItem(key));
+    })();
+  `;
+}
+
+function lockedDailyStorageScript({ loggedIn = false } = {}) {
+  return `
+    (() => {
+      const pad = (value) => String(value).padStart(2, '0');
+      const now = new Date();
+      const day = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+      window.localStorage.setItem('world-iq-player-id', ${JSON.stringify(`locked-audit-${loggedIn ? 'in' : 'out'}`)});
+      window.localStorage.setItem('world-iq-player-name', ${JSON.stringify(loggedIn ? 'Locked Logged In' : 'Locked Logged Out')});
+      window.localStorage.setItem('world-iq-play-usage', JSON.stringify({ day, count: 1 }));
+      window.localStorage.setItem('world-iq-official-rank', JSON.stringify({
+        day,
+        score: 137,
+        rank: '#30,000',
+        percentile: 97,
+        correct: 10,
+        total: 12,
+        beatAi: 3,
+        elapsedMs: 270000,
+        speedBonus: 4,
+        timestamp: Date.now()
+      }));
+      if (${loggedIn ? 'true' : 'false'}) {
+        window.localStorage.setItem('world-iq-recursiv-account', JSON.stringify({
+          email: 'locked-audit@iqwars.app',
+          name: 'Locked Audit',
+          updatedAt: Date.now()
+        }));
+      } else {
+        window.localStorage.removeItem('world-iq-recursiv-account');
+      }
     })();
   `;
 }
@@ -278,6 +313,16 @@ function evaluationScript(routeId, viewportId) {
       const closeCommand = document.querySelector('.close-command');
       const commandNavButtons = [...document.querySelectorAll('.command-grid button')];
       const answerFeedback = document.querySelector('.answer-feedback');
+      const lockedScoreGrid = document.querySelector('.locked-score-grid');
+      const lockedScoreCells = [...document.querySelectorAll('.locked-score-grid div')].map((item) => ({
+        label: text(item.querySelector('span')),
+        value: text(item.querySelector('strong')),
+        rect: rect(item),
+      }));
+      const lockedActions = [...document.querySelectorAll('.locked-actions button')].map((item) => ({
+        text: text(item),
+        rect: rect(item),
+      }));
       const resultCorrect = document.querySelector('.option.result-correct');
       const resultWrong = document.querySelector('.option.result-wrong');
       const proofPill = document.querySelector('.proof-pill');
@@ -347,6 +392,9 @@ function evaluationScript(routeId, viewportId) {
         commandNavButtonCount: commandNavButtons.length,
         answerFeedback: rect(answerFeedback),
         answerFeedbackText: text(answerFeedback),
+        lockedScoreGrid: rect(lockedScoreGrid),
+        lockedScoreCells,
+        lockedActions,
         resultCorrect: rect(resultCorrect),
         resultWrong: rect(resultWrong),
         proofPill: rect(proofPill),
@@ -645,6 +693,32 @@ function assertHome(state, viewportId, label = 'home') {
   else fail(`${prefix} lock button is large and above fold`, state.lockButton);
 }
 
+function lockedCellValue(state, label) {
+  const cell = (state.lockedScoreCells || []).find((item) => item.label.toLowerCase() === label.toLowerCase());
+  return cell ? cell.value : null;
+}
+
+function assertLockedState(state, viewportId, label) {
+  const prefix = `${viewportId} ${label}`;
+  if (/Your one official attempt today is locked/i.test(state.bodyText)) pass(`${prefix} renders locked official-attempt message`);
+  else fail(`${prefix} renders locked official-attempt message`, { bodyText: state.bodyText.slice(0, 900) });
+
+  if (state.runner && state.runner.top < state.viewport.height && state.runner.bottom <= state.viewport.height + 4) pass(`${prefix} locked panel fits above fold`, state.runner);
+  else fail(`${prefix} locked panel fits above fold`, { runner: state.runner, viewport: state.viewport });
+
+  if (state.lockedScoreGrid && state.lockedScoreCells.length === 3) pass(`${prefix} renders locked score summary`, state.lockedScoreCells);
+  else fail(`${prefix} renders locked score summary`, { grid: state.lockedScoreGrid, cells: state.lockedScoreCells });
+
+  if (lockedCellValue(state, 'Score') === '137' && lockedCellValue(state, 'Rank') === '#30,000' && lockedCellValue(state, 'Accuracy') === '10/12') pass(`${prefix} renders saved score rank and accuracy`);
+  else fail(`${prefix} renders saved score rank and accuracy`, { cells: state.lockedScoreCells });
+
+  if ((state.lockedActions || []).some((item) => /View rankings/i.test(item.text)) && (state.lockedActions || []).some((item) => /Unlock profile/i.test(item.text))) pass(`${prefix} offers rankings and upgrade actions`, state.lockedActions);
+  else fail(`${prefix} offers rankings and upgrade actions`, { actions: state.lockedActions, bodyText: state.bodyText.slice(0, 900) });
+
+  if (state.optionCount === 0 && !/Lock answer/i.test(state.bodyText)) pass(`${prefix} does not expose another official answer flow`);
+  else fail(`${prefix} does not expose another official answer flow`, { optionCount: state.optionCount, bodyText: state.bodyText.slice(0, 900) });
+}
+
 function assertWrongFeedback(state, viewportId) {
   const prefix = `${viewportId} home`;
   if (/Not quite/i.test(state.answerFeedbackText) && /Correct answer:/i.test(state.answerFeedbackText)) pass(`${prefix} shows explicit wrong-answer feedback`, { text: state.answerFeedbackText.slice(0, 240) });
@@ -933,6 +1007,80 @@ async function auditLateRoomJoinSync() {
   }
 }
 
+async function auditLockedDailyState(viewport, { loggedIn = false } = {}) {
+  const base = origin.replace(/\/$/, '');
+  const label = `locked-${loggedIn ? 'logged-in' : 'logged-out'}`;
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${lockedDailyStorageScript({ loggedIn })}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const state = await evaluate(client.send, label, viewport.id);
+    assertCommon(state, label, viewport.id);
+    assertLockedState(state, viewport.id, label);
+
+    if (loggedIn) {
+      const commandOpened = await openCommandCenter(client.send);
+      if (commandOpened.opened) {
+        const commandState = await evaluate(client.send, label, `${viewport.id}-command`);
+        if (/Logged in|Locked Audit|locked-audit@iqwars\.app/i.test(commandState.commandPanelText)) pass(`${viewport.id} ${label} command center preserves logged-in identity`);
+        else fail(`${viewport.id} ${label} command center preserves logged-in identity`, { text: commandState.commandPanelText?.slice(0, 700) });
+      } else {
+        fail(`${viewport.id} ${label} command center opens from locked state`, commandOpened);
+      }
+      await closeCommandCenter(client.send);
+    }
+
+    const rankingsClick = await clickPrimaryButton(client.send, 'view rankings');
+    if (rankingsClick.clicked) pass(`${viewport.id} ${label} rankings CTA is clickable`, rankingsClick);
+    else fail(`${viewport.id} ${label} rankings CTA is clickable`, rankingsClick);
+    const rankingsState = await evaluate(client.send, `${label}-rankings`, viewport.id);
+    if (/\/rankings/.test(rankingsState.href) && /Create a friend room|Primary loop|World signal|Geography/i.test(rankingsState.bodyText)) pass(`${viewport.id} ${label} rankings CTA opens rankings`, { href: rankingsState.href });
+    else fail(`${viewport.id} ${label} rankings CTA opens rankings`, { href: rankingsState.href, bodyText: rankingsState.bodyText.slice(0, 900) });
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+
+    const screenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    const fileName = `${label}-${viewport.id}.png`;
+    await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} screenshot captured`, { file: path.join(outDir, fileName) });
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
 await mkdir(outDir, { recursive: true });
 roomFixture = await loadRoomFixture();
 await ensureChrome();
@@ -940,6 +1088,8 @@ await auditLateRoomJoinSync();
 roomFixture = await loadRoomFixture();
 
 for (const viewport of viewports) {
+  await auditLockedDailyState(viewport, { loggedIn: false });
+  await auditLockedDailyState(viewport, { loggedIn: true });
   for (const route of routes) {
     await auditRoute(route, viewport);
   }
