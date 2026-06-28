@@ -1084,6 +1084,156 @@ async function auditLockedDailyState(viewport, { loggedIn = false } = {}) {
   }
 }
 
+function inviteClipboardScript({ mode }) {
+  const shouldReject = mode === 'denied';
+  return `
+    (() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: (text) => {
+            window.localStorage.setItem('iqwars-audit-copied-text', String(text));
+            window.__iqwarsCopiedText = String(text);
+            ${shouldReject ? "return Promise.reject(new Error('audit clipboard denied'));" : 'return Promise.resolve();'}
+          }
+        }
+      });
+    })();
+  `;
+}
+
+async function clickCreateRoomLink(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const text = (el) => (el && el.textContent || '').replace(/\\s+/g, ' ').trim();
+        const button = document.querySelector('.friend-panel .copy-link')
+          || [...document.querySelectorAll('button.copy-link')].find((candidate) => /create.*copy link|copy link/i.test(text(candidate)));
+        if (!button) return JSON.stringify({ clicked: false, reason: 'missing create/copy button' });
+        const beforeText = text(button);
+        const disabled = button.disabled;
+        if (!disabled) button.click();
+        return JSON.stringify({ clicked: !disabled, disabled, beforeText });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(900);
+  return JSON.parse(result.result.value);
+}
+
+async function inviteState(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const parse = (value, fallback) => {
+          try { return JSON.parse(value || fallback); } catch { return JSON.parse(fallback); }
+        };
+        const groups = parse(window.localStorage.getItem('world-iq-groups'), '[]');
+        const groupCode = clean(window.localStorage.getItem('world-iq-group-code'));
+        const groupName = clean(window.localStorage.getItem('world-iq-group-name'));
+        const copiedText = clean(window.localStorage.getItem('iqwars-audit-copied-text') || window.__iqwarsCopiedText);
+        const button = document.querySelector('.friend-panel .copy-link');
+        const fallback = document.querySelector('.friend-panel .copy-fallback-link');
+        const confirmation = document.querySelector('.friend-panel .copy-confirmation');
+        const pathCode = location.pathname.match(/^\\/g\\/(room-[a-z0-9-]+)/i)?.[1] || '';
+        return JSON.stringify({
+          href: location.href,
+          pathCode,
+          groupCode,
+          groupName,
+          groups: Array.isArray(groups) ? groups : [],
+          copiedText,
+          buttonText: clean(button?.textContent),
+          fallbackText: clean(fallback?.textContent),
+          confirmationText: clean(confirmation?.textContent),
+          friendPanelText: clean(document.querySelector('.friend-panel')?.textContent).slice(0, 1200),
+        });
+      })()
+    `,
+    returnByValue: true,
+  });
+  return JSON.parse(result.result.value);
+}
+
+function assertInviteState(state, viewportId, mode) {
+  const prefix = `${viewportId} invite ${mode}`;
+  if (/^room-[a-z0-9-]+$/i.test(state.groupCode) && state.pathCode === state.groupCode) pass(`${prefix} creates a unique room URL`, { groupCode: state.groupCode, href: state.href });
+  else fail(`${prefix} creates a unique room URL`, { groupCode: state.groupCode, pathCode: state.pathCode, href: state.href });
+
+  if (Array.isArray(state.groups) && state.groups.length === 1 && state.groups[0]?.code === state.groupCode && state.groups[0]?.name === state.groupName) pass(`${prefix} persists the new group list entry`, { group: state.groups[0] });
+  else fail(`${prefix} persists the new group list entry`, { groupCode: state.groupCode, groupName: state.groupName, groups: state.groups });
+
+  const expectedUrl = `${origin.replace(/\/$/, '')}/g/${state.groupCode}`;
+  if (mode === 'success') {
+    if (state.copiedText === expectedUrl && /Link copied/i.test(state.buttonText) && /Group link copied/i.test(state.confirmationText)) pass(`${prefix} copies invite link and shows confirmation`, { copiedText: state.copiedText, buttonText: state.buttonText, confirmationText: state.confirmationText });
+    else fail(`${prefix} copies invite link and shows confirmation`, { expectedUrl, copiedText: state.copiedText, buttonText: state.buttonText, confirmationText: state.confirmationText, panel: state.friendPanelText });
+  } else {
+    if (state.copiedText === expectedUrl && /Link ready/i.test(state.buttonText) && state.fallbackText === expectedUrl) pass(`${prefix} exposes fallback URL when clipboard is denied`, { fallbackText: state.fallbackText, buttonText: state.buttonText });
+    else fail(`${prefix} exposes fallback URL when clipboard is denied`, { expectedUrl, copiedText: state.copiedText, buttonText: state.buttonText, fallbackText: state.fallbackText, panel: state.friendPanelText });
+  }
+}
+
+async function auditCreateCopyRoomLink(viewport, { mode = 'success' } = {}) {
+  const base = origin.replace(/\/$/, '');
+  const label = `invite-${mode}`;
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${inviteClipboardScript({ mode })}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const state = await evaluate(client.send, label, viewport.id);
+    assertCommon(state, label, viewport.id);
+    const clicked = await clickCreateRoomLink(client.send);
+    if (clicked.clicked) pass(`${viewport.id} ${label} create/copy CTA is one-tap clickable`, clicked);
+    else fail(`${viewport.id} ${label} create/copy CTA is one-tap clickable`, clicked);
+    const invite = await inviteState(client.send);
+    assertInviteState(invite, viewport.id, mode);
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+
+    const screenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    const fileName = `${label}-${viewport.id}.png`;
+    await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} screenshot captured`, { file: path.join(outDir, fileName) });
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
 await mkdir(outDir, { recursive: true });
 roomFixture = await loadRoomFixture();
 await ensureChrome();
@@ -1093,6 +1243,8 @@ roomFixture = await loadRoomFixture();
 for (const viewport of viewports) {
   await auditLockedDailyState(viewport, { loggedIn: false });
   await auditLockedDailyState(viewport, { loggedIn: true });
+  await auditCreateCopyRoomLink(viewport, { mode: 'success' });
+  await auditCreateCopyRoomLink(viewport, { mode: 'denied' });
   for (const route of routes) {
     await auditRoute(route, viewport);
   }
