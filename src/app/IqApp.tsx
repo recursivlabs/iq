@@ -2244,6 +2244,73 @@ function SocialLeaderboard({
   );
 }
 
+function RoomRecordStrip({
+  locale,
+  groupName,
+  records,
+  todayCount,
+  inviteState,
+  fallbackUrl,
+  onCopyInvite,
+}: {
+  locale: LocaleKey;
+  groupName: string;
+  records: SocialEntry[];
+  todayCount: number;
+  inviteState: string;
+  fallbackUrl: string;
+  onCopyInvite: () => void | Promise<void>;
+}) {
+  const copy = (text: string) => translate(locale, text);
+  const topRecord = records[0] || null;
+  const ctaCopied = inviteState === 'Link copied';
+  const showFallbackUrl = Boolean(fallbackUrl && inviteState === 'Link ready');
+
+  return (
+    <section className="leaderboard room-record-strip" aria-label={copy('Ongoing room highscore')}>
+      <div className="section-head">
+        <div>
+          <p className="kicker">{copy('Room highscore')}</p>
+          <h2>{topRecord ? `${topRecord.score} ${copy('is the room record.')}` : copy('No all-time room record yet.')}</h2>
+          <p>{copy('All previous official scores stay here as all-time bests while today still resets.')}</p>
+        </div>
+        <button className={`secondary copy-link ${ctaCopied ? 'copied' : ''}`} onClick={onCopyInvite}>{copy(inviteState)}</button>
+      </div>
+      {showFallbackUrl ? <code className="copy-fallback-link">{fallbackUrl}</code> : null}
+      <div className="room-record-metrics">
+        <div>
+          <span>{copy('Today')}</span>
+          <strong>{todayCount}</strong>
+          <em>{copy(todayCount === 1 ? 'official score' : 'official scores')}</em>
+        </div>
+        <div>
+          <span>{copy('All-time')}</span>
+          <strong>{records.length}</strong>
+          <em>{copy(records.length === 1 ? 'room highscore' : 'room highscores')}</em>
+        </div>
+        <div>
+          <span>{copy('Current record')}</span>
+          <strong>{topRecord ? topRecord.score : copy('None')}</strong>
+          <em>{topRecord ? `${topRecord.username ? `@${topRecord.username}` : topRecord.displayName} - ${topRecord.day}` : copy('Send the link')}</em>
+        </div>
+      </div>
+      {records.length > 0 ? (
+        <div className="room-record-podium" aria-label={copy('Best official score per player across days.')}>
+          {records.slice(0, 3).map((entry, index) => (
+            <article key={entry.id}>
+              <span>#{index + 1}</span>
+              <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
+              <em>{entry.score} - {entry.day}</em>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="room-record-empty">{groupName} {copy('keeps an all-time room highscore board as soon as the first official run lands.')}</p>
+      )}
+    </section>
+  );
+}
+
 function SocialHub({
   locale,
   account,
@@ -4696,7 +4763,7 @@ export default function Home({
   const topRoomRecord = groupCode ? displayBoards.groupAllTime.find((entry) => !entry.playerId.startsWith('agent-')) || null : null;
   const friendRoomEmptyDetail = groupCode
     ? topRoomRecord
-      ? `No one has locked today yet. The all-time room record is still below: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}.`
+      ? `No one has locked today yet. The all-time room highscore is still on this room page: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}.`
       : 'Private rooms start empty. Send the link; only real players who open it and finish today appear here.'
     : 'Create a room link for the group chat. The room board appears as soon as invited players finish today.';
   const roomRecordDescription = topRoomRecord
@@ -4863,6 +4930,17 @@ export default function Home({
 
       {view === 'rankings' ? (
         <>
+          {groupCode ? (
+            <RoomRecordStrip
+              locale={locale}
+              groupName={groupName}
+              records={displayBoards.groupAllTime}
+              todayCount={displayBoards.group.length}
+              inviteState={inviteState}
+              fallbackUrl={inviteFallbackUrl}
+              onCopyInvite={copyInvite}
+            />
+          ) : null}
           <SocialLeaderboard
             locale={locale}
             kicker={copy('Primary loop')}
@@ -5875,8 +5953,8 @@ export default function Home({
           text-transform: uppercase;
         }
         .close-command {
-          width: 38px;
-          min-height: 38px;
+          width: 44px;
+          min-height: 44px;
           border: 1px solid rgba(255,255,255,.12);
           border-radius: 4px;
           background: rgba(255,255,255,.035);
@@ -6626,7 +6704,10 @@ export default function Home({
           transition: opacity .16s ease, transform .16s ease;
         }
         .proof-pill:hover .proof-popover,
-        .proof-pill:focus-visible .proof-popover {
+        .proof-pill:focus .proof-popover,
+        .proof-pill:focus-visible .proof-popover,
+        .proof-pill:focus-within .proof-popover,
+        .proof-pill:active .proof-popover {
           opacity: 1;
           transform: translateY(0);
         }
@@ -7297,6 +7378,85 @@ export default function Home({
         .primary-board .empty-board {
           min-height: 116px;
           align-content: center;
+        }
+        .room-record-strip {
+          margin-top: clamp(18px, 4vh, 42px);
+          border-color: rgba(244,245,246,.18);
+          background:
+            linear-gradient(180deg, rgba(244,245,246,.06), rgba(244,245,246,.018)),
+            repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 30px),
+            #07080a;
+          box-shadow: 0 34px 110px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.08);
+        }
+        .room-record-strip .section-head h2 {
+          max-width: 820px;
+          font-size: clamp(30px, 5vw, 62px);
+          letter-spacing: 0;
+        }
+        .room-record-metrics {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 1px;
+          margin-top: 24px;
+          border: 1px solid rgba(255,255,255,.09);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .room-record-metrics div {
+          min-width: 0;
+          padding: 16px;
+          background: #0b0d0f;
+        }
+        .room-record-metrics span,
+        .room-record-metrics em,
+        .room-record-podium span,
+        .room-record-podium em,
+        .room-record-empty {
+          display: block;
+          color: #6f7478;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-style: normal;
+          font-weight: 500;
+          letter-spacing: .16em;
+          line-height: 1.35;
+          text-transform: uppercase;
+        }
+        .room-record-metrics strong {
+          display: block;
+          margin: 8px 0 6px;
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: clamp(24px, 4vw, 44px);
+          font-weight: 500;
+          line-height: .95;
+          letter-spacing: 0;
+          overflow-wrap: anywhere;
+        }
+        .room-record-podium {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 12px;
+        }
+        .room-record-podium article {
+          min-width: 0;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 6px;
+          padding: 14px;
+          background: rgba(255,255,255,.025);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+        }
+        .room-record-podium strong {
+          display: block;
+          margin: 8px 0 6px;
+          color: #f4f5f6;
+          overflow-wrap: anywhere;
+        }
+        .room-record-empty {
+          margin-top: 16px;
+          color: #8f9498;
         }
         .geo-grid {
           gap: 14px;
@@ -8092,6 +8252,16 @@ export default function Home({
           .account-gate {
             padding: 12px;
           }
+          .room-record-metrics,
+          .room-record-podium {
+            grid-template-columns: 1fr;
+          }
+          .room-record-strip .section-head h2 {
+            font-size: 30px;
+          }
+          .room-record-metrics strong {
+            font-size: 30px;
+          }
           .test-surface .runner-panel {
             height: min(630px, calc(100svh - 132px));
             min-height: 0;
@@ -8249,6 +8419,14 @@ export default function Home({
           .answer-footer .primary {
             width: 100%;
             min-height: 60px;
+          }
+          .runner-panel.feedback-correct .answer-footer,
+          .runner-panel.feedback-wrong .answer-footer {
+            position: relative;
+            bottom: auto;
+            margin-top: 7px;
+            padding-top: 7px;
+            background: transparent;
           }
           .live-score-row div {
             padding: 5px 6px;

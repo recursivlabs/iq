@@ -10,6 +10,7 @@ const chromePort = Number(valueAfter('--port') || process.env.IQWARS_CHROME_DEBU
 const debugBase = `http://127.0.0.1:${chromePort}`;
 const userDataDir = path.join(os.tmpdir(), `iqwars-chrome-${chromePort}`);
 const waitMs = Number(valueAfter('--wait-ms') || 2400);
+const homeQuestionChecks = Math.max(1, Number(valueAfter('--home-question-checks') || 3));
 
 const viewports = [
   { id: 'mobile', width: 393, height: 852, mobile: true, deviceScaleFactor: 2 },
@@ -197,6 +198,17 @@ function evaluationScript(routeId, viewportId) {
       const optionTiles = [...document.querySelectorAll('.option .tile')];
       const lockButton = [...document.querySelectorAll('button.primary')].find((button) => /lock answer|next question|see score/i.test(text(button))) || null;
       const menuButton = document.querySelector('.command-toggle');
+      const commandPanel = document.querySelector('.command-panel');
+      const commandProfile = document.querySelector('.command-profile');
+      const commandRoomCard = document.querySelector('.command-room-card');
+      const commandScroll = document.querySelector('.command-scroll');
+      const closeCommand = document.querySelector('.close-command');
+      const commandNavButtons = [...document.querySelectorAll('.command-grid button')];
+      const answerFeedback = document.querySelector('.answer-feedback');
+      const resultCorrect = document.querySelector('.option.result-correct');
+      const resultWrong = document.querySelector('.option.result-wrong');
+      const proofPill = document.querySelector('.proof-pill');
+      const proofPopover = document.querySelector('.proof-popover');
       const bodyBg = getComputedStyle(document.body).backgroundColor;
       const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
       const optionRects = options.map(rect).filter(Boolean);
@@ -229,7 +241,24 @@ function evaluationScript(routeId, viewportId) {
         lockButton: rect(lockButton),
         lockText: text(lockButton),
         menuButton: rect(menuButton),
+        commandPanel: rect(commandPanel),
+        commandPanelVisible: visible(commandPanel),
+        commandPanelText: text(commandPanel).slice(0, 1600),
+        commandProfile: rect(commandProfile),
+        commandRoomCard: rect(commandRoomCard),
+        commandScroll: rect(commandScroll),
+        closeCommand: rect(closeCommand),
+        commandNavButtonCount: commandNavButtons.length,
+        answerFeedback: rect(answerFeedback),
+        answerFeedbackText: text(answerFeedback),
+        resultCorrect: rect(resultCorrect),
+        resultWrong: rect(resultWrong),
+        proofPill: rect(proofPill),
+        proofPopover: rect(proofPopover),
+        proofPopoverText: text(proofPopover),
+        proofPopoverVisible: visible(proofPopover),
         visibleRoomRecords: /Room records/i.test(text(document.body)),
+        visibleRoomHighscore: /Ongoing room highscore|Room highscore|all-time room highscore/i.test(text(document.body)),
         visibleFriendRankings: /friend rankings/i.test(text(document.body)),
         visibleGlobe: /World signal|Global signal|Geography|Countries|Cities|Towns/i.test(text(document.body)) || Boolean(document.querySelector('.geo-globe, .rankings-globe, .globe')),
         overflows,
@@ -246,14 +275,15 @@ async function evaluate(send, routeId, viewportId) {
   return JSON.parse(result.result.value);
 }
 
-async function clickFirstOptionAndLock(send) {
+async function clickOptionAndLock(send, optionPosition = 'first') {
   const result = await send('Runtime.evaluate', {
     expression: `
       (() => {
-        const option = document.querySelector('.option');
+        const options = [...document.querySelectorAll('.option')];
+        const option = ${JSON.stringify(optionPosition)} === 'last' ? options[options.length - 1] : options[0];
         if (!option) return JSON.stringify({ clicked: false, reason: 'missing option' });
         option.click();
-        return JSON.stringify({ selected: true });
+        return JSON.stringify({ selected: true, optionIndex: options.indexOf(option), optionCount: options.length });
       })()
     `,
     returnByValue: true,
@@ -277,6 +307,75 @@ async function clickFirstOptionAndLock(send) {
   return JSON.parse(lockResult.result.value);
 }
 
+async function clickPrimaryButton(send, matchText) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const wanted = ${JSON.stringify(matchText)}.toLowerCase();
+        const button = [...document.querySelectorAll('button.primary')].find((candidate) => (candidate.textContent || '').toLowerCase().includes(wanted));
+        if (!button) return JSON.stringify({ clicked: false, reason: 'missing primary', wanted });
+        const disabled = button.disabled;
+        if (!disabled) button.click();
+        return JSON.stringify({ clicked: !disabled, disabled, text: (button.textContent || '').trim() });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(500);
+  return JSON.parse(result.result.value);
+}
+
+async function openCommandCenter(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const button = document.querySelector('.command-toggle');
+        if (!button) return JSON.stringify({ opened: false, reason: 'missing toggle' });
+        button.click();
+        return JSON.stringify({ opened: true });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(350);
+  return JSON.parse(result.result.value);
+}
+
+async function closeCommandCenter(send) {
+  await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const button = document.querySelector('.close-command') || document.querySelector('.command-backdrop');
+        if (button) button.click();
+        return true;
+      })()
+    `,
+    returnByValue: true,
+  }).catch(() => null);
+  await sleep(250);
+}
+
+async function hoverProofPill(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const pill = document.querySelector('.proof-pill');
+        if (!pill) return JSON.stringify({ hovered: false, reason: 'missing proof pill' });
+        const r = pill.getBoundingClientRect();
+        return JSON.stringify({ hovered: true, x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      })()
+    `,
+    returnByValue: true,
+  });
+  const point = JSON.parse(result.result.value);
+  if (!point.hovered) return point;
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y }).catch(() => null);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 }).catch(() => null);
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 }).catch(() => null);
+  await sleep(300);
+  return point;
+}
+
 function assertCommon(state, routeId, viewportId) {
   const prefix = `${viewportId} ${routeId}`;
   if (/rgb\(255,\s*255,\s*255\)|white/i.test(`${state.bodyBg} ${state.htmlBg}`)) fail(`${prefix} avoids white FOUC surface`, { bodyBg: state.bodyBg, htmlBg: state.htmlBg });
@@ -289,8 +388,29 @@ function assertCommon(state, routeId, viewportId) {
   else fail(`${prefix} menu touch target is usable`, state.menuButton);
 }
 
-function assertHome(state, viewportId) {
-  const prefix = `${viewportId} home`;
+function assertCommandCenter(state, routeId, viewportId) {
+  const prefix = `${viewportId} ${routeId}`;
+  if (state.commandPanelVisible && state.commandPanel && state.commandPanel.left <= 1 && state.commandPanel.right <= state.viewport.width + 4 && state.commandPanel.height >= state.viewport.height - 4) {
+    pass(`${prefix} command center opens as a left sidebar`, state.commandPanel);
+  } else {
+    fail(`${prefix} command center opens as a left sidebar`, { panel: state.commandPanel, text: state.commandPanelText?.slice(0, 300) });
+  }
+
+  if (state.closeCommand && state.closeCommand.width >= 44 && state.closeCommand.height >= 44) pass(`${prefix} command center close target is usable`, state.closeCommand);
+  else fail(`${prefix} command center close target is usable`, state.closeCommand);
+
+  if (state.commandProfile && /Score|Logged|Guest|Unrated/i.test(state.commandPanelText)) pass(`${prefix} command center exposes identity and score`);
+  else fail(`${prefix} command center exposes identity and score`, { text: state.commandPanelText?.slice(0, 500) });
+
+  if (state.commandNavButtonCount >= 5 && /Today|Rankings|About|Research|Blog/i.test(state.commandPanelText)) pass(`${prefix} command center exposes primary navigation`, { buttons: state.commandNavButtonCount });
+  else fail(`${prefix} command center exposes primary navigation`, { buttons: state.commandNavButtonCount, text: state.commandPanelText?.slice(0, 500) });
+
+  if (state.commandRoomCard && /Friend groups|No active group|Active private group|Create/i.test(state.commandPanelText)) pass(`${prefix} command center exposes friend-group controls`);
+  else fail(`${prefix} command center exposes friend-group controls`, { text: state.commandPanelText?.slice(0, 500) });
+}
+
+function assertHome(state, viewportId, label = 'home') {
+  const prefix = `${viewportId} ${label}`;
   if (state.runner && state.runner.top < state.viewport.height) pass(`${prefix} runner is visible above the fold`, state.runner);
   else fail(`${prefix} runner is visible above the fold`, state.runner);
 
@@ -312,12 +432,32 @@ function assertHome(state, viewportId) {
   else fail(`${prefix} lock button is large and above fold`, state.lockButton);
 }
 
+function assertWrongFeedback(state, viewportId) {
+  const prefix = `${viewportId} home`;
+  if (/Not quite/i.test(state.answerFeedbackText) && /Correct answer:/i.test(state.answerFeedbackText)) pass(`${prefix} shows explicit wrong-answer feedback`, { text: state.answerFeedbackText.slice(0, 240) });
+  else fail(`${prefix} shows explicit wrong-answer feedback`, { text: state.answerFeedbackText?.slice(0, 500), bodyText: state.bodyText.slice(0, 700) });
+
+  if (state.resultWrong && state.resultCorrect) pass(`${prefix} visually marks chosen wrong and correct answers`, { wrong: state.resultWrong, correct: state.resultCorrect });
+  else fail(`${prefix} visually marks chosen wrong and correct answers`, { wrong: state.resultWrong, correct: state.resultCorrect });
+
+  if (state.proofPill && /Proof/i.test(state.bodyText)) pass(`${prefix} exposes a proof affordance after answer lock`, state.proofPill);
+  else fail(`${prefix} exposes a proof affordance after answer lock`, { bodyText: state.bodyText.slice(0, 700) });
+}
+
+function assertProofPopover(state, viewportId) {
+  const prefix = `${viewportId} home`;
+  if (state.proofPopoverVisible && /Visual proof|Formal proof|Answer checksum/i.test(state.proofPopoverText)) pass(`${prefix} proof detail opens on hover`, { text: state.proofPopoverText.slice(0, 260) });
+  else fail(`${prefix} proof detail opens on hover`, { visible: state.proofPopoverVisible, text: state.proofPopoverText?.slice(0, 500), rect: state.proofPopover });
+}
+
 function assertRoom(state, viewportId) {
   const prefix = `${viewportId} room`;
   if (state.visibleFriendRankings) pass(`${prefix} opens friend rankings context`);
   else fail(`${prefix} opens friend rankings context`, { bodyText: state.bodyText.slice(0, 500) });
   if (state.visibleRoomRecords) pass(`${prefix} shows persistent room records`);
   else fail(`${prefix} shows persistent room records`, { bodyText: state.bodyText.slice(0, 500) });
+  if (state.visibleRoomHighscore) pass(`${prefix} shows ongoing all-time room highscore summary`);
+  else fail(`${prefix} shows ongoing all-time room highscore summary`, { bodyText: state.bodyText.slice(0, 700) });
 }
 
 function assertRankings(state, viewportId) {
@@ -326,6 +466,8 @@ function assertRankings(state, viewportId) {
   else fail(`${prefix} exposes geography/globe signal`, { bodyText: state.bodyText.slice(0, 700) });
   if (state.visibleRoomRecords) pass(`${prefix} preserves room records alongside rankings`);
   else fail(`${prefix} preserves room records alongside rankings`, { bodyText: state.bodyText.slice(0, 700) });
+  if (state.visibleRoomHighscore) pass(`${prefix} preserves ongoing room highscore summary`);
+  else fail(`${prefix} preserves ongoing room highscore summary`, { bodyText: state.bodyText.slice(0, 700) });
 }
 
 async function auditRoute(route, viewport) {
@@ -353,14 +495,44 @@ async function auditRoute(route, viewport) {
 
     const state = await evaluate(client.send, route.id, viewport.id);
     assertCommon(state, route.id, viewport.id);
+    const commandOpened = await openCommandCenter(client.send);
+    if (commandOpened.opened) {
+      const commandState = await evaluate(client.send, route.id, `${viewport.id}-command`);
+      assertCommandCenter(commandState, route.id, viewport.id);
+    } else {
+      fail(`${viewport.id} ${route.id} command center opens as a left sidebar`, commandOpened);
+    }
+    await closeCommandCenter(client.send);
     if (route.checks.includes('home')) {
-      assertHome(state, viewport.id);
-      const click = await clickFirstOptionAndLock(client.send);
+      const settledState = await evaluate(client.send, route.id, viewport.id);
+      assertHome(settledState, viewport.id);
+      const click = await clickOptionAndLock(client.send, 'last');
       if (click.clicked) pass(`${viewport.id} home can select and lock an answer`);
       else fail(`${viewport.id} home can select and lock an answer`, click);
       const feedbackState = await evaluate(client.send, route.id, `${viewport.id}-feedback`);
       if (/Correct|Not quite|Proof|Score reacted/i.test(feedbackState.bodyText)) pass(`${viewport.id} home shows feedback after locking`);
       else fail(`${viewport.id} home shows feedback after locking`, { bodyText: feedbackState.bodyText.slice(0, 700) });
+      assertWrongFeedback(feedbackState, viewport.id);
+      const hovered = await hoverProofPill(client.send);
+      if (!hovered.hovered) fail(`${viewport.id} home proof detail opens on hover`, hovered);
+      else assertProofPopover(await evaluate(client.send, route.id, `${viewport.id}-proof-hover`), viewport.id);
+      for (let questionNumber = 2; questionNumber <= homeQuestionChecks; questionNumber += 1) {
+        const advanced = await clickPrimaryButton(client.send, 'next question');
+        if (!advanced.clicked) {
+          fail(`${viewport.id} home advances to question ${questionNumber}`, advanced);
+          break;
+        }
+        const questionState = await evaluate(client.send, route.id, `${viewport.id}-q${questionNumber}`);
+        assertHome(questionState, viewport.id, `home question ${questionNumber}`);
+        if (questionNumber < homeQuestionChecks) {
+          const nextClick = await clickOptionAndLock(client.send, 'last');
+          if (nextClick.clicked) pass(`${viewport.id} home question ${questionNumber} can lock an answer`);
+          else {
+            fail(`${viewport.id} home question ${questionNumber} can lock an answer`, nextClick);
+            break;
+          }
+        }
+      }
     }
     if (route.checks.includes('room')) assertRoom(state, viewport.id);
     if (route.checks.includes('rankings')) assertRankings(state, viewport.id);
