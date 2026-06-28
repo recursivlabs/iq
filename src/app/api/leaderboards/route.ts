@@ -269,6 +269,18 @@ function groupRows(entries: SocialEntry[], day: string, groupCode: string) {
   return boardRows(entries.filter((entry) => entry.day === day && entry.groupCode === groupCode && !entry.playerId.startsWith('agent-')));
 }
 
+function groupAllTimeRows(entries: SocialEntry[], groupCode: string) {
+  const bestByPlayer = new Map<string, SocialEntry>();
+  for (const entry of entries) {
+    if (entry.groupCode !== groupCode || entry.playerId.startsWith('agent-')) continue;
+    const existing = bestByPlayer.get(entry.playerId);
+    if (!existing || entry.score > existing.score || (entry.score === existing.score && entry.timestamp < existing.timestamp)) {
+      bestByPlayer.set(entry.playerId, entry);
+    }
+  }
+  return boardRows([...bestByPlayer.values()]);
+}
+
 export async function GET(request: NextRequest) {
   const day = sanitizeBoardDay(request.nextUrl.searchParams.get('day'));
   if (!day) {
@@ -283,6 +295,7 @@ export async function GET(request: NextRequest) {
     day,
     global: globalRows(entries, day),
     group: groupCode ? groupRows(entries, day, groupCode) : [],
+    groupAllTime: groupCode ? groupAllTimeRows(entries, groupCode) : [],
     geography: geographyRows(entries, day),
   }, {
     headers: { 'cache-control': 'no-store' },
@@ -357,6 +370,7 @@ export async function POST(request: NextRequest) {
       entry: existingIndex >= 0 ? store.entries[existingIndex] : entry,
       global: globalRows(responseEntries, day),
       group: groupCode ? groupRows(responseEntries, day, groupCode) : [],
+      groupAllTime: groupCode ? groupAllTimeRows(responseEntries, groupCode) : [],
       geography: geographyRows(responseEntries, day),
     };
   });

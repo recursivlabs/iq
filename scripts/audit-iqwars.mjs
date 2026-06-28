@@ -361,7 +361,7 @@ async function sourceAudit() {
   assert(!footer.includes("onView('agents')"), 'Public footer keeps secondary agent tools out of the main logged-out loop.');
   assert(app.includes("view === 'agents' && !recursivAccount") && app.includes('Connect account to use agent tools.'), 'Agent-ready surface is gated behind account connection for logged-out visitors.');
 
-  assert(groupPage.includes('initialGroupCode={params.group}'), 'Friend group route injects the room code into the app.');
+  assert(groupPage.includes('initialView="rankings"') && groupPage.includes('initialGroupCode={params.group}'), 'Friend group route opens directly into the room rankings and injects the room code.');
   assert(rankingsPage.includes('initialView="rankings"') && rankingsPage.includes("searchParams?.g"), 'Rankings route opens directly into a friend room board from ?g=.');
   assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
@@ -369,6 +369,8 @@ async function sourceAudit() {
   assert(app.includes('function syncOfficialRankToGroup') && app.includes('submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name })'), 'Opening a friend room can backfill today\'s saved official score into that room.');
   assert(app.includes('if (code) syncOfficialRankToGroup(code, name)') && app.includes('syncOfficialRankToGroup(queryGroup, name)'), 'Route and query room joins sync today\'s official score before refreshing the room board.');
   assert(app.includes('syncOfficialRankToGroup(cleaned, displayName)') && app.includes('syncOfficialRankToGroup(code, name)'), 'Sidebar room opens and newly created rooms share the same score sync path.');
+  assert(leaderboard.includes('function groupAllTimeRows') && leaderboard.includes('groupAllTime: groupCode ? groupAllTimeRows'), 'Friend room API returns an all-time room record board alongside today\'s board.');
+  assert(app.includes('groupAllTime: SocialEntry[]') && app.includes('displayBoards.groupAllTime') && app.includes("copy('Room records')"), 'Friend room rankings render persistent room records in addition to today\'s scores.');
   assert(app.includes('function groupRoomNumber') && app.includes('function groupInviteKey') && app.includes('function groupRoomIdentity'), 'Friend groups render stable room numbers plus invite keys in the sidebar list.');
   assert(app.includes('return `Group ${groupInviteKey(code)}`') && app.includes('groupRoomIdentity(group.code)') && app.includes('className="group-room-tag"'), 'Newly created friend groups get distinct visible invite-key identities in the sidebar list.');
   assert(app.includes('function navigateGroupRankings') && app.includes('groupRankingsPath(cleaned)') && app.includes('navigateGroupRankings(cleaned)'), 'Opening a listed friend group lands on its durable rankings URL.');
@@ -933,6 +935,7 @@ async function liveAudit() {
   if (persistent && verified && storageLaunchReady) {
     assert(globalRows.some((row) => row.playerId === playerId), 'Live global board includes the submitted real player.');
     assert(groupRows.some((row) => row.playerId === playerId && row.groupCode === group), 'Live friend room board includes only the submitted room player.');
+    assert((after.data.groupAllTime || []).some((row) => row.playerId === playerId && row.groupCode === group), 'Live friend room all-time records include the submitted room player.');
     assert((after.data.geography?.countries || []).some((row) => row.label === 'United States' || row.id === 'US'), 'Live geography countries include submitted geo.');
     assert((after.data.geography?.cities || []).some((row) => row.label === 'New York'), 'Live geography cities include submitted geo.');
     assert((after.data.geography?.towns || []).some((row) => row.label === 'New York'), 'Live geography towns include submitted geo.');
@@ -947,12 +950,12 @@ async function liveAudit() {
   assert(geoCheck.response.ok && Boolean(geoCheck.data.city || geoCheck.data.town), 'Live geo endpoint returns usable city/town signal from edge or timezone data.');
 
   const groupPage = await requestText(`${origin}/g/${group}`);
-  assert(groupPage.response.ok && groupPage.text.includes('Audit'), 'Live /g/[group] route renders the unique group name.');
+  assert(groupPage.response.ok && groupPage.text.includes('Audit') && groupPage.text.includes('Room records'), 'Live /g/[group] route renders the unique group rankings and room records.');
   assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-toggle') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as an icon sidebar launcher, not a cramped identity dropdown.');
   assert(groupPage.text.includes('Only real people who open this link'), 'Live friend room copy promises link-only real-player membership.');
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
-  assert(rankings.response.ok && rankings.text.includes('Audit') && rankings.text.includes('friend rankings'), 'Live rankings route opens the requested friend board.');
+  assert(rankings.response.ok && rankings.text.includes('Audit') && rankings.text.includes('friend rankings') && rankings.text.includes('Room records'), 'Live rankings route opens the requested friend board with room records.');
 
   const publicPages = [
     ['/', ['Lock answer'], 'Live home route renders the playable test above the fold.'],

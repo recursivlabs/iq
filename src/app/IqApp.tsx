@@ -136,6 +136,7 @@ type GlobeRegion = GeoBoardRow & {
 type SocialBoards = {
   global: SocialEntry[];
   group: SocialEntry[];
+  groupAllTime: SocialEntry[];
   geography: {
     countries: GeoBoardRow[];
     cities: GeoBoardRow[];
@@ -2182,6 +2183,7 @@ function SocialLeaderboard({
   onCta,
   variant = 'standard',
   fallbackUrl = '',
+  showDay = false,
 }: {
   locale: LocaleKey;
   kicker: string;
@@ -2194,6 +2196,7 @@ function SocialLeaderboard({
   onCta: () => void | Promise<void>;
   variant?: 'standard' | 'primary';
   fallbackUrl?: string;
+  showDay?: boolean;
 }) {
   const copy = (text: string) => translate(locale, text);
   const ctaCopied = cta === copy('Link copied');
@@ -2216,7 +2219,7 @@ function SocialLeaderboard({
               <div className="rank">#{index + 1}</div>
               <div className="leader-copy">
                 <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
-                <span>{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} {copy('AI misses')}</span>
+                <span>{showDay ? `${entry.day} · ` : ''}{entry.groupName ? `${entry.groupName} - ` : ''}{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} {copy('AI misses')}</span>
               </div>
               <div className="leader-score">
                 <strong>{entry.score}</strong>
@@ -3666,7 +3669,7 @@ export default function Home({
   const [xVerification, setXVerification] = React.useState<XVerificationRecord | null>(null);
   const [xState, setXState] = React.useState('');
   const [geoSnapshot, setGeoSnapshot] = React.useState<GeoSnapshot | null>(null);
-  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], geography: EMPTY_GEOGRAPHY_BOARDS });
+  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], groupAllTime: [], geography: EMPTY_GEOGRAPHY_BOARDS });
   const [roomMessages, setRoomMessages] = React.useState<RoomMessage[]>([]);
   const [roomMessageDraft, setRoomMessageDraft] = React.useState('');
   const [roomMessageState, setRoomMessageState] = React.useState('Post');
@@ -3857,6 +3860,7 @@ export default function Home({
         setSocialBoards({
           global: data.global,
           group: Array.isArray(data.group) ? data.group : [],
+          groupAllTime: Array.isArray(data.groupAllTime) ? data.groupAllTime : [],
           geography: data.geography && typeof data.geography === 'object' ? {
             countries: Array.isArray(data.geography.countries) ? data.geography.countries : [],
             cities: Array.isArray(data.geography.cities) ? data.geography.cities : [],
@@ -4113,6 +4117,7 @@ export default function Home({
         setSocialBoards({
           global: data.global,
           group: Array.isArray(data.group) ? data.group : [],
+          groupAllTime: Array.isArray(data.groupAllTime) ? data.groupAllTime : [],
           geography: data.geography && typeof data.geography === 'object' ? {
             countries: Array.isArray(data.geography.countries) ? data.geography.countries : [],
             cities: Array.isArray(data.geography.cities) ? data.geography.cities : [],
@@ -4662,6 +4667,7 @@ export default function Home({
       ...socialBoards,
       global: socialBoards.global.filter(notAgent),
       group: socialBoards.group.filter(notAgent),
+      groupAllTime: socialBoards.groupAllTime.filter(notAgent),
       geography: socialBoards.geography,
     };
   }, [settings.showAgentActivity, socialBoards]);
@@ -4677,7 +4683,9 @@ export default function Home({
   const liveCountLabel = `${livePresence.active.toLocaleString()} ${copy('live')}`;
   const commandLabel = `${copy('Open command center')}: ${navIdentity}, ${copy('Score')} ${navScore}`;
   const activeGroupRealScores = groupCode ? displayBoards.group.filter((entry) => !entry.playerId.startsWith('agent-')).length : 0;
+  const activeGroupRecords = groupCode ? displayBoards.groupAllTime.filter((entry) => !entry.playerId.startsWith('agent-')).length : 0;
   const activeGroupScoreLabel = activeGroupRealScores === 1 ? '1 real score today' : `${activeGroupRealScores} real scores today`;
+  const activeGroupRecordLabel = activeGroupRecords === 1 ? '1 room record' : `${activeGroupRecords} room records`;
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -4746,7 +4754,7 @@ export default function Home({
                   <span>{copy(groupCode ? 'Active private group' : 'No active group')}</span>
                   <strong>{groupCode ? groupName : copy('No active room')}</strong>
                   <code>{groupCode ? groupShareUrl(groupCode).replace(/^https?:\/\//, '') : copy('Create a private room')}</code>
-                  <p>{groupCode ? `${groupRoomIdentity(groupCode)}. ${activeGroupScoreLabel}. ${copy('Only real people who open this link appear here.')} ${copy('No seeded agents in private groups.')}` : copy('Each new group gets a different invite link and starts empty until real players open it.')}</p>
+                  <p>{groupCode ? `${groupRoomIdentity(groupCode)}. ${activeGroupScoreLabel}. ${activeGroupRecordLabel}. ${copy('Only real people who open this link appear here.')} ${copy('No seeded agents in private groups.')}` : copy('Each new group gets a different invite link and starts empty until real players open it.')}</p>
                   <button className="copy-link" onClick={groupCode ? copyInvite : createGroup}>{copy(groupCode ? inviteState : 'Create & copy link')}</button>
                 </div>
                 <div className="command-group-list">
@@ -4757,7 +4765,7 @@ export default function Home({
                         <em>{group.code === groupCode ? copy('Active') : copy('Private')}</em>
                       </div>
                       <span className="group-room-tag">{groupRoomIdentity(group.code)} · {formatGroupCreatedAt(group.createdAt)}</span>
-                      <span>{copy('Invite-only')} · {copy('Real players only')} · {copy('No agents')} · {group.code === groupCode ? activeGroupScoreLabel : copy('Open for today\'s friend board')}</span>
+                      <span>{copy('Invite-only')} · {copy('Real players only')} · {copy('No agents')} · {group.code === groupCode ? `${activeGroupScoreLabel} · ${activeGroupRecordLabel}` : copy('Open for today\'s friend board')}</span>
                       <code>{groupShareUrl(group.code).replace(/^https?:\/\//, '')}</code>
                       <div className="command-group-actions">
                         <button onClick={() => openGroup(group.code, group.name)}>{copy(group.code === groupCode ? 'View board' : 'Open board')}</button>
@@ -4852,6 +4860,21 @@ export default function Home({
             variant="primary"
             fallbackUrl={groupCode ? inviteFallbackUrl : ''}
           />
+          {groupCode ? (
+            <SocialLeaderboard
+              locale={locale}
+              kicker={copy('Room records')}
+              title={copy('All-time high scores for this room.')}
+              description={copy('The best official room score for each player stays here across days, so the invite link keeps its history while today still resets.')}
+              entries={displayBoards.groupAllTime}
+              empty={copy('No room records yet.')}
+              emptyDetail="After anyone in this room completes an official daily run, their best room score stays here."
+              cta={copy(inviteState)}
+              onCta={copyInvite}
+              fallbackUrl={inviteFallbackUrl}
+              showDay
+            />
+          ) : null}
           <RankingsGlobeHero locale={locale} geography={displayBoards.geography} global={displayBoards.global} />
           <SocialLeaderboard
             locale={locale}
