@@ -7427,17 +7427,18 @@ export default function Home({
           text-transform: uppercase;
         }
         .history-strip {
-          display: flex;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
           align-items: end;
           gap: 10px;
           min-height: 150px;
           margin-top: 26px;
           padding-top: 24px;
           border-top: 1px solid rgba(255,255,255,.08);
-          overflow-x: auto;
+          overflow: hidden;
         }
         .history-day {
-          min-width: 54px;
+          min-width: 0;
           display: grid;
           justify-items: center;
           gap: 8px;

@@ -170,6 +170,41 @@ function lockedDailyStorageScript({ loggedIn = false } = {}) {
   `;
 }
 
+function profileHistoryStorageScript() {
+  return `
+    (() => {
+      const pad = (value) => String(value).padStart(2, '0');
+      const dayKey = (date) => date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+      const now = new Date();
+      const scores = [118, 121, 123, 126, 128, 131, 133, 135, 136, 138, 139, 141, 142, 144];
+      const records = scores.map((score, index) => {
+        const offset = scores.length - 1 - index;
+        const date = new Date(now);
+        date.setDate(now.getDate() - offset);
+        const correct = score >= 140 ? 11 : score >= 132 ? 10 : score >= 124 ? 9 : 8;
+        return {
+          day: dayKey(date),
+          score,
+          rank: score >= 140 ? '#12,000' : score >= 132 ? '#30,000' : score >= 124 ? '#80,000' : '#150,000',
+          percentile: Math.min(99, 82 + index),
+          correct,
+          total: 12,
+          beatAi: Math.max(1, Math.min(4, correct - 7)),
+          elapsedMs: 520000 - index * 12000,
+          speedBonus: Math.max(0, Math.min(5, Math.round(index / 3))),
+          timestamp: Date.now() - offset * 86400000
+        };
+      });
+      const latest = records[records.length - 1];
+      window.localStorage.setItem('world-iq-player-id', 'profile-history-audit');
+      window.localStorage.setItem('world-iq-player-name', 'Profile History Audit');
+      window.localStorage.setItem('world-iq-official-history', JSON.stringify(records));
+      window.localStorage.setItem('world-iq-official-rank', JSON.stringify(latest));
+      window.localStorage.setItem('world-iq-play-usage', JSON.stringify({ day: latest.day, count: 1 }));
+    })();
+  `;
+}
+
 function groupSidebarStorageScript() {
   const activeCode = 'room-audit-07';
   return `
@@ -458,6 +493,18 @@ function evaluationScript(routeId, viewportId) {
         rows: [...item.querySelectorAll('.geo-rows .leaderboard-row')].length,
         text: text(item).slice(0, 900),
       }));
+      const profilePanel = document.querySelector('.profile-panel');
+      const profileStats = [...document.querySelectorAll('.profile-panel .profile-stats div')].map((item) => ({
+        label: text(item.querySelector('span')),
+        value: text(item.querySelector('strong')),
+        rect: rect(item),
+      }));
+      const profileHistoryDays = [...document.querySelectorAll('.profile-panel .history-day')].map((item) => ({
+        day: text(item.querySelector('span')),
+        score: text(item.querySelector('strong')),
+        bar: rect(item.querySelector('i')),
+        rect: rect(item),
+      }));
       const bodyBg = getComputedStyle(document.body).backgroundColor;
       const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
       const optionRects = options.map(rect).filter(Boolean);
@@ -526,6 +573,11 @@ function evaluationScript(routeId, viewportId) {
         geographyBoard: rect(geographyBoard),
         geographyBoardText: text(geographyBoard).slice(0, 1800),
         geoColumns,
+        profilePanel: rect(profilePanel),
+        profilePanelClass: String(profilePanel?.className || ''),
+        profilePanelText: text(profilePanel).slice(0, 1600),
+        profileStats,
+        profileHistoryDays,
         visibleRoomRecords: /Room records|All-time room highscores|Best scores ever in this room/i.test(text(document.body)),
         visibleRoomHighscore: /Ongoing room highscore|Ongoing room record|Room highscore|all-time room highscore|ongoing highscore race/i.test(text(document.body)),
         visibleFriendRankings: /friend rankings|Today's room board|Today resets daily/i.test(text(document.body)),
@@ -939,6 +991,40 @@ function lockedCellValue(state, label) {
   return cell ? cell.value : null;
 }
 
+function profileStatValue(state, label) {
+  const stat = (state.profileStats || []).find((item) => item.label.toLowerCase() === label.toLowerCase());
+  return stat ? stat.value : null;
+}
+
+function assertIqProfileHistory(state, viewportId) {
+  const prefix = `${viewportId} profile history`;
+  if (state.profilePanel && /Developing IQ/i.test(state.profilePanelText)) pass(`${prefix} renders the developing IQ profile panel`, state.profilePanel);
+  else fail(`${prefix} renders the developing IQ profile panel`, { rect: state.profilePanel, text: state.profilePanelText?.slice(0, 900) });
+
+  if (/score-evidence-high/.test(state.profilePanelClass)) pass(`${prefix} uses high-evidence visual state after 168 answers`, { className: state.profilePanelClass });
+  else fail(`${prefix} uses high-evidence visual state after 168 answers`, { className: state.profilePanelClass, text: state.profilePanelText?.slice(0, 900) });
+
+  if (/137 rolling score/i.test(state.profilePanelText) && /Stable profile/i.test(state.profilePanelText) && /168 answers completed/i.test(state.profilePanelText)) pass(`${prefix} explains stable rolling profile confidence`, { text: state.profilePanelText.slice(0, 500) });
+  else fail(`${prefix} explains stable rolling profile confidence`, { text: state.profilePanelText?.slice(0, 900) });
+
+  if (profileStatValue(state, 'rolling IQ') === '137') pass(`${prefix} renders weighted rolling IQ score`, { expected: 137 });
+  else fail(`${prefix} renders weighted rolling IQ score`, { stats: state.profileStats });
+
+  if (profileStatValue(state, 'answers completed') === '168' && profileStatValue(state, 'official days') === '14') pass(`${prefix} renders mature answer and official-day counts`, { answers: 168, days: 14 });
+  else fail(`${prefix} renders mature answer and official-day counts`, { stats: state.profileStats });
+
+  if (profileStatValue(state, 'best score') === '144' && profileStatValue(state, 'trend') === '+2 vs previous day') pass(`${prefix} renders best score and latest trend`, { best: 144, trend: '+2 vs previous day' });
+  else fail(`${prefix} renders best score and latest trend`, { stats: state.profileStats });
+
+  if ((state.profileHistoryDays || []).length === 14) pass(`${prefix} renders 14 recent official score bars`, { count: state.profileHistoryDays.length });
+  else fail(`${prefix} renders 14 recent official score bars`, { count: state.profileHistoryDays?.length, days: state.profileHistoryDays });
+
+  const firstScore = state.profileHistoryDays?.[0]?.score;
+  const lastScore = state.profileHistoryDays?.[state.profileHistoryDays.length - 1]?.score;
+  if (firstScore === '118' && lastScore === '144') pass(`${prefix} preserves chronological score history`, { firstScore, lastScore });
+  else fail(`${prefix} preserves chronological score history`, { firstScore, lastScore, days: state.profileHistoryDays });
+}
+
 function assertLockedState(state, viewportId, label) {
   const prefix = `${viewportId} ${label}`;
   if (/Your one official attempt today is locked/i.test(state.bodyText)) pass(`${prefix} renders locked official-attempt message`);
@@ -1212,6 +1298,61 @@ async function auditSpanishLocale(viewport) {
       fail(`${viewport.id} ${label} command center opens for translated sidebar proof`, commandOpened);
       assertSpanishLocale(homeState, viewport.id, label);
     }
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+
+    const screenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    const fileName = `${label}-${viewport.id}.png`;
+    await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} screenshot captured`, { file: path.join(outDir, fileName) });
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
+async function auditIqProfileHistory(viewport) {
+  const base = origin.replace(/\/$/, '');
+  const label = 'profile-history';
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${profileHistoryStorageScript()}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+    await client.send('Page.navigate', { url: `${base}/rankings` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const state = await evaluate(client.send, label, viewport.id);
+    assertCommon(state, label, viewport.id);
+    assertIqProfileHistory(state, viewport.id);
 
     if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
     else pass(`${viewport.id} ${label} has no runtime exceptions`);
@@ -1895,6 +2036,7 @@ for (const viewport of viewports) {
   await auditCreateCopyRoomLink(viewport, { mode: 'success' });
   await auditCreateCopyRoomLink(viewport, { mode: 'denied' });
   await auditGroupCommandCenter(viewport);
+  await auditIqProfileHistory(viewport);
   for (const route of routes) {
     await auditRoute(route, viewport);
   }
