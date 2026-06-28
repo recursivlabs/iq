@@ -116,6 +116,15 @@ function groupSidebarStorageScript() {
   `;
 }
 
+function spanishLocaleScript() {
+  return `
+    (() => {
+      Object.defineProperty(navigator, 'language', { configurable: true, get: () => 'es-ES' });
+      Object.defineProperty(navigator, 'languages', { configurable: true, get: () => ['es-ES', 'es'] });
+    })();
+  `;
+}
+
 function pass(message, details = null) {
   results.push({ ok: true, message, details });
   console.log(`PASS ${message}${details ? ` ${JSON.stringify(details)}` : ''}`);
@@ -328,7 +337,7 @@ function evaluationScript(routeId, viewportId) {
       const questionPad = document.querySelector('.question-pad');
       const options = [...document.querySelectorAll('.option')];
       const optionTiles = [...document.querySelectorAll('.option .tile')];
-      const lockButton = [...document.querySelectorAll('button.primary')].find((button) => /lock answer|next question|see score/i.test(text(button))) || null;
+      const lockButton = [...document.querySelectorAll('button.primary')].find((button) => /lock answer|next question|see score|fijar respuesta|siguiente pregunta|ver puntaje/i.test(text(button))) || null;
       const menuButton = document.querySelector('.command-toggle');
       const commandPanel = document.querySelector('.command-panel');
       const commandProfile = document.querySelector('.command-profile');
@@ -391,6 +400,10 @@ function evaluationScript(routeId, viewportId) {
         viewportId: ${JSON.stringify(viewportId)},
         href: location.href,
         title: document.title,
+        htmlLang: document.documentElement.lang || '',
+        htmlLocale: document.documentElement.dataset.locale || '',
+        mainLang: document.querySelector('main')?.getAttribute('lang') || '',
+        mainLocale: document.querySelector('main')?.getAttribute('data-locale') || '',
         viewport,
         bodyBg,
         htmlBg,
@@ -684,14 +697,43 @@ function assertCommandCenter(state, routeId, viewportId) {
   if (state.closeCommand && state.closeCommand.width >= 44 && state.closeCommand.height >= 44) pass(`${prefix} command center close target is usable`, state.closeCommand);
   else fail(`${prefix} command center close target is usable`, state.closeCommand);
 
-  if (state.commandProfile && /Score|Logged|Guest|Unrated/i.test(state.commandPanelText)) pass(`${prefix} command center exposes identity and score`);
+  if (state.commandProfile && /Score|Puntaje|Logged|Sesion|sesion|Guest|Unrated|Sin calificar/i.test(state.commandPanelText)) pass(`${prefix} command center exposes identity and score`);
   else fail(`${prefix} command center exposes identity and score`, { text: state.commandPanelText?.slice(0, 500) });
 
   if (state.commandNavButtonCount >= 5 && /Today|Rankings|About|Research|Blog/i.test(state.commandPanelText)) pass(`${prefix} command center exposes primary navigation`, { buttons: state.commandNavButtonCount });
   else fail(`${prefix} command center exposes primary navigation`, { buttons: state.commandNavButtonCount, text: state.commandPanelText?.slice(0, 500) });
 
-  if (state.commandRoomCard && /Friend groups|No active group|Active private group|Create/i.test(state.commandPanelText)) pass(`${prefix} command center exposes friend-group controls`);
+  if (state.commandRoomCard && /Friend groups|Grupos de amigos|No active group|Sin grupo activo|Active private group|Grupo privado activo|Create|Crear/i.test(state.commandPanelText)) pass(`${prefix} command center exposes friend-group controls`);
   else fail(`${prefix} command center exposes friend-group controls`, { text: state.commandPanelText?.slice(0, 500) });
+}
+
+function assertSpanishLocale(state, viewportId, label) {
+  const prefix = `${viewportId} ${label}`;
+  const body = state.bodyText || '';
+  const command = state.commandPanelText || '';
+  if (state.htmlLang === 'es' && state.htmlLocale === 'es' && state.mainLang === 'es' && state.mainLocale === 'es') {
+    pass(`${prefix} auto-detects Spanish locale in document markers`, { htmlLang: state.htmlLang, htmlLocale: state.htmlLocale, mainLang: state.mainLang, mainLocale: state.mainLocale });
+  } else {
+    fail(`${prefix} auto-detects Spanish locale in document markers`, { htmlLang: state.htmlLang, htmlLocale: state.htmlLocale, mainLang: state.mainLang, mainLocale: state.mainLocale });
+  }
+
+  if (/IQ WARS de hoy|Puntaje en vivo|Respondidas|Fijar respuesta|Conteo aditivo/i.test(body)) {
+    pass(`${prefix} renders translated playable home copy`, { sample: body.slice(0, 700) });
+  } else {
+    fail(`${prefix} renders translated playable home copy`, { sample: body.slice(0, 900) });
+  }
+
+  if (!/Lock answer|Live score|Answered|Open command center|Friend groups|Create a private room/i.test(`${body} ${command}`)) {
+    pass(`${prefix} hides obvious English core UI strings in Spanish locale`);
+  } else {
+    fail(`${prefix} hides obvious English core UI strings in Spanish locale`, { body: body.slice(0, 900), command: command.slice(0, 900) });
+  }
+
+  if (/Barra lateral izquierda|Puntaje|Sin sesion|Navegacion primaria|Grupos de amigos|Crear sala privada|Hoy|Investigacion/i.test(command)) {
+    pass(`${prefix} renders translated command-center navigation and friend-group copy`, { command: command.slice(0, 900) });
+  } else {
+    fail(`${prefix} renders translated command-center navigation and friend-group copy`, { command: command.slice(0, 1200) });
+  }
 }
 
 function assertHome(state, viewportId, label = 'home') {
@@ -947,6 +989,73 @@ async function auditRoute(route, viewport) {
     const fileName = `${route.id}-${viewport.id}.png`;
     await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
     pass(`${viewport.id} ${route.id} screenshot captured`, { file: path.join(outDir, fileName) });
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
+async function auditSpanishLocale(viewport) {
+  const base = origin.replace(/\/$/, '');
+  const label = 'locale-es';
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Network.setExtraHTTPHeaders', { headers: { 'Accept-Language': 'es-ES,es;q=0.9,en;q=0.2' } });
+    await client.send('Emulation.setLocaleOverride', { locale: 'es-ES' }).catch(() => null);
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${spanishLocaleScript()}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const homeState = await evaluate(client.send, label, viewport.id);
+    assertCommon(homeState, label, viewport.id);
+    assertHome(homeState, viewport.id, label);
+
+    const commandOpened = await openCommandCenter(client.send);
+    if (commandOpened.opened) {
+      const commandState = await evaluate(client.send, label, `${viewport.id}-command`);
+      assertCommandCenter(commandState, label, viewport.id);
+      assertSpanishLocale(commandState, viewport.id, label);
+    } else {
+      fail(`${viewport.id} ${label} command center opens for translated sidebar proof`, commandOpened);
+      assertSpanishLocale(homeState, viewport.id, label);
+    }
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+
+    const screenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    const fileName = `${label}-${viewport.id}.png`;
+    await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} screenshot captured`, { file: path.join(outDir, fileName) });
   } finally {
     client.close();
     await closeTarget(target);
@@ -1476,6 +1585,7 @@ await auditLateRoomJoinSync();
 roomFixture = await loadRoomFixture();
 
 for (const viewport of viewports) {
+  await auditSpanishLocale(viewport);
   await auditLockedDailyState(viewport, { loggedIn: false });
   await auditLockedDailyState(viewport, { loggedIn: true });
   await auditCreateCopyRoomLink(viewport, { mode: 'success' });
