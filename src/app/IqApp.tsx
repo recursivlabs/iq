@@ -4851,7 +4851,7 @@ export default function Home({
             locale={locale}
             kicker={copy('Primary loop')}
             title={groupCode ? `${groupName} ${copy('friend rankings')}` : copy('Create a friend room for today.')}
-            description={groupCode ? copy('This is the board that matters after a run: one invite link, one official attempt each, and the room ranked by today\'s score.') : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
+            description={groupCode ? `${copy('This is the board that matters after a run: one invite link, one official attempt each, and the room ranked by today\'s score.')} ${copy('Only real people who open this link appear here.')}` : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
             entries={displayBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
             emptyDetail={groupCode ? 'Private rooms start empty. Send the link; only real players who open it and finish today appear here.' : 'Create a room link for the group chat. The room board appears as soon as invited players finish today.'}
