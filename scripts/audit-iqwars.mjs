@@ -38,6 +38,7 @@ const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
+const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
 const storageRunbookPath = path.join(root, 'docs/iqwars-storage-runbook.md');
 const packageJsonPath = path.join(root, 'package.json');
 const pageRoutePaths = [
@@ -323,6 +324,7 @@ async function sourceAudit() {
   const rankingsPage = source(rankingsPagePath);
   const visualAudit = source(visualAuditPath);
   const backupScript = source(backupScriptPath);
+  const prodSmoke = source(prodSmokePath);
   const storageRunbook = source(storageRunbookPath);
   const packageJson = source(packageJsonPath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
@@ -353,6 +355,7 @@ async function sourceAudit() {
   assert(existsSync(apiScoringPath), 'Shared API scoring canonicalizer exists.');
   assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
   assert(existsSync(backupScriptPath), 'Storage backup/export operator script exists.');
+  assert(existsSync(prodSmokePath), 'Production readiness smoke script exists.');
   assert(existsSync(storageRunbookPath), 'Storage backup/restore runbook exists.');
   assert(pageRoutePaths.every((routePath) => existsSync(routePath)), 'All public page route files exist.');
 
@@ -562,6 +565,11 @@ async function sourceAudit() {
   assert(recursivConfig.includes('verifyRecursivProjectAuth') && recursivConfig.includes('/api/v1/users/me') && recursivConfig.includes('/api/v1/databases') && recursivConfig.includes('projectAccess'), 'Recursiv project auth verifier checks both API-key validity and IQ WARS project access.');
   assert(health.includes('launchReady') && health.includes('verified') && health.includes('verifyRecursivProjectAuth') && health.includes('recursivConfiguredButBroken'), 'Health API exposes launch readiness and fails broken persistent storage or configured Recursiv auth.');
   assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('verifyRecursivProjectAuth') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage and Recursiv project access are launch-ready.');
+  assert(packageJson.includes('"smoke:prod": "node scripts/smoke-iqwars-prod.mjs --origin https://iqwars.app"'), 'Package scripts expose a production readiness smoke command.');
+  assert(prodSmoke.includes('/api/health') && prodSmoke.includes('/api/ready') && prodSmoke.includes('launchReady') && prodSmoke.includes('projectAccess'), 'Production smoke checks health, readiness, launchReady, and Recursiv project access.');
+  assert(prodSmoke.includes('assertNoStore') && prodSmoke.includes('cache-control') && prodSmoke.includes('no-store'), 'Production smoke verifies no-store cache headers on dynamic readiness APIs.');
+  assert(prodSmoke.includes('non-ephemeral storage') && prodSmoke.includes('persistent storage') && prodSmoke.includes('storage provider'), 'Production smoke fails non-persistent or ephemeral storage providers.');
+  assert(prodSmoke.includes('criticalRoutes') && prodSmoke.includes('/research') && prodSmoke.includes('/privacy') && prodSmoke.includes('/terms') && prodSmoke.includes('/api/leaderboards?agents=false'), 'Production smoke checks critical public routes and live leaderboard payload.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(rateLimit.includes("STORE_KEY = 'world-iq:rate-limits:v1'") && rateLimit.includes('updateJsonStore') && rateLimit.includes('retry-after') && rateLimit.includes('status: 429'), 'Shared rate-limit helper stores durable buckets and returns standard 429 responses.');
