@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { enforceRateLimit } from '../../_lib/rateLimit';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const IQWARS_PROJECT_ID = process.env.IQWARS_RECURSIV_PROJECT_ID || process.env.RECURSIV_PROJECT_ID || '';
@@ -46,6 +47,13 @@ export async function POST(request: NextRequest) {
   if (!email.includes('@') || otp.length < 4) {
     return NextResponse.json({ error: 'Enter the email and code.' }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'auth:verify-code',
+    identity: `email:${email}`,
+    limit: 8,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   if (!IQWARS_PROJECT_ID || !IQWARS_PROJECT_API_KEY) {
     return NextResponse.json({ error: 'IQ WARS auth is not configured yet.' }, { status: 503 });

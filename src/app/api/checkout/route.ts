@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { enforceRateLimit } from '../_lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -38,6 +39,13 @@ export async function POST(request: NextRequest) {
   if (!playerApiKey) {
     return jsonError('Create an IQ WARS account before checkout.', 401);
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'checkout:post',
+    identity: `account:${playerApiKey}`,
+    limit: 8,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   const body = await request.json().catch(() => ({}));
   const returnUrl = safeReturnUrl((body as { returnUrl?: unknown }).returnUrl, requestOrigin(request));

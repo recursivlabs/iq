@@ -12,6 +12,7 @@ const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
+const rateLimitPath = path.join(root, 'src/app/api/_lib/rateLimit.ts');
 const healthPath = path.join(root, 'src/app/api/health/route.ts');
 const readyPath = path.join(root, 'src/app/api/ready/route.ts');
 const recursivConfigPath = path.join(root, 'src/app/api/_lib/recursivConfig.ts');
@@ -314,6 +315,7 @@ async function sourceAudit() {
   const xVerify = source(xVerifyPath);
   const apiDays = source(apiDaysPath);
   const apiScoring = source(apiScoringPath);
+  const rateLimit = source(rateLimitPath);
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
   const visualAudit = source(visualAuditPath);
@@ -325,6 +327,7 @@ async function sourceAudit() {
   assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
+  assert(existsSync(rateLimitPath), 'Shared durable rate-limit helper exists.');
   assert(existsSync(healthPath), 'Storage health API route exists.');
   assert(existsSync(readyPath), 'Launch readiness API route exists.');
   assert(existsSync(recursivConfigPath), 'Shared Recursiv project auth verifier exists.');
@@ -537,7 +540,13 @@ async function sourceAudit() {
   assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('verifyRecursivProjectAuth') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage and Recursiv project access are launch-ready.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
+  assert(rateLimit.includes("STORE_KEY = 'world-iq:rate-limits:v1'") && rateLimit.includes('updateJsonStore') && rateLimit.includes('retry-after') && rateLimit.includes('status: 429'), 'Shared rate-limit helper stores durable buckets and returns standard 429 responses.');
+  const rateLimitedRoutes = [leaderboard, attempts, username, profiles, roomMessages, reminders, checkout, authSend, authVerify, xVerify];
+  assert(rateLimitedRoutes.every((route) => route.includes('enforceRateLimit')), 'Public write-heavy APIs enforce rate limits before expensive or persistent side effects.');
+  assert(authSend.includes('auth:send-code:email') && authVerify.includes('auth:verify-code') && reminders.includes('reminders:post:email') && checkout.includes('checkout:post'), 'Auth, reminder, and checkout routes have route-specific anti-abuse buckets.');
+  assert(username.includes("bucket: 'username:claim'") && attempts.includes("bucket: 'attempts:post'") && leaderboard.includes("bucket: 'leaderboards:post'") && roomMessages.includes("bucket: 'rooms:messages:post'"), 'Gameplay/social write routes rate-limit by stable player, account, or room identity.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
+  assert(audit.includes('Live username API rate-limits repeated claim attempts') && audit.includes('response.status === 429'), 'Launch audit includes a live rate-limit 429 proof.');
   assert(audit.includes('attemptFuzzCases') && audit.includes('leaderboardFuzzCases') && audit.includes('Live attempt API rejects malformed scoring fuzz payloads') && audit.includes('Live leaderboard API rejects malformed scoring fuzz payloads'), 'Launch audit includes deterministic malformed scoring fuzz cases.');
   assert(audit.includes('Live durable leaderboard/geography readback skipped because storage is ephemeral.') && audit.includes('Live durable leaderboard/geography readback cannot be verified without persistent storage.'), 'Live audit only treats durable leaderboard/geography readback as required when persistent storage is configured.');
   assert(audit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && audit.includes('Live authenticated social-write success checks skipped'), 'Live audit only runs authenticated social-write success checks with a real audit player key.');
@@ -674,6 +683,18 @@ async function liveAudit() {
     body: JSON.stringify({ username, playerId: `${playerId}-other`, displayName: 'Other Audit' }),
   });
   assert(usernameDuplicate.response.status === 409, 'Live username API rejects duplicate handle claims from another player.');
+
+  const ratePlayerId = `audit-rate-player-${randomUUID()}`;
+  const ratePrefix = `rl_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
+  const rateLimitClaims = [];
+  for (let index = 0; index < 7; index += 1) {
+    rateLimitClaims.push(await requestJson(`${origin}/api/username`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: `${ratePrefix}_${index}`, playerId: ratePlayerId, displayName: 'Rate Audit' }),
+    }));
+  }
+  assert(rateLimitClaims.slice(0, 6).every((claim) => claim.response.ok) && rateLimitClaims[6]?.response.status === 429, 'Live username API rate-limits repeated claim attempts.');
 
   if (persistent && verified && launchReady) {
     const raceUsername = `race_${randomUUID().replace(/-/g, '').slice(0, 12)}`;

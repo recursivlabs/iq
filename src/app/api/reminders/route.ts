@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { enforceRateLimit } from '../_lib/rateLimit';
 import { updateReminderStore, type ReminderRecord } from '../_lib/reminders';
 
 export const dynamic = 'force-dynamic';
@@ -53,6 +54,19 @@ export async function POST(request: Request) {
   if (!validEmail(email)) {
     return NextResponse.json({ error: 'Enter a valid email.' }, { status: 400 });
   }
+  const limitedByIp = await enforceRateLimit(request, {
+    bucket: 'reminders:post:ip',
+    limit: 8,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limitedByIp) return limitedByIp;
+  const limitedByEmail = await enforceRateLimit(request, {
+    bucket: 'reminders:post:email',
+    identity: `email:${email}`,
+    limit: 3,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limitedByEmail) return limitedByEmail;
 
   const now = Date.now();
   const groupCode = cleanGroupCode(body?.groupCode) || null;

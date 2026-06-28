@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { enforceRateLimit } from '../_lib/rateLimit';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 import { validatePlayerAccount } from '../_lib/playerAuth';
 
@@ -183,6 +184,13 @@ export async function POST(request: NextRequest) {
       : account.error;
     return NextResponse.json({ error }, { status: account.status });
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'profiles:post',
+    identity: `account:${account.apiKey}`,
+    limit: 20,
+    windowMs: 10 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const profile = body ? normalizeProfile(body) : null;

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { enforceRateLimit } from '../../_lib/rateLimit';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const IQWARS_PROJECT_API_KEY = process.env.IQWARS_RECURSIV_API_KEY || process.env.RECURSIV_PROJECT_API_KEY || process.env.RECURSIV_API_KEY || '';
@@ -22,6 +23,19 @@ export async function POST(request: NextRequest) {
   if (!email.includes('@')) {
     return NextResponse.json({ error: 'Enter a valid email.' }, { status: 400 });
   }
+  const limitedByIp = await enforceRateLimit(request, {
+    bucket: 'auth:send-code:ip',
+    limit: 8,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (limitedByIp) return limitedByIp;
+  const limitedByEmail = await enforceRateLimit(request, {
+    bucket: 'auth:send-code:email',
+    identity: `email:${email}`,
+    limit: 4,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (limitedByEmail) return limitedByEmail;
 
   if (!IQWARS_PROJECT_API_KEY) {
     return NextResponse.json({ error: 'IQ WARS auth is not configured yet.' }, { status: 503 });

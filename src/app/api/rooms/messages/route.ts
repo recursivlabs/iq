@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { readJsonStore, updateJsonStore } from '../../_lib/store';
+import { enforceRateLimit } from '../../_lib/rateLimit';
 import { validatePlayerAccount } from '../../_lib/playerAuth';
 
 export const dynamic = 'force-dynamic';
@@ -122,6 +123,13 @@ export async function POST(request: NextRequest) {
   if (!groupCode || !playerId || !messageBody) {
     return NextResponse.json({ error: 'Missing room, player, or message.' }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'rooms:messages:post',
+    identity: `room:${groupCode}:account:${account.apiKey}`,
+    limit: 20,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   const message: RoomMessage = {
     id: `${groupCode}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,

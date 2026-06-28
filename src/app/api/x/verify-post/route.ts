@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { enforceRateLimit } from '../../_lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -49,6 +50,13 @@ export async function POST(request: NextRequest) {
   if (!handle || !token) {
     return NextResponse.json({ error: 'Missing X handle or scorecard token.' }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'x:verify-post',
+    identity: `x:${handle}`,
+    limit: 6,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   if (!X_BEARER_TOKEN) {
     return NextResponse.json({ error: 'X verification API is not configured yet.' }, { status: 503 });

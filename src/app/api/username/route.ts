@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { enforceRateLimit } from '../_lib/rateLimit';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -79,6 +80,13 @@ export async function POST(request: NextRequest) {
   if (!playerId) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'username:claim',
+    identity: `player:${playerId}`,
+    limit: 6,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   const result = await updateStore((store) => {
     const existing = store.claims[username];

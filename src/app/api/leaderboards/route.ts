@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { sanitizeBoardDay } from '../_lib/days';
+import { enforceRateLimit } from '../_lib/rateLimit';
 import { canonicalOfficialScore } from '../_lib/scoring';
 import { readJsonStore, updateJsonStore } from '../_lib/store';
 
@@ -317,6 +318,13 @@ export async function POST(request: NextRequest) {
   if (!playerId) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
   }
+  const limited = await enforceRateLimit(request, {
+    bucket: 'leaderboards:post',
+    identity: `player:${playerId}`,
+    limit: 18,
+    windowMs: 10 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   const correct = Number(body.correct);
   const total = Number(body.total);
