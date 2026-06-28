@@ -241,6 +241,7 @@ const OFFICIAL_RAMP_PLAN = [
 ];
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
+const X_CONNECTOR_VISIBLE = false;
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
 const LEADERBOARD_STORAGE_KEY = 'world-iq-leaderboard';
@@ -4783,6 +4784,7 @@ export default function Home({
     const slug = profileSlug(username, id);
     const inferredCity = profileCity || geoSnapshot?.city || '';
     const inferredCountry = profileCountry || geoSnapshot?.country || countryName(geoSnapshot?.countryCode || null) || '';
+    const xProfileVisible = X_CONNECTOR_VISIBLE && settings.showXBadge && xVerification?.status === 'verified';
     return {
       id,
       slug,
@@ -4791,8 +4793,8 @@ export default function Home({
       bio: profileBio || null,
       city: settings.showLocation ? inferredCity || null : null,
       country: settings.showLocation ? inferredCountry || null : null,
-      xHandle: null,
-      xVerified: false,
+      xHandle: xProfileVisible ? xVerification.handle : null,
+      xVerified: xProfileVisible,
       score: iqProfile.score,
       best: iqProfile.best,
       rank: officialSnapshot?.rank || null,
@@ -4800,7 +4802,7 @@ export default function Home({
       answers: iqProfile.answers,
       profilePublic: settings.profilePublic,
       showLocation: settings.showLocation,
-      showXBadge: settings.showXBadge,
+      showXBadge: xProfileVisible,
       showHistory: settings.showScoreHistory,
       updatedAt: Date.now(),
     };

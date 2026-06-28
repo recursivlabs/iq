@@ -370,6 +370,8 @@ async function sourceAudit() {
   const officialRampPlan = initializerText(findVariable(ts, tree, 'OFFICIAL_RAMP_PLAN'), app);
   assert(officialRampPlan.includes('maxRank: 1') && officialRampPlan.includes('take: 6') && officialRampPlan.includes('OFFICIAL_QUESTION_COUNT'), 'Official baseline has an explicit approachable-to-hard difficulty ramp plan.');
   assert(app.includes('showAgentActivity: false'), 'Seeded agent activity is opt-in by default.');
+  const xConnectorVisible = initializerText(findVariable(ts, tree, 'X_CONNECTOR_VISIBLE'), app);
+  assert(xConnectorVisible === 'false', 'Incomplete X verification connector is hidden behind an explicit launch-off flag.');
 
   const rankedIds = stringArrayFromVariable(ts, tree, 'rankedWorldPuzzleIds');
   const rankedIdsInit = initializerText(findVariable(ts, tree, 'rankedWorldPuzzleIds'), app);
@@ -518,6 +520,8 @@ async function sourceAudit() {
   assert(profiles.includes('publicProfile(profile)') && profiles.includes('profilePublic'), 'Profile API applies public/privacy controls before returning profiles.');
   assert(profiles.includes('MAX_PROFILE_ATTEMPTS') && profiles.includes('MAX_PROFILE_ANSWERS') && profiles.includes('MAX_PROFILE_SCORE'), 'Profile API clamps public score/history metadata to the supported daily-history range.');
   assert(profiles.includes('xVerified: false') && !profiles.includes('Boolean(value.xVerified)') && profiles.includes('normalizeProfile(profile as Record<string, unknown>)'), 'Profile API does not trust client-submitted X badges or legacy stored profile flags.');
+  assert(app.includes('const xProfileVisible = X_CONNECTOR_VISIBLE && settings.showXBadge && xVerification?.status === \'verified\'') && app.includes('showXBadge: xProfileVisible'), 'Local public profiles suppress X handles and badges unless the hidden connector is intentionally enabled and verified.');
+  assert(!app.includes('settingKey="showXBadge"') && !app.includes('onClick={connectX}') && !app.includes('onClick={verifyXPost}') && !app.includes('onClick={postXScorecard}'), 'Launch UI does not expose X badge settings or incomplete X verification actions.');
   assert(playerAuth.includes('PLAYER_API_KEY_COOKIE') && playerAuth.includes('/api/v1/users/me') && playerAuth.includes('status: 401') && playerAuth.includes('status: 503'), 'Shared player auth validator verifies Recursiv player keys and fails closed.');
   assert(profiles.includes('validatePlayerAccount') && profiles.includes('Connect an IQ WARS account before saving a profile.'), 'Profile write API requires a verified IQ WARS player account.');
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
