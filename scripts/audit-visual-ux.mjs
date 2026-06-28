@@ -24,6 +24,7 @@ const routes = [
 ];
 
 const results = [];
+let roomFixture = null;
 
 function valueAfter(flag) {
   const index = args.lastIndexOf(flag);
@@ -42,6 +43,35 @@ function pass(message, details = null) {
 function fail(message, details = null) {
   results.push({ ok: false, message, details });
   console.error(`FAIL ${message}${details ? ` ${JSON.stringify(details)}` : ''}`);
+}
+
+async function loadRoomFixture() {
+  const room = 'room-kdljky';
+  try {
+    const response = await fetch(`${origin.replace(/\/$/, '')}/api/leaderboards?group=${encodeURIComponent(room)}&agents=false`, { cache: 'no-store' });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data) {
+      fail('production room fixture API is readable for visual audit', { status: response.status, data });
+      return null;
+    }
+    const group = Array.isArray(data.group) ? data.group : [];
+    const groupAllTime = Array.isArray(data.groupAllTime) ? data.groupAllTime : [];
+    const topRecord = groupAllTime[0] || null;
+    const fixture = {
+      room,
+      day: data.day,
+      todayCount: group.length,
+      allTimeCount: groupAllTime.length,
+      topRecordScore: topRecord?.score ?? null,
+      topRecordName: topRecord ? (topRecord.username ? `@${topRecord.username}` : topRecord.displayName) : null,
+      topRecordDay: topRecord?.day ?? null,
+    };
+    pass('production room fixture API exposes daily and all-time boards', fixture);
+    return fixture;
+  } catch (error) {
+    fail('production room fixture API is readable for visual audit', { error: error instanceof Error ? error.message : String(error) });
+    return null;
+  }
 }
 
 async function chromeAvailable() {
@@ -209,6 +239,15 @@ function evaluationScript(routeId, viewportId) {
       const resultWrong = document.querySelector('.option.result-wrong');
       const proofPill = document.querySelector('.proof-pill');
       const proofPopover = document.querySelector('.proof-popover');
+      const roomRecordStrip = document.querySelector('.room-record-strip');
+      const roomRecordMetrics = [...document.querySelectorAll('.room-record-metrics div')].map((item) => ({
+        label: text(item.querySelector('span')),
+        value: text(item.querySelector('strong')),
+        detail: text(item.querySelector('em')),
+      }));
+      const primaryRoomBoard = document.querySelector('.primary-board');
+      const primaryRoomRows = [...document.querySelectorAll('.primary-board .leaderboard-row')].length;
+      const primaryRoomEmpty = document.querySelector('.primary-board .empty-board');
       const bodyBg = getComputedStyle(document.body).backgroundColor;
       const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
       const optionRects = options.map(rect).filter(Boolean);
@@ -257,6 +296,11 @@ function evaluationScript(routeId, viewportId) {
         proofPopover: rect(proofPopover),
         proofPopoverText: text(proofPopover),
         proofPopoverVisible: visible(proofPopover),
+        roomRecordStripText: text(roomRecordStrip).slice(0, 1200),
+        roomRecordMetrics,
+        primaryRoomBoardText: text(primaryRoomBoard).slice(0, 1200),
+        primaryRoomRows,
+        primaryRoomEmptyText: text(primaryRoomEmpty),
         visibleRoomRecords: /Room records/i.test(text(document.body)),
         visibleRoomHighscore: /Ongoing room highscore|Room highscore|all-time room highscore/i.test(text(document.body)),
         visibleFriendRankings: /friend rankings/i.test(text(document.body)),
@@ -554,6 +598,40 @@ function assertProofPopover(state, viewportId, trigger = 'hover') {
   else fail(`${prefix} proof detail opens on ${trigger}`, { visible: state.proofPopoverVisible, text: state.proofPopoverText?.slice(0, 500), rect: state.proofPopover });
 }
 
+function metricValue(state, label) {
+  const metric = (state.roomRecordMetrics || []).find((item) => item.label.toLowerCase() === label.toLowerCase());
+  return metric ? metric.value : null;
+}
+
+function assertRoomFixture(state, viewportId, routeId) {
+  if (!roomFixture) return;
+  const prefix = `${viewportId} ${routeId}`;
+  if (metricValue(state, 'Today') === String(roomFixture.todayCount)) pass(`${prefix} renders live room today count`, { expected: roomFixture.todayCount });
+  else fail(`${prefix} renders live room today count`, { expected: roomFixture.todayCount, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
+
+  if (metricValue(state, 'All-time') === String(roomFixture.allTimeCount)) pass(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount });
+  else fail(`${prefix} renders live room all-time count`, { expected: roomFixture.allTimeCount, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
+
+  if (roomFixture.topRecordScore === null) return;
+  if (metricValue(state, 'Current record') === String(roomFixture.topRecordScore)) pass(`${prefix} renders live room current record score`, { expected: roomFixture.topRecordScore });
+  else fail(`${prefix} renders live room current record score`, { expected: roomFixture.topRecordScore, metrics: state.roomRecordMetrics, text: state.roomRecordStripText });
+
+  const topRecordVisible = state.roomRecordStripText.includes(String(roomFixture.topRecordScore))
+    && (!roomFixture.topRecordName || state.roomRecordStripText.includes(roomFixture.topRecordName))
+    && (!roomFixture.topRecordDay || state.roomRecordStripText.includes(roomFixture.topRecordDay));
+  if (topRecordVisible) pass(`${prefix} renders live room all-time leader identity and date`, { score: roomFixture.topRecordScore, name: roomFixture.topRecordName, day: roomFixture.topRecordDay });
+  else fail(`${prefix} renders live room all-time leader identity and date`, { fixture: roomFixture, text: state.roomRecordStripText });
+
+  if (roomFixture.todayCount === 0) {
+    if (/No friends have locked today|No one has locked today/i.test(`${state.primaryRoomBoardText} ${state.bodyText}`)) pass(`${prefix} explains empty daily board while retaining records`);
+    else fail(`${prefix} explains empty daily board while retaining records`, { primary: state.primaryRoomBoardText, bodyText: state.bodyText.slice(0, 900) });
+  } else if (state.primaryRoomRows === roomFixture.todayCount) {
+    pass(`${prefix} renders live daily room rows`, { expected: roomFixture.todayCount });
+  } else {
+    fail(`${prefix} renders live daily room rows`, { expected: roomFixture.todayCount, rows: state.primaryRoomRows, text: state.primaryRoomBoardText });
+  }
+}
+
 function assertRoom(state, viewportId) {
   const prefix = `${viewportId} room`;
   if (state.visibleFriendRankings) pass(`${prefix} opens friend rankings context`);
@@ -562,6 +640,7 @@ function assertRoom(state, viewportId) {
   else fail(`${prefix} shows persistent room records`, { bodyText: state.bodyText.slice(0, 500) });
   if (state.visibleRoomHighscore) pass(`${prefix} shows ongoing all-time room highscore summary`);
   else fail(`${prefix} shows ongoing all-time room highscore summary`, { bodyText: state.bodyText.slice(0, 700) });
+  assertRoomFixture(state, viewportId, 'room');
 }
 
 function assertRankings(state, viewportId) {
@@ -572,6 +651,7 @@ function assertRankings(state, viewportId) {
   else fail(`${prefix} preserves room records alongside rankings`, { bodyText: state.bodyText.slice(0, 700) });
   if (state.visibleRoomHighscore) pass(`${prefix} preserves ongoing room highscore summary`);
   else fail(`${prefix} preserves ongoing room highscore summary`, { bodyText: state.bodyText.slice(0, 700) });
+  assertRoomFixture(state, viewportId, 'rankings');
 }
 
 async function auditRoute(route, viewport) {
@@ -670,6 +750,7 @@ async function auditRoute(route, viewport) {
 }
 
 await mkdir(outDir, { recursive: true });
+roomFixture = await loadRoomFixture();
 await ensureChrome();
 
 for (const viewport of viewports) {
