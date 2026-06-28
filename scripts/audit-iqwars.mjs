@@ -444,6 +444,7 @@ async function sourceAudit() {
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(audit.includes('persistent && verified && launchReady') && audit.includes('Promise.all') && audit.includes('race-safe'), 'Launch audit includes persistent-only concurrent write race checks.');
+  assert(audit.includes('attemptFuzzCases') && audit.includes('leaderboardFuzzCases') && audit.includes('Live attempt API rejects malformed scoring fuzz payloads') && audit.includes('Live leaderboard API rejects malformed scoring fuzz payloads'), 'Launch audit includes deterministic malformed scoring fuzz cases.');
   assert(audit.includes('Live durable leaderboard/geography readback skipped because storage is ephemeral.') && audit.includes('Live durable leaderboard/geography readback cannot be verified without persistent storage.'), 'Live audit only treats durable leaderboard/geography readback as required when persistent storage is configured.');
   assert(audit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && audit.includes('Live authenticated social-write success checks skipped'), 'Live audit only runs authenticated social-write success checks with a real audit player key.');
   assert(audit.includes("['/privacy'") && audit.includes("['/terms'") && audit.includes("['/blog/best-online-iq-test'") && audit.includes('assertLivePage'), 'Live audit covers the public page route surface.');
@@ -465,6 +466,16 @@ async function requestJson(url, init) {
     throw new Error(`Expected JSON from ${url}, got: ${text.slice(0, 120)}`);
   }
   return { response, data };
+}
+
+async function assertRejectedJsonPost(url, body, message) {
+  const init = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  };
+  const result = await requestJson(url, init);
+  assert(result.response.status === 400, message);
 }
 
 async function requestText(url) {
@@ -798,6 +809,17 @@ async function liveAudit() {
   });
   assert(impossibleBeatAiAttempt.response.status === 400, 'Live attempt API rejects impossible AI-beat counts.');
 
+  const attemptFuzzCases = [
+    ['malformed JSON', '{not-json'],
+    ['missing player', { day, correct: 5, total: 12, beatAi: 1, elapsedMs: 270000 }],
+    ['non-finite correct count', { day, playerId: `${playerId}-fuzz-nan-correct`, correct: 'NaN', total: 12, beatAi: 1, elapsedMs: 270000 }],
+    ['invalid total shape', { day, playerId: `${playerId}-fuzz-bad-total`, correct: 5, total: { value: 12 }, beatAi: 1, elapsedMs: 270000 }],
+    ['invalid AI-beat shape', { day, playerId: `${playerId}-fuzz-bad-ai`, correct: 5, total: 12, beatAi: { count: 1 }, elapsedMs: 270000 }],
+  ];
+  for (const [label, body] of attemptFuzzCases) {
+    await assertRejectedJsonPost(`${origin}/api/attempts`, body, `Live attempt API rejects malformed scoring fuzz payloads: ${label}.`);
+  }
+
   const attempt = {
     day,
     playerId,
@@ -908,6 +930,17 @@ async function liveAudit() {
     }),
   });
   assert(impossibleBeatAiLeaderboardWrite.response.status === 400, 'Live leaderboard API rejects impossible AI-beat counts.');
+
+  const leaderboardFuzzCases = [
+    ['malformed JSON', '{not-json'],
+    ['missing player', { day, displayName: 'Missing Player', correct: 5, total: 12, beatAi: 1, elapsedMs: 270000, geo }],
+    ['non-finite correct count', { day, playerId: `${playerId}-leader-fuzz-nan-correct`, displayName: 'NaN Correct', correct: 'NaN', total: 12, beatAi: 1, elapsedMs: 270000, geo }],
+    ['invalid total shape', { day, playerId: `${playerId}-leader-fuzz-bad-total`, displayName: 'Bad Total', correct: 5, total: { value: 12 }, beatAi: 1, elapsedMs: 270000, geo }],
+    ['invalid AI-beat shape', { day, playerId: `${playerId}-leader-fuzz-bad-ai`, displayName: 'Bad AI', correct: 5, total: 12, beatAi: ['x'], elapsedMs: 270000, geo }],
+  ];
+  for (const [label, body] of leaderboardFuzzCases) {
+    await assertRejectedJsonPost(`${origin}/api/leaderboards?agents=false`, body, `Live leaderboard API rejects malformed scoring fuzz payloads: ${label}.`);
+  }
 
   const post = await requestJson(`${origin}/api/leaderboards?agents=false`, {
     method: 'POST',
