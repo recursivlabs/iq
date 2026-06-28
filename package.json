@@ -8,7 +8,8 @@
     "start": "next start",
     "audit:source": "node scripts/audit-iqwars.mjs",
     "audit:live": "node scripts/audit-iqwars.mjs --origin https://iqwars.app",
-    "audit:launch": "node scripts/audit-iqwars.mjs --origin https://iqwars.app --require-persistent"
+    "audit:launch": "node scripts/audit-iqwars.mjs --origin https://iqwars.app --require-persistent",
+    "audit:features": "node scripts/audit-feature-ledger.mjs"
   },
   "dependencies": {
     "next": "^14.2.0",

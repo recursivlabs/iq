@@ -410,6 +410,9 @@ async function sourceAudit() {
   assert(reminders.includes('shouldSendConfirmation') && reminders.includes('confirmationSentAt'), 'Reminder signup only sends confirmation email until a reminder has a recorded confirmation.');
   assert(remindersLib.includes('MAX_REMINDERS') && remindersLib.includes('normalizeReminder') && remindersLib.includes('validEmail') && remindersLib.includes('new Map'), 'Reminder store normalizes, dedupes, and bounds reminder records before reads and writes.');
   assert(remindersSend.includes('IQ_REMINDER_CRON_TOKEN') && remindersSend.includes("process.env.NODE_ENV === 'production'"), 'Reminder cron send API requires explicit production configuration.');
+  assert(remindersSend.includes('buildReminderDigest') && remindersSend.includes('currentStreakDays') && remindersSend.includes('Personal best') && remindersSend.includes('Room record'), 'Reminder cron sends a streak, score, and room-record digest instead of a generic nudge.');
+  assert(remindersSend.includes('readLeaderboardEntries') && remindersSend.includes("LEADERBOARD_STORE_KEY = 'world-iq:leaderboards:v2'"), 'Reminder cron reads leaderboard history to personalize daily streak emails.');
+  assert(remindersSend.includes('reply STOP') && remindersSend.includes('bill@recursiv.io'), 'Reminder emails include a simple stop-reminders instruction.');
   assert(access.includes('PLAYER_API_KEY_COOKIE') && access.includes('app-subscriptions/status'), 'Access API checks Recursiv app subscription status from the player key.');
   assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl'), 'Checkout API requires a player key and sanitizes return URLs.');
   assert(checkoutStatus.includes('PLAYER_API_KEY_COOKIE') && checkoutStatus.includes('setAccessCookie'), 'Checkout status API requires a player key and syncs the access cookie.');
