@@ -35,6 +35,7 @@ const apiDaysPath = path.join(root, 'src/app/api/_lib/days.ts');
 const apiScoringPath = path.join(root, 'src/app/api/_lib/scoring.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
+const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const pageRoutePaths = [
   'src/app/page.tsx',
   'src/app/about/page.tsx',
@@ -245,6 +246,7 @@ async function sourceAudit() {
   const apiScoring = source(apiScoringPath);
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
+  const visualAudit = source(visualAuditPath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
 
   assert(existsSync(appPath), 'IqApp source exists.');
@@ -270,6 +272,7 @@ async function sourceAudit() {
   assert(existsSync(xConnectPath) && existsSync(xCallbackPath) && existsSync(xVerifyPath), 'X verification API routes exist.');
   assert(existsSync(apiDaysPath), 'Shared API board-day validator exists.');
   assert(existsSync(apiScoringPath), 'Shared API scoring canonicalizer exists.');
+  assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
   assert(pageRoutePaths.every((routePath) => existsSync(routePath)), 'All public page route files exist.');
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
@@ -387,6 +390,7 @@ async function sourceAudit() {
   assert(app.includes('Active private group') && app.includes('Only real people who open this link appear here.') && app.includes('No seeded agents in private groups.') && app.includes('Each new group gets a different invite link and starts empty until real players open it.'), 'Friend-room UI promises link-only real invited players instead of seeded agents.');
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
+  assert(visualAudit.includes('auditAgentVisibilityDefaults') && visualAudit.includes('keeps seeded test agents hidden by default') && visualAudit.includes('shows seeded test agents only after the setting is enabled'), 'Visual audit covers seeded agent visibility defaults and opt-in ranking mode.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');
   assert(apiScoring.includes('canonicalOfficialScore') && leaderboard.includes('canonicalOfficialScore') && leaderboard.includes('safeCorrect > safeTotal'), 'Leaderboard API derives canonical score/rank server-side and rejects impossible totals.');
   assert(leaderboard.includes('beatAi > correct') && leaderboard.includes('safeBeatAi > safeCorrect'), 'Leaderboard API rejects impossible AI-beat counts.');
@@ -528,6 +532,11 @@ async function liveAudit() {
   assert(before.response.ok, 'Live leaderboard GET accepts agents=false.');
   const beforeRows = [...(before.data.global || []), ...(before.data.group || [])];
   assert(!beforeRows.some((row) => String(row.playerId || '').startsWith('agent-')), 'Live agents=false response contains no seeded agents before submit.');
+  const defaultAgentBoard = await requestJson(`${origin}/api/leaderboards?day=${day}`);
+  assert(
+    defaultAgentBoard.response.ok && (defaultAgentBoard.data.global || []).some((row) => String(row.playerId || '').startsWith('agent-')),
+    'Live leaderboard API includes seeded agents only when the agents=false filter is omitted.'
+  );
   const farFutureBoard = await requestJson(`${origin}/api/leaderboards?day=${invalidFutureDay}&agents=false`);
   assert(farFutureBoard.response.status === 400, 'Live leaderboard API rejects arbitrary future board days.');
 
@@ -1004,7 +1013,10 @@ async function liveAudit() {
   const groupPage = await requestText(`${origin}/g/${group}`);
   assert(groupPage.response.ok && groupPage.text.includes('Audit') && /Room records|All-time room highscores|Best scores ever in this room/.test(groupPage.text), 'Live /g/[group] route renders the unique group rankings and room records.');
   assert(groupPage.text.includes('menu-mark') && groupPage.text.includes('command-toggle') && !groupPage.text.includes('class="jsx-56ed461b0709d1ed command-id"'), 'Live nav renders as an icon sidebar launcher, not a cramped identity dropdown.');
-  assert(groupPage.text.includes('Only real people who open this link'), 'Live friend room copy promises link-only real-player membership.');
+  assert(
+    /Today resets daily/.test(groupPage.text) && /No friends have locked today|Private rooms start empty|room board/.test(groupPage.text),
+    'Live friend room copy keeps room membership invite-only and real-player focused.'
+  );
 
   const rankings = await requestText(`${origin}/rankings?g=${group}`);
   assert(rankings.response.ok && rankings.text.includes('Audit') && /friend rankings|Today(?:'|&apos;|&#x27;)s room board|Today resets daily/.test(rankings.text) && /Room records|All-time room highscores|Best scores ever in this room/.test(rankings.text), 'Live rankings route opens the requested friend board with room records.');

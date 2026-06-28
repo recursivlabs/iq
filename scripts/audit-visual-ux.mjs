@@ -187,6 +187,36 @@ function loggedInLogoutStorageScript() {
   `;
 }
 
+function loggedInAgentVisibilityStorageScript({ showAgentActivity = false } = {}) {
+  return `
+    (() => {
+      window.localStorage.setItem('world-iq-player-id', ${JSON.stringify(showAgentActivity ? 'agent-visible-audit' : 'agent-hidden-audit')});
+      window.localStorage.setItem('world-iq-player-name', ${JSON.stringify(showAgentActivity ? 'Agent Visible Audit' : 'Agent Hidden Audit')});
+      window.localStorage.setItem('world-iq-player-username', ${JSON.stringify(showAgentActivity ? 'agent_visible_audit' : 'agent_hidden_audit')});
+      window.localStorage.setItem('world-iq-recursiv-account', JSON.stringify({
+        email: ${JSON.stringify(showAgentActivity ? 'agent-visible@iqwars.app' : 'agent-hidden@iqwars.app')},
+        name: ${JSON.stringify(showAgentActivity ? 'Agent Visible' : 'Agent Hidden')},
+        updatedAt: Date.now()
+      }));
+      window.localStorage.setItem('world-iq-player-settings', JSON.stringify({
+        profilePublic: true,
+        showLocation: false,
+        showXBadge: false,
+        showScoreHistory: true,
+        showAgentActivity: ${showAgentActivity ? 'true' : 'false'},
+        labModesEnabled: false,
+        soundEnabled: true,
+        reducedMotion: false,
+        highContrast: false,
+        dailyReminder: false,
+        analyticsEnabled: true,
+        emailUpdates: false,
+        shareScoreByDefault: true
+      }));
+    })();
+  `;
+}
+
 function lockedDailyStorageScript({ loggedIn = false } = {}) {
   return `
     (() => {
@@ -528,6 +558,13 @@ function evaluationScript(routeId, viewportId) {
         value: text(item.querySelector('strong')),
         detail: text(item.querySelector('em')),
       }));
+      const socialBoards = [...document.querySelectorAll('.social-board')].map((board) => ({
+        kicker: text(board.querySelector('.kicker')),
+        title: text(board.querySelector('h2')),
+        text: text(board).slice(0, 1600),
+        rows: [...board.querySelectorAll('.leaderboard-row')].map((row) => text(row).slice(0, 500)),
+        rowCount: board.querySelectorAll('.leaderboard-row').length,
+      }));
       const primaryRoomBoard = document.querySelector('.primary-board');
       const primaryRoomRows = [...document.querySelectorAll('.primary-board .leaderboard-row')].length;
       const primaryRoomEmpty = document.querySelector('.primary-board .empty-board');
@@ -638,6 +675,7 @@ function evaluationScript(routeId, viewportId) {
         proofPopoverVisible: visible(proofPopover),
         roomRecordStripText: text(roomRecordStrip).slice(0, 1200),
         roomRecordMetrics,
+        socialBoards,
         primaryRoomBoardText: text(primaryRoomBoard).slice(0, 1200),
         primaryRoomRows,
         primaryRoomEmptyText: text(primaryRoomEmpty),
@@ -1109,6 +1147,30 @@ function assertCommandCenter(state, routeId, viewportId) {
 
   if (state.commandRoomCard && /Friend groups|Grupos de amigos|No active group|Sin grupo activo|Active private group|Grupo privado activo|Create|Crear/i.test(state.commandPanelText)) pass(`${prefix} command center exposes friend-group controls`);
   else fail(`${prefix} command center exposes friend-group controls`, { text: state.commandPanelText?.slice(0, 500) });
+}
+
+function globalSocialBoard(state) {
+  return (state.socialBoards || []).find((board) => /Global board|The daily global IQ WARS board/i.test(`${board.kicker} ${board.title}`)) || null;
+}
+
+function assertAgentVisibilityState(state, viewportId, label, { expectAgents }) {
+  const prefix = `${viewportId} ${label}`;
+  const board = globalSocialBoard(state);
+  if (board && /The daily global IQ WARS board|Global board/i.test(`${board.kicker} ${board.title}`)) pass(`${prefix} renders the global leaderboard board`, { title: board.title, rows: board.rowCount });
+  else {
+    fail(`${prefix} renders the global leaderboard board`, { boards: state.socialBoards });
+    return;
+  }
+
+  const agentRows = (board.rows || []).filter((row) => /@agent_|Agent\s+[A-Z]/i.test(row));
+  if (expectAgents) {
+    if (agentRows.length > 0) pass(`${prefix} shows seeded test agents only after the setting is enabled`, { agentRows: agentRows.slice(0, 3) });
+    else fail(`${prefix} shows seeded test agents only after the setting is enabled`, { rows: board.rows?.slice(0, 8), board: board.text.slice(0, 900) });
+  } else if (agentRows.length === 0) {
+    pass(`${prefix} keeps seeded test agents hidden by default`, { rows: board.rowCount });
+  } else {
+    fail(`${prefix} keeps seeded test agents hidden by default`, { agentRows: agentRows.slice(0, 5), rows: board.rows?.slice(0, 8) });
+  }
 }
 
 function assertSpanishLocale(state, viewportId, label) {
@@ -1847,6 +1909,72 @@ async function auditLoggedInLogout(viewport) {
   }
 }
 
+async function auditAgentVisibilityDefaults(viewport) {
+  const base = origin.replace(/\/$/, '');
+  const cases = [
+    {
+      id: 'agent-default-hidden',
+      source: clearAuditPlayerStorageScript(),
+      expectAgents: false,
+    },
+    {
+      id: 'agent-opt-in-visible',
+      source: `${clearAuditPlayerStorageScript()}\n${loggedInAgentVisibilityStorageScript({ showAgentActivity: true })}`,
+      expectAgents: true,
+    },
+  ];
+
+  for (const item of cases) {
+    const target = await openTarget('about:blank');
+    const client = createClient(target.webSocketDebuggerUrl);
+    await client.ready;
+    try {
+      await client.send('Page.enable');
+      await client.send('Runtime.enable');
+      await client.send('Network.enable');
+      await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+      await client.send('Page.addScriptToEvaluateOnNewDocument', { source: item.source });
+      await client.send('Emulation.setDeviceMetricsOverride', {
+        width: viewport.width,
+        height: viewport.height,
+        mobile: viewport.mobile,
+        deviceScaleFactor: viewport.deviceScaleFactor,
+        screenWidth: viewport.width,
+        screenHeight: viewport.height,
+      });
+      await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+      await client.send('Page.navigate', { url: `${base}/rankings` });
+      await waitForReady(client.send);
+      await sleep(waitMs);
+
+      const state = await evaluate(client.send, item.id, viewport.id);
+      assertCommon(state, item.id, viewport.id);
+      assertAgentVisibilityState(state, viewport.id, item.id, { expectAgents: item.expectAgents });
+
+      if (client.events.exceptions.length) fail(`${viewport.id} ${item.id} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+      else pass(`${viewport.id} ${item.id} has no runtime exceptions`);
+      const blockingResponses = client.events.responseErrors.filter((entry) => {
+        const status = entry.response?.status || 0;
+        const url = entry.response?.url || '';
+        return status >= 500 || (status >= 400 && url.includes('/api/'));
+      });
+      if (blockingResponses.length) fail(`${viewport.id} ${item.id} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+      else pass(`${viewport.id} ${item.id} has no blocking HTTP errors`);
+
+      const screenshot = await client.send('Page.captureScreenshot', {
+        format: 'png',
+        fromSurface: true,
+        captureBeyondViewport: false,
+      });
+      await writeFile(path.join(outDir, `${item.id}-${viewport.id}.png`), Buffer.from(screenshot.data, 'base64'));
+      pass(`${viewport.id} ${item.id} screenshot captured`, { file: path.join(outDir, `${item.id}-${viewport.id}.png`) });
+    } finally {
+      client.close();
+      await closeTarget(target);
+    }
+  }
+}
+
 async function auditSoundDesign() {
   const base = origin.replace(/\/$/, '');
   const viewport = viewports.find((item) => item.id === 'desktop') || viewports[0];
@@ -2508,6 +2636,7 @@ for (const viewport of viewports) {
   await auditIqProfileHistory(viewport);
   await auditSettingsMatrix(viewport);
   await auditLoggedInLogout(viewport);
+  await auditAgentVisibilityDefaults(viewport);
   for (const route of routes) {
     await auditRoute(route, viewport);
   }
