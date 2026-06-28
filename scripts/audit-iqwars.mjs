@@ -37,6 +37,9 @@ const apiScoringPath = path.join(root, 'src/app/api/_lib/scoring.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
+const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
+const storageRunbookPath = path.join(root, 'docs/iqwars-storage-runbook.md');
+const packageJsonPath = path.join(root, 'package.json');
 const pageRoutePaths = [
   'src/app/page.tsx',
   'src/app/about/page.tsx',
@@ -319,6 +322,9 @@ async function sourceAudit() {
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
   const visualAudit = source(visualAuditPath);
+  const backupScript = source(backupScriptPath);
+  const storageRunbook = source(storageRunbookPath);
+  const packageJson = source(packageJsonPath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
 
   assert(existsSync(appPath), 'IqApp source exists.');
@@ -346,6 +352,8 @@ async function sourceAudit() {
   assert(existsSync(apiDaysPath), 'Shared API board-day validator exists.');
   assert(existsSync(apiScoringPath), 'Shared API scoring canonicalizer exists.');
   assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
+  assert(existsSync(backupScriptPath), 'Storage backup/export operator script exists.');
+  assert(existsSync(storageRunbookPath), 'Storage backup/restore runbook exists.');
   assert(pageRoutePaths.every((routePath) => existsSync(routePath)), 'All public page route files exist.');
 
   const dailyLimit = initializerText(findVariable(ts, tree, 'DAILY_PLAY_LIMIT'), app);
@@ -535,6 +543,13 @@ async function sourceAudit() {
   assert(store.includes('if (!config) return undefined') && store.includes('if (rest !== undefined) return rest'), 'Redis REST command routing preserves nil command results.');
   assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes('postgresWriteJsonStore') && store.includes('postgresReadJsonStore'), 'Persistent store health verifies configured storage with a write/read round trip.');
   assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('pg_advisory_xact_lock'), 'Shared store serializes read-modify-write updates locally and with persistent store locks.');
+  assert(packageJson.includes('"backup:export": "node scripts/export-iqwars-store.mjs"'), 'Package scripts expose the IQ WARS storage export tool.');
+  assert(backupScript.includes('STORE_KEYS') && backupScript.includes('world-iq:leaderboards:v2') && backupScript.includes('world-iq:official-attempts:v1') && backupScript.includes('world-iq:rate-limits:v1'), 'Storage export script covers every app-owned durable JSON key.');
+  assert(backupScript.includes("schema: 'iqwars-json-store-backup/v1'") && backupScript.includes('sha256') && backupScript.includes('Contains user data'), 'Storage export script writes a versioned sensitive-data backup with per-key checksums.');
+  assert(backupScript.includes('--restore') && backupScript.includes('--yes') && backupScript.includes('Restore is destructive'), 'Storage export script supports guarded restore with an explicit destructive confirmation flag.');
+  assert(backupScript.includes('UPSTASH_REDIS_REST_URL') && backupScript.includes('KV_REST_API_URL') && backupScript.includes('REDIS_URL') && backupScript.includes('IQWARS_DATABASE_URL'), 'Storage export script can read Redis REST, Redis URL, KV REST, or Postgres stores.');
+  assert(storageRunbook.includes('pnpm backup:export') && storageRunbook.includes('/api/ready') && storageRunbook.includes('/api/health') && storageRunbook.includes('Restore is destructive'), 'Storage runbook documents export, readiness checks, and guarded restore.');
+  assert(storageRunbook.includes('emails, profile text, room messages') && storageRunbook.includes('Keep daily encrypted exports for 30 days') && /restore rehearsal/i.test(storageRunbook), 'Storage runbook documents PII handling, retention, and restore rehearsal.');
   assert(recursivConfig.includes('verifyRecursivProjectAuth') && recursivConfig.includes('/api/v1/users/me') && recursivConfig.includes('/api/v1/databases') && recursivConfig.includes('projectAccess'), 'Recursiv project auth verifier checks both API-key validity and IQ WARS project access.');
   assert(health.includes('launchReady') && health.includes('verified') && health.includes('verifyRecursivProjectAuth') && health.includes('recursivConfiguredButBroken'), 'Health API exposes launch readiness and fails broken persistent storage or configured Recursiv auth.');
   assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('verifyRecursivProjectAuth') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage and Recursiv project access are launch-ready.');
