@@ -1694,6 +1694,12 @@ function getQuestions(mode: ModeKey) {
   return stableQuestionOrder(mode, rankedWorldPuzzles, rankedWorldPuzzles.slice(0, 8), OFFICIAL_QUESTION_COUNT).map(withSixOptions);
 }
 
+function previewQuestions(mode: ModeKey) {
+  if (mode === 'agi') return agiPuzzles.slice(0, OFFICIAL_QUESTION_COUNT).map(withSixOptions);
+  if (mode === 'daily') return [withSixOptions(dailyPuzzles[0])];
+  return rankedWorldPuzzles.slice(0, OFFICIAL_QUESTION_COUNT).map(withSixOptions);
+}
+
 function percentileFromScore(correct: number, total: number) {
   if (total <= 1) return correct ? 92 : 41;
   const ratio = correct / total;
@@ -3395,16 +3401,16 @@ function Runner({
   onServerAttemptLocked: (record: OfficialRankRecord) => void;
 }) {
   const copy = (text: string) => translate(locale, text);
-  const [started, setStarted] = React.useState(() => isPaid || playsRemaining(readPlayUsage()) > 0);
+  const [started, setStarted] = React.useState(true);
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
   const [feedback, setFeedback] = React.useState<AnswerFeedback | null>(null);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
-  const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => readPlayUsage());
-  const [timerStartedAt, setTimerStartedAt] = React.useState(() => Date.now());
+  const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => blankPlayUsage());
+  const [timerStartedAt, setTimerStartedAt] = React.useState(0);
   const [elapsedMs, setElapsedMs] = React.useState(0);
   const [completedElapsedMs, setCompletedElapsedMs] = React.useState<number | null>(null);
-  const questions = React.useMemo(() => getQuestions(mode), [mode]);
+  const [questions, setQuestions] = React.useState<Puzzle[]>(() => previewQuestions(mode));
   const complete = started && step >= questions.length;
   const current = complete ? questions[questions.length - 1] : questions[step];
   const remainingToday = playsRemaining(playUsage);
@@ -3421,6 +3427,7 @@ function Runner({
     setStarted(isPaid || playsRemaining(usage) > 0);
   }, [isPaid, onUsageChange]);
   React.useEffect(() => {
+    setQuestions(getQuestions(mode));
     const usage = readPlayUsage();
     setPlayUsage(usage);
     onUsageChange(usage);
@@ -4686,6 +4693,15 @@ export default function Home({
   const activeGroupRecords = groupCode ? displayBoards.groupAllTime.filter((entry) => !entry.playerId.startsWith('agent-')).length : 0;
   const activeGroupScoreLabel = activeGroupRealScores === 1 ? '1 real score today' : `${activeGroupRealScores} real scores today`;
   const activeGroupRecordLabel = activeGroupRecords === 1 ? '1 room record' : `${activeGroupRecords} room records`;
+  const topRoomRecord = groupCode ? displayBoards.groupAllTime.find((entry) => !entry.playerId.startsWith('agent-')) || null : null;
+  const friendRoomEmptyDetail = groupCode
+    ? topRoomRecord
+      ? `No one has locked today yet. The all-time room record is still below: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}.`
+      : 'Private rooms start empty. Send the link; only real players who open it and finish today appear here.'
+    : 'Create a room link for the group chat. The room board appears as soon as invited players finish today.';
+  const roomRecordDescription = topRoomRecord
+    ? `Ongoing room highscore: ${topRoomRecord.username ? `@${topRoomRecord.username}` : topRoomRecord.displayName} at ${topRoomRecord.score}. The best official score for each player stays here across days while today still resets.`
+    : 'The best official room score for each player stays here across days, so the invite link keeps its history while today still resets.';
 
   return (
     <main lang={locale} data-locale={locale} onPointerDownCapture={handleInteractionPointerDown}>
@@ -4854,7 +4870,7 @@ export default function Home({
             description={groupCode ? `${copy('This is the board that matters after a run: one invite link, one official attempt each, and the room ranked by today\'s score.')} ${copy('Only real people who open this link appear here.')}` : copy('Take the test, create one link, send it to a group chat, and watch today\'s official scores sort themselves here.')}
             entries={displayBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
-            emptyDetail={groupCode ? 'Private rooms start empty. Send the link; only real players who open it and finish today appear here.' : 'Create a room link for the group chat. The room board appears as soon as invited players finish today.'}
+            emptyDetail={friendRoomEmptyDetail}
             cta={copy(groupCode ? inviteState : 'Create & copy link')}
             onCta={groupCode ? copyInvite : createGroup}
             variant="primary"
@@ -4865,7 +4881,7 @@ export default function Home({
               locale={locale}
               kicker={copy('Room records')}
               title={copy('All-time high scores for this room.')}
-              description={copy('The best official room score for each player stays here across days, so the invite link keeps its history while today still resets.')}
+              description={roomRecordDescription}
               entries={displayBoards.groupAllTime}
               empty={copy('No room records yet.')}
               emptyDetail="After anyone in this room completes an official daily run, their best room score stays here."
@@ -6452,8 +6468,8 @@ export default function Home({
           width: 100%;
           min-width: 0;
           min-height: 64px;
-          padding: 5px;
-          gap: 5px;
+          padding: 4px;
+          gap: 4px;
           border: 1px solid rgba(255,255,255,.09);
           border-radius: 5px;
           color: #5c6166;
@@ -8022,9 +8038,10 @@ export default function Home({
             letter-spacing: .12em;
           }
           .command-toggle {
-            min-height: 42px;
-            min-width: 42px;
-            padding: 0 10px;
+            min-height: 48px;
+            width: 48px;
+            min-width: 48px;
+            padding: 0;
           }
           .command-toggle-label {
             display: none;
