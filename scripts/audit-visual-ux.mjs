@@ -95,6 +95,27 @@ function lockedDailyStorageScript({ loggedIn = false } = {}) {
   `;
 }
 
+function groupSidebarStorageScript() {
+  const activeCode = 'room-audit-07';
+  return `
+    (() => {
+      const now = Date.now();
+      const groups = Array.from({ length: 30 }, (_, index) => {
+        const n = String(index + 1).padStart(2, '0');
+        return {
+          code: 'room-audit-' + n,
+          name: 'Audit Circle ' + n,
+          createdAt: now - ((index + 2) * 86400000),
+          lastActiveAt: now - ((index + 2) * 60000)
+        };
+      });
+      window.localStorage.setItem('world-iq-groups', JSON.stringify(groups));
+      window.localStorage.setItem('world-iq-group-code', ${JSON.stringify(activeCode)});
+      window.localStorage.setItem('world-iq-group-name', 'Audit Circle 07');
+    })();
+  `;
+}
+
 function pass(message, details = null) {
   results.push({ ok: true, message, details });
   console.log(`PASS ${message}${details ? ` ${JSON.stringify(details)}` : ''}`);
@@ -1175,6 +1196,220 @@ function assertInviteState(state, viewportId, mode) {
   }
 }
 
+async function groupSidebarState(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const rect = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height) };
+        };
+        const list = document.querySelector('.command-group-list');
+        const rows = [...document.querySelectorAll('.command-group-item')].map((item) => {
+          const buttons = [...item.querySelectorAll('.command-group-actions button')].map((button) => ({
+            text: clean(button.textContent),
+            rect: rect(button),
+          }));
+          return {
+            text: clean(item.textContent).slice(0, 700),
+            active: item.classList.contains('active'),
+            rect: rect(item),
+            codeText: clean(item.querySelector('code')?.textContent),
+            buttonTexts: buttons.map((button) => button.text),
+            buttonRects: buttons.map((button) => button.rect),
+          };
+        });
+        return JSON.stringify({
+          href: location.href,
+          activeCode: clean(window.localStorage.getItem('world-iq-group-code')),
+          activeName: clean(window.localStorage.getItem('world-iq-group-name')),
+          copiedText: clean(window.localStorage.getItem('iqwars-audit-copied-text') || window.__iqwarsCopiedText),
+          panelVisible: Boolean(document.querySelector('.command-panel')),
+          panelText: clean(document.querySelector('.command-panel')?.textContent).slice(0, 2200),
+          roomCardText: clean(document.querySelector('.command-room-card')?.textContent).slice(0, 900),
+          listRect: rect(list),
+          listScrollHeight: list ? Math.round(list.scrollHeight) : 0,
+          listClientHeight: list ? Math.round(list.clientHeight) : 0,
+          listScrollTop: list ? Math.round(list.scrollTop) : 0,
+          rows,
+        });
+      })()
+    `,
+    returnByValue: true,
+  });
+  return JSON.parse(result.result.value);
+}
+
+async function clickListedGroupCopy(send, code) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const wanted = ${JSON.stringify(code)};
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const row = [...document.querySelectorAll('.command-group-item')].find((item) => clean(item.querySelector('code')?.textContent).includes('/g/' + wanted));
+        if (!row) return JSON.stringify({ clicked: false, reason: 'missing row', wanted });
+        const button = [...row.querySelectorAll('.command-group-actions button')].find((candidate) => /copy link|copied/i.test(clean(candidate.textContent)));
+        if (!button) return JSON.stringify({ clicked: false, reason: 'missing copy button', row: clean(row.textContent).slice(0, 400) });
+        const beforeText = clean(button.textContent);
+        button.click();
+        return JSON.stringify({ clicked: true, beforeText, wanted });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(500);
+  return JSON.parse(result.result.value);
+}
+
+async function clickListedGroupOpen(send, code) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const wanted = ${JSON.stringify(code)};
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const row = [...document.querySelectorAll('.command-group-item')].find((item) => clean(item.querySelector('code')?.textContent).includes('/g/' + wanted));
+        if (!row) return JSON.stringify({ clicked: false, reason: 'missing row', wanted });
+        const button = [...row.querySelectorAll('.command-group-actions button')].find((candidate) => /open board|view board/i.test(clean(candidate.textContent)));
+        if (!button) return JSON.stringify({ clicked: false, reason: 'missing open button', row: clean(row.textContent).slice(0, 400) });
+        const beforeText = clean(button.textContent);
+        button.click();
+        return JSON.stringify({ clicked: true, beforeText, wanted });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(900);
+  return JSON.parse(result.result.value);
+}
+
+function assertGroupSidebarState(state, viewportId) {
+  const prefix = `${viewportId} group sidebar`;
+  const rowCount = Array.isArray(state.rows) ? state.rows.length : 0;
+  const activeRows = (state.rows || []).filter((row) => row.active);
+  const touchTargetRects = (state.rows || []).slice(0, 3).flatMap((row) => row.buttonRects || []).filter(Boolean);
+  const smallestTouchTarget = touchTargetRects.reduce((min, r) => Math.min(min, r.width, r.height), Infinity);
+  const expectedActiveUrl = `${origin.replace(/\/$/, '')}/g/room-audit-07`;
+
+  if (rowCount === 24) pass(`${prefix} caps and renders the saved room list`, { rowCount });
+  else fail(`${prefix} caps and renders the saved room list`, { rowCount, panelText: state.panelText });
+
+  if (/Friend groups\s*.\s*24\s*listed/i.test(state.panelText)) pass(`${prefix} shows saved group count`);
+  else fail(`${prefix} shows saved group count`, { panelText: state.panelText.slice(0, 700) });
+
+  if (activeRows.length === 1 && activeRows[0].codeText.includes('/g/room-audit-07') && /Active private group|Audit Circle 07|Real players only|No seeded agents/i.test(`${state.roomCardText} ${activeRows[0].text}`)) {
+    pass(`${prefix} marks one active private room with real-player metadata`, { active: activeRows[0].codeText });
+  } else {
+    fail(`${prefix} marks one active private room with real-player metadata`, { activeRows, roomCardText: state.roomCardText });
+  }
+
+  if ((state.rows || []).every((row) => /Room #\\d{4} . Key [A-Z0-9-]+|Invite-only|Real players only|No agents/i.test(row.text) && row.codeText.includes('/g/room-audit-'))) {
+    pass(`${prefix} gives every visible room identity, metadata, and invite URL`);
+  } else {
+    fail(`${prefix} gives every visible room identity, metadata, and invite URL`, { rows: (state.rows || []).slice(0, 5) });
+  }
+
+  if ((state.rows || []).every((row) => row.buttonTexts.some((text) => /Open board|View board/i.test(text)) && row.buttonTexts.some((text) => /Copy link|Copied/i.test(text)))) {
+    pass(`${prefix} exposes open-board and copy-link actions on every room`);
+  } else {
+    fail(`${prefix} exposes open-board and copy-link actions on every room`, { rows: (state.rows || []).slice(0, 5) });
+  }
+
+  if (Number.isFinite(smallestTouchTarget) && smallestTouchTarget >= 40) pass(`${prefix} listed room action targets are touchable`, { smallestTouchTarget });
+  else fail(`${prefix} listed room action targets are touchable`, { smallestTouchTarget, rects: touchTargetRects });
+
+  if (viewportId === 'mobile') {
+    if (state.listScrollHeight > state.listClientHeight + 120 && state.listClientHeight >= 120) pass(`${prefix} many saved rooms stay in a scrollable list`, { scrollHeight: state.listScrollHeight, clientHeight: state.listClientHeight });
+    else fail(`${prefix} many saved rooms stay in a scrollable list`, { scrollHeight: state.listScrollHeight, clientHeight: state.listClientHeight, listRect: state.listRect });
+  }
+
+  if (state.roomCardText.includes(expectedActiveUrl.replace(/^https?:\/\//, '')) || state.panelText.includes('/g/room-audit-07')) pass(`${prefix} active card exposes the durable invite URL`, { expectedActiveUrl });
+  else fail(`${prefix} active card exposes the durable invite URL`, { expectedActiveUrl, roomCardText: state.roomCardText });
+}
+
+async function auditGroupCommandCenter(viewport) {
+  const base = origin.replace(/\/$/, '');
+  const label = 'group-command';
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${groupSidebarStorageScript()}\n${inviteClipboardScript({ mode: 'success' })}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+    await client.send('Page.navigate', { url: `${base}/` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+
+    const pageState = await evaluate(client.send, label, viewport.id);
+    assertCommon(pageState, label, viewport.id);
+    const opened = await openCommandCenter(client.send);
+    if (opened.opened) pass(`${viewport.id} ${label} command center opens with seeded groups`, opened);
+    else fail(`${viewport.id} ${label} command center opens with seeded groups`, opened);
+
+    const sidebar = await groupSidebarState(client.send);
+    assertGroupSidebarState(sidebar, viewport.id);
+
+    const screenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    const fileName = `${label}-${viewport.id}.png`;
+    await writeFile(path.join(outDir, fileName), Buffer.from(screenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} screenshot captured`, { file: path.join(outDir, fileName) });
+
+    const copied = await clickListedGroupCopy(client.send, 'room-audit-06');
+    if (copied.clicked) pass(`${viewport.id} ${label} listed room copy action is clickable`, copied);
+    else fail(`${viewport.id} ${label} listed room copy action is clickable`, copied);
+    const copiedState = await groupSidebarState(client.send);
+    const expectedCopiedUrl = `${base}/g/room-audit-06`;
+    const copiedRow = (copiedState.rows || []).find((row) => row.codeText.includes('/g/room-audit-06'));
+    if (copiedState.copiedText === expectedCopiedUrl && copiedRow?.buttonTexts?.some((text) => /Copied/i.test(text))) {
+      pass(`${viewport.id} ${label} listed room copy action writes URL and shows feedback`, { copiedText: copiedState.copiedText });
+    } else {
+      fail(`${viewport.id} ${label} listed room copy action writes URL and shows feedback`, { expectedCopiedUrl, copiedText: copiedState.copiedText, copiedRow });
+    }
+
+    const openedGroup = await clickListedGroupOpen(client.send, 'room-audit-06');
+    if (openedGroup.clicked) pass(`${viewport.id} ${label} listed room open action is clickable`, openedGroup);
+    else fail(`${viewport.id} ${label} listed room open action is clickable`, openedGroup);
+    const openedState = await groupSidebarState(client.send);
+    if (/\/rankings\?g=room-audit-06$/.test(new URL(openedState.href).pathname + new URL(openedState.href).search) && openedState.activeCode === 'room-audit-06' && !openedState.panelVisible) {
+      pass(`${viewport.id} ${label} listed room opens durable rankings URL and closes sidebar`, { href: openedState.href, activeCode: openedState.activeCode });
+    } else {
+      fail(`${viewport.id} ${label} listed room opens durable rankings URL and closes sidebar`, { href: openedState.href, activeCode: openedState.activeCode, panelVisible: openedState.panelVisible });
+    }
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
 async function auditCreateCopyRoomLink(viewport, { mode = 'success' } = {}) {
   const base = origin.replace(/\/$/, '');
   const label = `invite-${mode}`;
@@ -1245,6 +1480,7 @@ for (const viewport of viewports) {
   await auditLockedDailyState(viewport, { loggedIn: true });
   await auditCreateCopyRoomLink(viewport, { mode: 'success' });
   await auditCreateCopyRoomLink(viewport, { mode: 'denied' });
+  await auditGroupCommandCenter(viewport);
   for (const route of routes) {
     await auditRoute(route, viewport);
   }

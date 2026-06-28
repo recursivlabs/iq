@@ -6041,7 +6041,8 @@ export default function Home({
           min-height: 0;
           overflow-y: auto;
           display: grid;
-          align-content: start;
+          grid-template-rows: auto auto minmax(340px, 1fr);
+          align-content: stretch;
           gap: 18px;
           padding: 18px;
         }
@@ -6132,9 +6133,9 @@ export default function Home({
           letter-spacing: 0;
         }
         .command-groups {
-          min-height: 0;
+          min-height: min(560px, 64vh);
           display: grid;
-          grid-template-rows: auto auto minmax(0, 1fr);
+          grid-template-rows: auto auto minmax(180px, 1fr);
           gap: 14px;
         }
         .command-section-head {
@@ -6214,7 +6215,8 @@ export default function Home({
           text-align: center;
         }
         .command-group-list {
-          min-height: 0;
+          min-height: 180px;
+          max-height: 380px;
           display: grid;
           align-content: start;
           gap: 10px;
@@ -8329,8 +8331,24 @@ export default function Home({
             min-height: 54px;
           }
           .command-scroll {
+            grid-template-rows: auto auto minmax(360px, 1fr);
             padding: 14px;
             gap: 15px;
+          }
+          .command-groups {
+            min-height: min(540px, 70vh);
+          }
+          .command-room-card {
+            gap: 10px;
+            padding: 14px;
+          }
+          .command-room-card p {
+            font-size: 10px;
+            line-height: 1.35;
+          }
+          .command-group-list {
+            min-height: 210px;
+            max-height: 420px;
           }
           .command-group-item {
             min-height: 156px;

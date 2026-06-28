@@ -302,7 +302,8 @@ nav .nav-cta,
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  align-content: start;
+  grid-template-rows: auto auto minmax(340px, 1fr);
+  align-content: stretch;
   gap: 18px;
   padding: 18px;
 }
@@ -420,9 +421,9 @@ nav .command-grid button::after {
 }
 
 .command-groups {
-  min-height: 0;
+  min-height: min(560px, 64vh);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(180px, 1fr);
   gap: 14px;
 }
 
@@ -511,7 +512,8 @@ nav .command-grid button::after {
 }
 
 .command-group-list {
-  min-height: 0;
+  min-height: 180px;
+  max-height: 380px;
   display: grid;
   align-content: start;
   gap: 10px;
@@ -1410,8 +1412,28 @@ nav .command-grid button::after {
   }
 
   .command-scroll {
+    grid-template-rows: auto auto minmax(360px, 1fr);
     gap: 14px;
     padding: 14px;
+  }
+
+  .command-groups {
+    min-height: min(540px, 70vh);
+  }
+
+  .command-room-card {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .command-room-card p {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .command-group-list {
+    min-height: 210px;
+    max-height: 420px;
   }
 
   .command-group-item {
