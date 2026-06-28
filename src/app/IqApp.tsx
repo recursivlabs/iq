@@ -2848,19 +2848,29 @@ type BlogArticle = {
 
 const RESEARCH_SOURCES = [
   {
-    title: 'Raven-style matrices measure abstract and fluid reasoning.',
-    body: 'Raven Progressive Matrices are widely used as nonverbal abstract-reasoning tasks. IQ WARS borrows the visual-reasoning format, not the clinical scoring claims.',
-    url: 'https://en.wikipedia.org/wiki/Raven%27s_Progressive_Matrices',
+    title: 'Matrix reasoning has a cognitive model, not just vibes.',
+    body: 'Carpenter, Just, and Shell modeled Raven-style item solving as rule induction, goal management, and visual-relation integration. IQ WARS uses that tradition for daily competitive reasoning, not clinical diagnosis.',
+    url: 'https://doi.org/10.1037/0033-295X.97.3.404',
   },
   {
-    title: 'Working-memory training has mixed evidence for broad IQ gains.',
-    body: 'Early n-back studies reported fluid-intelligence transfer, while later controlled studies and meta-analyses found weaker or less durable far-transfer effects.',
-    url: 'https://en.wikipedia.org/wiki/Working_memory_training',
+    title: 'Early working-memory training found promising transfer.',
+    body: 'Jaeggi and colleagues reported fluid-intelligence gains after adaptive working-memory training. That result is part of the reason brain-training claims became popular.',
+    url: 'https://doi.org/10.1073/pnas.0801268105',
   },
   {
-    title: 'Abstract visual reasoning is also an AI benchmark.',
-    body: 'Recent RPM-style research treats visual analogy tasks as a way to test whether models generalize rules or merely recognize familiar patterns.',
-    url: 'https://arxiv.org/abs/2201.12382',
+    title: 'Meta-analysis makes the launch claim narrower.',
+    body: 'Melby-Lervag and Hulme found working-memory training reliably improves practiced tasks, but broad, durable transfer to intelligence measures is much less certain.',
+    url: 'https://doi.org/10.1037/a0028228',
+  },
+  {
+    title: 'Commercial brain-training claims need high evidence.',
+    body: 'Simons and colleagues reviewed the field and found strong evidence for trained-task improvement, weaker evidence for near transfer, and little evidence for everyday far transfer.',
+    url: 'https://doi.org/10.1177/1529100616661983',
+  },
+  {
+    title: 'Raven-style tasks are now also AI reasoning benchmarks.',
+    body: 'Modern RPM-style datasets and reviews use visual analogy problems to test whether machine systems learn relations, rules, and abstractions rather than memorized templates.',
+    url: 'https://arxiv.org/abs/2302.04238',
   },
 ];
 
@@ -3032,7 +3042,7 @@ function ResearchView() {
         <div>
           <p className="kicker">Research</p>
           <h2>Daily abstract reasoning practice, measured honestly.</h2>
-          <p>IQ WARS is built around matrix-style visual reasoning because it is language-light, globally playable, and closely related to fluid-reasoning tasks. The research case is promising for practice and skill acquisition, but we do not claim a browser game clinically raises IQ.</p>
+          <p>IQ WARS is built around matrix-style visual reasoning because it is language-light, globally playable, and closely related to fluid-reasoning tasks. The honest claim is narrower than brain-training marketing: daily play can build pattern fluency, rule search, and competitive evidence over time, but we do not claim a browser game clinically raises innate IQ.</p>
         </div>
       </div>
       <div className="feature-grid">
@@ -3046,7 +3056,8 @@ function ResearchView() {
       </div>
       <div className="monetization">
         <div><strong>What daily play can improve</strong><p>Pattern fluency, rule search, visual checking, attention under time pressure, and familiarity with common abstract-reasoning transformations.</p></div>
-        <div><strong>What remains unproven</strong><p>Broad, durable increases in general intelligence from generic brain games are disputed. IQ WARS reports game performance and rolling competitive signals.</p></div>
+        <div><strong>What IQ WARS measures</strong><p>One official daily run, timing, accuracy, proof-checked answers, friend-room rankings, geography boards, and rolling performance confidence as more answers accumulate.</p></div>
+        <div><strong>What remains unproven</strong><p>Broad, durable increases in general intelligence from generic brain games are disputed. IQ WARS reports game performance and rolling competitive signals, not clinical IQ certification.</p></div>
       </div>
       <AdSenseSlot />
     </section>

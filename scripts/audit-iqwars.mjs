@@ -460,6 +460,15 @@ async function sourceAudit() {
   const footer = functionText(findFunction(ts, tree, 'SiteFooter'), app);
   assert(!footer.includes("onView('agents')"), 'Public footer keeps secondary agent tools out of the main logged-out loop.');
   assert(app.includes("view === 'agents' && !recursivAccount") && app.includes('Connect account to use agent tools.'), 'Agent-ready surface is gated behind account connection for logged-out visitors.');
+  const researchSection = app.slice(app.indexOf('const RESEARCH_SOURCES'), app.indexOf('const BLOG_ARTICLES'));
+  const blogSection = app.slice(app.indexOf('const BLOG_ARTICLES'), app.indexOf('function activeBlogSlugFromPath'));
+  const researchView = app.slice(app.indexOf('function ResearchView'), app.indexOf('function AgentsView'));
+  const blogSlugs = [...blogSection.matchAll(/slug: '([^']+)'/g)].map((match) => match[1]);
+  assert(researchSection.includes('https://doi.org/10.1037/0033-295X.97.3.404') && researchSection.includes('https://doi.org/10.1073/pnas.0801268105') && researchSection.includes('https://doi.org/10.1037/a0028228') && researchSection.includes('https://doi.org/10.1177/1529100616661983') && researchSection.includes('https://arxiv.org/abs/2302.04238'), 'Research page cites primary/review sources for matrix reasoning, cognitive training, and AI reasoning benchmarks.');
+  assert(researchView.includes('we do not claim a browser game clinically raises innate IQ') && researchView.includes('not clinical IQ certification') && researchView.includes('What remains unproven'), 'Research page keeps IQ-improvement claims conservative and clearly labels what remains unproven.');
+  assert(blogSlugs.length >= 10 && new Set(blogSlugs).size === blogSlugs.length, 'Blog inventory contains at least 10 unique SEO article routes.');
+  assert(['best-online-iq-test', 'can-iq-puzzles-make-you-smarter', 'raven-matrices-and-fluid-intelligence', 'iq-leaderboard-countries-cities', 'ai-vs-human-iq-test', 'best-iq-test-for-friend-groups'].every((slug) => blogSlugs.includes(slug)), 'Blog inventory covers viral IQ, research, geography, AI, daily habit, and friend-group topics.');
+  assert(blogSection.includes('keywords:') && blogSection.includes('regionIntent:') && blogSection.includes('IQ WARS treats daily scores as competitive reasoning signals, not clinical proof of innate ability.'), 'Blog articles include SEO keywords, geo/search intent, and conservative intelligence-claim caveats.');
 
   assert(groupPage.includes('initialView="rankings"') && groupPage.includes('initialGroupCode={params.group}'), 'Friend group route opens directly into the room rankings and injects the room code.');
   assert(rankingsPage.includes('initialView="rankings"') && rankingsPage.includes("searchParams?.g"), 'Rankings route opens directly into a friend room board from ?g=.');
@@ -1146,10 +1155,11 @@ async function liveAudit() {
     ['/', ['Lock answer'], 'Live home route renders the playable test above the fold.'],
     ['/rankings', ['Live world board', 'Global board'], 'Live rankings route renders the global leaderboard view.'],
     ['/about', ['A daily global intelligence ranking', 'Country rankings'], 'Live about route renders the academic/geography positioning.'],
-    ['/research', ['Daily abstract reasoning practice', 'Read source'], 'Live research route renders research sources.'],
+    ['/research', ['Daily abstract reasoning practice', 'clinically raises innate IQ', 'not clinical IQ certification'], 'Live research route renders source-backed conservative research positioning.'],
     ['/agents', ['Connect account to use agent tools.', 'Public visitors should start with the daily test'], 'Live agents route is gated for logged-out visitors.'],
     ['/blog', ['Viral IQ research', 'Search-optimized explainers'], 'Live blog route renders article index content.'],
     ['/blog/best-online-iq-test', ['Best Online IQ Test', 'Why IQ WARS is different'], 'Live blog article route renders a routed article.'],
+    ['/blog/can-iq-puzzles-make-you-smarter', ['Can IQ Puzzles Make You Smarter?', 'competitive reasoning signals'], 'Live blog article route renders a research caveat article.'],
     ['/privacy', ['IQ WARS Privacy Policy', 'Recursiv Labs'], 'Live privacy route renders operator and policy text.'],
     ['/terms', ['IQ WARS Terms of Service', 'Fair play'], 'Live terms route renders fair-play terms.'],
     ['/profile', ['Connect account to manage your profile.'], 'Live logged-out profile route renders the account gate.'],
