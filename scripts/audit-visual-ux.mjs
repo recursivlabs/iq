@@ -51,6 +51,9 @@ function clearAuditPlayerStorageScript() {
         'world-iq-player-id',
         'world-iq-player-name',
         'world-iq-player-username',
+        'world-iq-group-code',
+        'world-iq-group-name',
+        'world-iq-groups',
         'world-iq-leaderboard',
         'world-iq-recursiv-account'
       ].forEach((key) => window.localStorage.removeItem(key));

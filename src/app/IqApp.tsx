@@ -3480,13 +3480,13 @@ function Runner({
   const [questions, setQuestions] = React.useState<Puzzle[]>(() => previewQuestions(mode));
   const complete = started && step >= questions.length;
   const current = complete ? questions[questions.length - 1] : questions[step];
-  const remainingToday = playsRemaining(playUsage);
+  const lockedOfficialRank = !isPaid && !started ? readOfficialRank() : null;
+  const remainingToday = lockedOfficialRank ? 0 : Math.max(0, DAILY_PLAY_LIMIT - (playUsage.day === localDayKey() ? playUsage.count : 0));
   const visibleAnswers = feedback ? [...answers, feedback] : answers;
   const liveScore = liveIqScoreProjection(visibleAnswers, questions.length, elapsedMs);
   const liveDelta = liveScore - 100;
   const answeredCount = visibleAnswers.length;
   const isLastQuestion = step + 1 >= questions.length;
-  const lockedOfficialRank = !isPaid && !started ? readOfficialRank() : null;
 
   React.useEffect(() => {
     const usage = readPlayUsage();
