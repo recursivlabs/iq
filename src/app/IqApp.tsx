@@ -4708,18 +4708,24 @@ export default function Home({
     }
   }
 
-  function logoutAccount() {
-    clearRecursivAccount();
-    setRecursivAccount(null);
-    setPaidAccess(false);
-    setCheckoutState('idle');
-    setCheckoutError('');
-    setAuthState('idle');
-    setAuthCode('');
-    setAuthMessage('Logged out.');
-    setUnlockOpen(false);
-    setNavOpen(false);
-    if (view === 'profile' || view === 'settings') navigateView('test');
+  async function logoutAccount() {
+    try {
+      await fetch('/api/recursiv-auth/logout', { method: 'POST' });
+    } catch {
+      // Local logout should still complete if the network is unavailable.
+    } finally {
+      clearRecursivAccount();
+      setRecursivAccount(null);
+      setPaidAccess(false);
+      setCheckoutState('idle');
+      setCheckoutError('');
+      setAuthState('idle');
+      setAuthCode('');
+      setAuthMessage('Logged out.');
+      setUnlockOpen(false);
+      setNavOpen(false);
+      if (view === 'profile' || view === 'settings') navigateView('test');
+    }
   }
 
   function updateSetting<K extends keyof PlayerSettings>(key: K, value: PlayerSettings[K]) {

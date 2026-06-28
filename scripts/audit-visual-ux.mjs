@@ -11,6 +11,7 @@ const debugBase = `http://127.0.0.1:${chromePort}`;
 const userDataDir = path.join(os.tmpdir(), `iqwars-chrome-${chromePort}`);
 const waitMs = Number(valueAfter('--wait-ms') || 2400);
 const homeQuestionChecks = Math.max(1, Number(valueAfter('--home-question-checks') || 3));
+const playerCookieName = 'iqwars_player_api_key';
 
 const viewports = [
   { id: 'mobile', width: 393, height: 852, mobile: true, deviceScaleFactor: 2 },
@@ -162,6 +163,26 @@ function loggedInSettingsStorageScript() {
         emailUpdates: false,
         shareScoreByDefault: true
       }));
+    })();
+  `;
+}
+
+function loggedInLogoutStorageScript() {
+  return `
+    (() => {
+      window.localStorage.setItem('world-iq-player-id', 'logout-flow-audit');
+      window.localStorage.setItem('world-iq-player-name', 'Logout Flow Audit');
+      window.localStorage.setItem('world-iq-player-username', 'logout_flow');
+      window.localStorage.setItem('world-iq-recursiv-account', JSON.stringify({
+        email: 'logout-flow@iqwars.app',
+        name: 'Logout Flow',
+        updatedAt: Date.now()
+      }));
+      window.localStorage.setItem('world-iq-official-history', JSON.stringify([
+        { day: '2026-06-25', score: 121, rank: '#130,000', percentile: 88, correct: 8, total: 12, beatAi: 1, elapsedMs: 420000, speedBonus: 0, timestamp: Date.now() - 172800000 },
+        { day: '2026-06-26', score: 127, rank: '#90,000', percentile: 92, correct: 9, total: 12, beatAi: 2, elapsedMs: 390000, speedBonus: 1, timestamp: Date.now() - 86400000 },
+        { day: '2026-06-27', score: 132, rank: '#55,000', percentile: 95, correct: 10, total: 12, beatAi: 2, elapsedMs: 360000, speedBonus: 2, timestamp: Date.now() }
+      ]));
     })();
   `;
 }
@@ -447,7 +468,7 @@ async function waitForReady(send, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const ready = await send('Runtime.evaluate', {
-      expression: "document.readyState === 'complete' && Boolean(document.querySelector('.runner-panel, .leaderboard, .account-gate'))",
+      expression: "document.readyState === 'complete' && Boolean(document.querySelector('.runner-panel, .leaderboard, .account-gate, .profile-page, .settings-panel'))",
       returnByValue: true,
     }).catch(() => null);
     if (ready?.result?.value) return true;
@@ -870,6 +891,66 @@ async function closeCommandCenter(send) {
     returnByValue: true,
   }).catch(() => null);
   await sleep(250);
+}
+
+async function setAuditPlayerCookie(send, base) {
+  const result = await send('Network.setCookie', {
+    url: base,
+    name: playerCookieName,
+    value: 'audit-player-cookie',
+    path: '/',
+    httpOnly: true,
+    secure: /^https:/i.test(base),
+    sameSite: 'Lax',
+  });
+  return Boolean(result.success);
+}
+
+async function playerCookiePresent(send, base) {
+  const result = await send('Network.getCookies', { urls: [base] });
+  return (result.cookies || []).some((cookie) => cookie.name === playerCookieName && cookie.value);
+}
+
+async function clickLogout(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const button = document.querySelector('.logout-action') || [...document.querySelectorAll('button')].find((candidate) => /^logout$/i.test(clean(candidate.textContent)));
+        if (!button) return JSON.stringify({ clicked: false, reason: 'missing logout button' });
+        const disabled = button.disabled;
+        if (!disabled) button.click();
+        return JSON.stringify({ clicked: !disabled, disabled, text: clean(button.textContent) });
+      })()
+    `,
+    returnByValue: true,
+  });
+  await sleep(900);
+  return JSON.parse(result.result.value);
+}
+
+async function loggedInAccountState(send) {
+  const result = await send('Runtime.evaluate', {
+    expression: `
+      (() => {
+        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+        const command = document.querySelector('.command-panel');
+        const menu = document.querySelector('.command-toggle');
+        const localAccount = window.localStorage.getItem('world-iq-recursiv-account');
+        return JSON.stringify({
+          href: location.href,
+          localAccount,
+          commandOpen: Boolean(command),
+          commandText: clean(command?.textContent).slice(0, 1600),
+          commandToggleClass: String(menu?.className || ''),
+          commandAriaLabel: menu?.getAttribute('aria-label') || '',
+          bodyText: clean(document.body.textContent).slice(0, 2200),
+        });
+      })()
+    `,
+    returnByValue: true,
+  });
+  return JSON.parse(result.result.value);
 }
 
 async function pressKey(send, key, code, windowsVirtualKeyCode, modifiers = 0) {
@@ -1644,6 +1725,128 @@ async function auditSettingsMatrix(viewport) {
   }
 }
 
+async function auditLoggedInLogout(viewport) {
+  const base = origin.replace(/\/$/, '');
+  const label = 'logged-in-logout';
+  const target = await openTarget('about:blank');
+  const client = createClient(target.webSocketDebuggerUrl);
+  await client.ready;
+  try {
+    await client.send('Page.enable');
+    await client.send('Runtime.enable');
+    await client.send('Network.enable');
+    await client.send('Network.setCacheDisabled', { cacheDisabled: true });
+    const seed = await client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `${clearAuditPlayerStorageScript()}\n${loggedInLogoutStorageScript()}`,
+    });
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+    });
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: viewport.mobile });
+
+    const cookieSet = await setAuditPlayerCookie(client.send, base);
+    if (cookieSet) pass(`${viewport.id} ${label} seeds a httpOnly player cookie`);
+    else fail(`${viewport.id} ${label} seeds a httpOnly player cookie`);
+
+    await client.send('Page.navigate', { url: `${base}/profile` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    if (seed?.identifier) {
+      await client.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: seed.identifier }).catch(() => null);
+    }
+
+    const profileState = await evaluate(client.send, label, viewport.id);
+    assertCommon(profileState, label, viewport.id);
+    if (/IQ WARS profile|Profile controls|Profile link|Save profile|Copy profile|Developing IQ WARS profile/i.test(profileState.bodyText) && !/Connect account to manage your profile/i.test(profileState.bodyText)) {
+      pass(`${viewport.id} ${label} opens profile as a logged-in player`, { href: profileState.href });
+    } else {
+      fail(`${viewport.id} ${label} opens profile as a logged-in player`, { href: profileState.href, text: profileState.bodyText.slice(0, 900) });
+    }
+
+    const preCookiePresent = await playerCookiePresent(client.send, base);
+    if (preCookiePresent) pass(`${viewport.id} ${label} confirms auth cookie exists before logout`);
+    else fail(`${viewport.id} ${label} confirms auth cookie exists before logout`);
+
+    const commandOpened = await openCommandCenter(client.send);
+    if (commandOpened.opened) {
+      const commandState = await evaluate(client.send, label, `${viewport.id}-command-before`);
+      const labels = commandState.commandNavLabels || [];
+      if (/Logged in|Logout Flow|logout-flow@iqwars\.app/i.test(commandState.commandPanelText) && labels.includes('Profile') && labels.includes('Settings') && /Logout/i.test(commandState.commandPanelText)) {
+        pass(`${viewport.id} ${label} command center exposes logged-in identity, profile, settings, and logout`, { labels, text: commandState.commandPanelText.slice(0, 700) });
+      } else {
+        fail(`${viewport.id} ${label} command center exposes logged-in identity, profile, settings, and logout`, { labels, text: commandState.commandPanelText.slice(0, 900) });
+      }
+    } else {
+      fail(`${viewport.id} ${label} command center opens before logout`, commandOpened);
+    }
+
+    const logout = await clickLogout(client.send);
+    if (logout.clicked) pass(`${viewport.id} ${label} logout action is clickable`, logout);
+    else fail(`${viewport.id} ${label} logout action is clickable`, logout);
+
+    const afterLogout = await loggedInAccountState(client.send);
+    if (!afterLogout.localAccount && /logged-out/i.test(afterLogout.commandToggleClass) && /\/$/.test(new URL(afterLogout.href).pathname)) {
+      pass(`${viewport.id} ${label} clears local account state and returns to the test`, { href: afterLogout.href, className: afterLogout.commandToggleClass });
+    } else {
+      fail(`${viewport.id} ${label} clears local account state and returns to the test`, afterLogout);
+    }
+
+    const postCookiePresent = await playerCookiePresent(client.send, base);
+    if (!postCookiePresent) pass(`${viewport.id} ${label} expires httpOnly player cookie`);
+    else fail(`${viewport.id} ${label} expires httpOnly player cookie`);
+
+    const reopened = await openCommandCenter(client.send);
+    if (reopened.opened) {
+      const postCommandState = await evaluate(client.send, label, `${viewport.id}-command-after`);
+      const labels = postCommandState.commandNavLabels || [];
+      if (/Logged out|Guest|Connect account/i.test(postCommandState.commandPanelText) && !labels.includes('Profile') && !labels.includes('Settings') && !/\bLogout\b/i.test(postCommandState.commandPanelText)) {
+        pass(`${viewport.id} ${label} command center immediately switches to logged-out actions`, { labels, text: postCommandState.commandPanelText.slice(0, 700) });
+      } else {
+        fail(`${viewport.id} ${label} command center immediately switches to logged-out actions`, { labels, text: postCommandState.commandPanelText.slice(0, 900) });
+      }
+    } else {
+      fail(`${viewport.id} ${label} command center reopens after logout`, reopened);
+    }
+
+    const screenshot = await client.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    await writeFile(path.join(outDir, `${label}-${viewport.id}.png`), Buffer.from(screenshot.data, 'base64'));
+    pass(`${viewport.id} ${label} logged-out sidebar screenshot captured`, { file: path.join(outDir, `${label}-${viewport.id}.png`) });
+
+    await closeCommandCenter(client.send);
+    await client.send('Page.navigate', { url: `${base}/settings` });
+    await waitForReady(client.send);
+    await sleep(waitMs);
+    const settingsGate = await evaluate(client.send, `${label}-settings-gate`, viewport.id);
+    if (/Connect account to manage settings/i.test(settingsGate.bodyText) && !/Standard controls for a public daily game/i.test(settingsGate.bodyText)) {
+      pass(`${viewport.id} ${label} settings route is gated after logout`, { href: settingsGate.href });
+    } else {
+      fail(`${viewport.id} ${label} settings route is gated after logout`, { href: settingsGate.href, text: settingsGate.bodyText.slice(0, 900) });
+    }
+
+    if (client.events.exceptions.length) fail(`${viewport.id} ${label} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
+    else pass(`${viewport.id} ${label} has no runtime exceptions`);
+    const blockingResponses = client.events.responseErrors.filter((entry) => {
+      const status = entry.response?.status || 0;
+      const url = entry.response?.url || '';
+      return status >= 500 || (status >= 400 && url.includes('/api/'));
+    });
+    if (blockingResponses.length) fail(`${viewport.id} ${label} has no blocking HTTP errors`, blockingResponses.slice(0, 5).map((entry) => ({ status: entry.response?.status, url: entry.response?.url })));
+    else pass(`${viewport.id} ${label} has no blocking HTTP errors`);
+  } finally {
+    client.close();
+    await closeTarget(target);
+  }
+}
+
 async function auditSoundDesign() {
   const base = origin.replace(/\/$/, '');
   const viewport = viewports.find((item) => item.id === 'desktop') || viewports[0];
@@ -2304,6 +2507,7 @@ for (const viewport of viewports) {
   await auditGroupCommandCenter(viewport);
   await auditIqProfileHistory(viewport);
   await auditSettingsMatrix(viewport);
+  await auditLoggedInLogout(viewport);
   for (const route of routes) {
     await auditRoute(route, viewport);
   }
