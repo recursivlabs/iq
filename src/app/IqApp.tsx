@@ -4500,7 +4500,7 @@ export default function Home({
   }
 
   async function submitOfficialResult(record: OfficialRankRecord, targetRoom?: { groupCode: string | null; groupName?: string }): Promise<boolean> {
-    const id = playerId || readPlayerId();
+    const id = readStoredPlayerId() || playerId || readPlayerId();
     const username = claimedUsername || readClaimedUsername();
     const displayName = (username ? `@${username}` : playerName || readPlayerName(id)).trim();
     const submittedGroupCode = targetRoom?.groupCode ?? (groupCode || null);

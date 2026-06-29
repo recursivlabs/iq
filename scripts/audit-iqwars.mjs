@@ -46,6 +46,7 @@ const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
 const authenticatedLaunchAuditPath = path.join(root, 'scripts/run-authenticated-launch-audit.mjs');
+const reminderProofPath = path.join(root, 'scripts/prove-reminder-email.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
 const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
 const deployProofPath = path.join(root, 'scripts/prove-iqwars-deploy.mjs');
@@ -324,6 +325,7 @@ async function sourceAudit() {
   const reminders = source(remindersPath);
   const remindersSend = source(remindersSendPath);
   const remindersLib = source(remindersLibPath);
+  const reminderProof = source(reminderProofPath);
   const access = source(accessPath);
   const billingConfig = source(billingConfigPath);
   const billingConfigLib = source(billingConfigLibPath);
@@ -348,6 +350,7 @@ async function sourceAudit() {
   const deployProof = source(deployProofPath);
   const storageRunbook = source(storageRunbookPath);
   const packageJson = source(packageJsonPath);
+  const packageConfig = JSON.parse(packageJson);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
 
   assert(existsSync(appPath), 'IqApp source exists.');
@@ -521,6 +524,7 @@ async function sourceAudit() {
   assert(app.includes('for (const candidateId of playerIdCandidates(playerId || readPlayerId()))') && app.includes('readServerOfficialAttempt(candidateId)') && app.includes('syncLocalOfficialLock(serverAttempt)') && app.includes('Local room membership still works if server attempt recovery is unavailable.'), 'Friend room late-join sync falls back to today\'s server-locked official attempt across current and recent player ids.');
   assert(app.includes('scheduleRoomScoreRetry') && app.includes('Retrying room score sync...') && app.includes('Score saved locally. Retrying room board sync...'), 'Friend room score sync surfaces failed room writes and retries them instead of silently dropping a completed score.');
   assert(app.includes('Promise<boolean>') && app.includes('if (!response.ok) return false') && app.includes("setRoomSyncState('Room score posted.')"), 'Leaderboard submissions return a success signal so room score sync can show posted or retrying state.');
+  assert(app.includes('const id = readStoredPlayerId() || playerId || readPlayerId()') && app.includes('writePlayerId(linkedPlayerId)'), 'Room leaderboard submission prefers the freshly stored linked player id after email verification instead of a stale React state id.');
   assert(app.includes('writePlayerId(linkedPlayerId)') && app.includes('claimServerOfficialAttempt(linkedPlayerId, officialRank)') && app.includes('body: JSON.stringify({ email, code, playerId: playerId || readPlayerId() })'), 'Email account connection links the Recursiv account to a durable player id and reclaims today\'s official score before room sync.');
   assert(app.includes('roomSyncState={roomSyncState}') && app.includes('className={`room-sync-state') && app.includes('aria-live="polite"'), 'Room score sync state is visible on room/test surfaces for posted and retrying states.');
   assert(app.includes('if (groupCode) void syncOfficialRankToGroup(groupCode, groupName)') && app.includes('IQ WARS account connected. Profile and settings are unlocked.'), 'Email account connection immediately rechecks active room score sync after unlocking account features.');
@@ -585,9 +589,13 @@ async function sourceAudit() {
   assert(reminders.includes('shouldSendConfirmation') && reminders.includes('confirmationSentAt'), 'Reminder signup only sends confirmation email until a reminder has a recorded confirmation.');
   assert(remindersLib.includes('MAX_REMINDERS') && remindersLib.includes('normalizeReminder') && remindersLib.includes('validEmail') && remindersLib.includes('new Map'), 'Reminder store normalizes, dedupes, and bounds reminder records before reads and writes.');
   assert(remindersSend.includes('IQ_REMINDER_CRON_TOKEN') && remindersSend.includes("process.env.NODE_ENV === 'production'"), 'Reminder cron send API requires explicit production configuration.');
+  assert(remindersSend.includes('targetEmail') && remindersSend.includes('Invalid proof email.') && remindersSend.includes('No reminder found for proof email.'), 'Reminder cron supports a controlled target-email proof mode without sending every pending reminder.');
   assert(remindersSend.includes('buildReminderDigest') && remindersSend.includes('currentStreakDays') && remindersSend.includes('Personal best') && remindersSend.includes('Room record'), 'Reminder cron sends a streak, score, and room-record digest instead of a generic nudge.');
   assert(remindersSend.includes('readLeaderboardEntries') && remindersSend.includes("LEADERBOARD_STORE_KEY = 'world-iq:leaderboards:v2'"), 'Reminder cron reads leaderboard history to personalize daily streak emails.');
   assert(remindersSend.includes('reply STOP') && remindersSend.includes('bill@recursiv.io'), 'Reminder emails include a simple stop-reminders instruction.');
+  assert(packageConfig.scripts?.['reminder:proof'] === 'node scripts/prove-reminder-email.mjs --origin https://iqwars.app', 'Package exposes a production reminder delivery proof command.');
+  assert(reminderProof.includes('seedYesterdayScore') && reminderProof.includes('triggerReminder') && reminderProof.includes('waitForSentEmail'), 'Reminder proof seeds a controlled room score, triggers one cron email, and inspects the sent Resend message.');
+  assert(reminderProof.includes('Streak: 1 completed day') && reminderProof.includes('Personal best: 137 IQ') && reminderProof.includes('Room record: Reminder Proof 137 IQ') && reminderProof.includes('reply STOP|bill@recursiv\\.io'), 'Reminder proof verifies streak, personal-best, room-record, play-link, and unsubscribe copy in the delivered email.');
   assert(access.includes('PLAYER_API_KEY_COOKIE') && access.includes('app-subscriptions/status'), 'Access API checks Recursiv app subscription status from the player key.');
   assert(billingConfigLib.includes('resolveBillingConfig') && billingConfigLib.includes('IQWARS_SUBSCRIPTION_TIER') && billingConfigLib.includes('NEXT_PUBLIC_STRIPE_PAYMENT_LINK') && billingConfigLib.includes('paymentLinkUrl'), 'Billing config resolver supports Recursiv app-subscription tiers and hosted payment-link fallback.');
   assert(billingConfig.includes('publicBillingConfig') && billingConfig.includes('cache-control') && !billingConfig.includes('paymentLinkUrl'), 'Billing config API exposes checkout readiness without leaking the hosted checkout URL.');

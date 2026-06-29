@@ -43,6 +43,22 @@ emails are still Recursiv-branded instead of IQ WARS-branded:
 RESEND_API_KEY=... pnpm auth:proof
 ```
 
+Run the reminder/streak proof when the daily re-engagement loop needs full
+production verification. This creates a controlled proof room and reminder,
+triggers the cron endpoint for only that generated recipient, retrieves the
+sent message through Resend, and verifies streak, personal best, room record,
+room link, and unsubscribe copy:
+
+```bash
+RESEND_API_KEY=... \
+IQ_REMINDER_CRON_TOKEN=... \
+pnpm reminder:proof
+```
+
+This is the release gate for `IQWARS-030`; it fails until production has
+`RESEND_API_KEY` and `IQ_REMINDER_CRON_TOKEN` configured and the sender path is
+deliverable.
+
 Run the production deployment proof when pushing a commit to `iqwars.app`.
 This command monitors `/api/health`, `/api/ready`, and `/api/version` during
 the deployment window and fails if any sample goes unhealthy or the final

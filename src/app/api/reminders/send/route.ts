@@ -38,6 +38,14 @@ function sameUtcDay(a: number | null, b: number) {
   return new Date(a).toISOString().slice(0, 10) === new Date(b).toISOString().slice(0, 10);
 }
 
+function cleanEmail(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase().slice(0, 120) : '';
+}
+
+function validEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 function isSocialEntry(value: unknown): value is SocialEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<SocialEntry>;
@@ -162,14 +170,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
     }
   }
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const targetEmail = cleanEmail(body?.email);
+  if (targetEmail && !validEmail(targetEmail)) {
+    return NextResponse.json({ error: 'Invalid proof email.' }, { status: 400 });
+  }
 
   const now = Date.now();
   const store = await readReminderStore();
+  const reminders = targetEmail ? store.reminders.filter((reminder) => reminder.email === targetEmail) : store.reminders;
+  if (targetEmail && reminders.length === 0) {
+    return NextResponse.json({ error: 'No reminder found for proof email.' }, { status: 404 });
+  }
   const leaderboardEntries = await readLeaderboardEntries().catch(() => []);
   let sent = 0;
   let skipped = 0;
   const sentIds = new Set<string>();
-  for (const reminder of store.reminders) {
+  for (const reminder of reminders) {
     if (sameUtcDay(reminder.lastSentAt, now)) {
       skipped += 1;
       continue;
