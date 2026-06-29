@@ -481,7 +481,8 @@ async function sourceAudit() {
   assert(result.includes('claimServerOfficialAttempt') && result.includes('syncLocalOfficialLock(officialRank)'), 'First official completion claims the server attempt lock before local official sync.');
   assert(result.includes('consumePlay()'), 'First official completion consumes the daily attempt locally.');
   assert(result.includes('onLeaderboard(entry, officialRank)'), 'Official completion submits into the leaderboard flow.');
-  assert(result.includes("copy(groupCode ? 'See room rankings' : 'See rankings')"), 'Official result exposes an immediate rankings CTA after the score is visible.');
+  assert(result.includes("setRoomPostState('posting')") && result.includes("disabled={roomRankingsPending}") && result.includes("Posting score to this room..."), 'Official room results visibly wait for the room score write before opening room rankings.');
+  assert(result.includes("copy(roomRankingsPending ? 'Posting score to this room...' : groupCode ? 'See room rankings' : 'See rankings')"), 'Official result exposes room rankings only after score sync is not actively posting.');
 
   const runner = app.slice(app.indexOf('function Runner('), app.indexOf('export default function Home'));
   assert(runner.includes('readServerOfficialAttempt') && runner.includes('onServerAttemptLocked'), 'Runner syncs server-side daily attempt locks.');
@@ -489,6 +490,7 @@ async function sourceAudit() {
 
   const handleLeaderboard = app.slice(app.indexOf('function handleLeaderboard'), app.indexOf('const handleUsageChange'));
   assert(handleLeaderboard.includes('refreshSocialBoards(groupCode || null)') && !handleLeaderboard.includes("navigateView('rankings')") && !handleLeaderboard.includes('navigateGroupRankings(groupCode)'), 'Completing the official run keeps the score panel visible while refreshing rankings in the background.');
+  assert(app.includes('onRankings={() => groupCode ? navigateGroupRankings(groupCode) : navigateView(\'rankings\')}'), 'Room result and locked-state ranking CTAs use durable room rankings URLs instead of generic rankings.');
   const footer = functionText(findFunction(ts, tree, 'SiteFooter'), app);
   assert(!footer.includes("onView('agents')"), 'Public footer keeps secondary agent tools out of the main logged-out loop.');
   assert(app.includes("view === 'agents' && !recursivAccount") && app.includes('Connect account to use agent tools.'), 'Agent-ready surface is gated behind account connection for logged-out visitors.');
@@ -516,6 +518,7 @@ async function sourceAudit() {
   assert(app.includes('readServerOfficialAttempt(playerId || readPlayerId())') && app.includes('syncLocalOfficialLock(serverAttempt)') && app.includes('Local room membership still works if the server attempt lookup is unavailable.'), 'Friend room late-join sync falls back to today\'s server-locked official attempt when local storage is missing.');
   assert(app.includes('scheduleRoomScoreRetry') && app.includes('Retrying room score sync...') && app.includes('Score saved locally. Retrying room board sync...'), 'Friend room score sync surfaces failed room writes and retries them instead of silently dropping a completed score.');
   assert(app.includes('Promise<boolean>') && app.includes('if (!response.ok) return false') && app.includes("setRoomSyncState('Room score posted.')"), 'Leaderboard submissions return a success signal so room score sync can show posted or retrying state.');
+  assert(app.includes('writePlayerId(linkedPlayerId)') && app.includes('claimServerOfficialAttempt(linkedPlayerId, officialRank)') && app.includes('body: JSON.stringify({ email, code, playerId: playerId || readPlayerId() })'), 'Email account connection links the Recursiv account to a durable player id and reclaims today\'s official score before room sync.');
   assert(app.includes('roomSyncState={roomSyncState}') && app.includes('className={`room-sync-state') && app.includes('aria-live="polite"'), 'Room score sync state is visible on room/test surfaces for posted and retrying states.');
   assert(app.includes('if (groupCode) void syncOfficialRankToGroup(groupCode, groupName)') && app.includes('IQ WARS account connected. Profile and settings are unlocked.'), 'Email account connection immediately rechecks active room score sync after unlocking account features.');
   assert(app.includes('if (code) syncOfficialRankToGroup(code, name)') && app.includes('syncOfficialRankToGroup(queryGroup, name)'), 'Route and query room joins sync today\'s official score before refreshing the room board.');
@@ -591,6 +594,7 @@ async function sourceAudit() {
   assert(checkoutStatus.includes('PLAYER_API_KEY_COOKIE') && checkoutStatus.includes('setAccessCookie'), 'Checkout status API requires a player key and syncs the access cookie.');
   assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
   assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID'), 'Email-code verify route creates project-scoped IQ WARS player keys.');
+  assert(authVerify.includes('world-iq:account-links:v1') && authVerify.includes('resolveLinkedPlayerId') && authVerify.includes('playerId: linkedPlayerId || requestedPlayerId'), 'Email-code verify route persists a stable account-to-player link for cross-device room score continuity.');
   assert(xConnect.includes('safeReturnPath') && xConnect.includes('code_challenge_method'), 'X connect route sanitizes returns and uses PKCE.');
   assert(xCallback.includes('expectedState !== state') && xCallback.includes('redirectWithParams'), 'X callback route verifies state and redirects with status params.');
   assert(xVerify.includes('X_BEARER_TOKEN') && xVerify.includes('IQ\\s*WARS'), 'X post verification route requires configured bearer access and IQ WARS scorecard text.');

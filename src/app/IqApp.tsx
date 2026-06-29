@@ -151,7 +151,9 @@ type PlayUsage = {
 
 type RecursivAccountRecord = {
   email: string;
+  id?: string | null;
   name?: string | null;
+  playerId?: string | null;
   updatedAt: number;
 };
 
@@ -1428,6 +1430,17 @@ function readPlayerId() {
   return next;
 }
 
+function cleanPlayerId(value: unknown) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/[^a-zA-Z0-9:_-]+/g, '').slice(0, 100);
+}
+
+function writePlayerId(id: string) {
+  if (typeof window === 'undefined') return;
+  const cleaned = cleanPlayerId(id);
+  if (cleaned) window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, cleaned);
+}
+
 function randomClientId(prefix: string) {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${prefix}-${crypto.randomUUID()}`;
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2024,7 +2037,9 @@ function readRecursivAccount(): RecursivAccountRecord | null {
     if (!parsed?.email || typeof parsed.email !== 'string') return null;
     return {
       email: parsed.email,
+      id: typeof parsed.id === 'string' ? parsed.id : null,
       name: typeof parsed.name === 'string' ? parsed.name : null,
+      playerId: cleanPlayerId(parsed.playerId) || null,
       updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
     };
   } catch {
@@ -3375,7 +3390,7 @@ function Result({
   answers: AnswerRecord[];
   elapsedMs: number | null;
   onUnlock: () => void;
-  onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
+  onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => Promise<boolean> | boolean | void;
   onRankings: () => void;
   groupCode: string | null;
   groupName: string;
@@ -3385,6 +3400,7 @@ function Result({
   const copy = (text: string) => translate(locale, text);
   const [shareState, setShareState] = React.useState(groupCode ? 'Invite friends' : 'Share result');
   const [resultStatus, setResultStatus] = React.useState<'pending' | 'official' | 'practice' | 'daily' | 'lab'>('pending');
+  const [roomPostState, setRoomPostState] = React.useState<'idle' | 'posting' | 'posted' | 'retrying'>('idle');
   const submittedRef = React.useRef(false);
   const correct = answers.filter((answer) => answer.correct).length;
   const total = answers.length;
@@ -3456,7 +3472,13 @@ function Result({
         local: true,
       };
       saveLeaderboardEntry(entry);
-      onLeaderboard(entry, officialRank);
+      if (groupCode) setRoomPostState('posting');
+      try {
+        const posted = await onLeaderboard(entry, officialRank);
+        if (groupCode) setRoomPostState(posted === false ? 'retrying' : 'posted');
+      } catch {
+        if (groupCode) setRoomPostState('retrying');
+      }
     }
 
     void submitOfficial();
@@ -3506,6 +3528,14 @@ function Result({
         title: 'Blind-spot run complete.',
         body: `${beatAi} ${copy('answers landed on puzzles current model baselines often miss.')}`,
       };
+  const roomPostCopy = roomPostState === 'posting'
+    ? 'Posting score to this room...'
+    : roomPostState === 'posted'
+      ? 'Room score posted.'
+      : roomPostState === 'retrying'
+        ? 'Score saved locally. Retrying room board sync...'
+        : '';
+  const roomRankingsPending = Boolean(groupCode && roomPostState === 'posting');
 
   return (
     <div className="runner-panel result">
@@ -3541,10 +3571,13 @@ function Result({
         <strong>{copy(statusCopy.title)}</strong>
         <span>{copy(statusCopy.body)}</span>
       </div>
+      {groupCode && roomPostCopy ? (
+        <p className={`room-sync-state ${roomPostState === 'retrying' ? 'pending' : 'posted'}`} role="status" aria-live="polite">{copy(roomPostCopy)}</p>
+      ) : null}
       <p className="trust-note">{copy('IQ WARS is a competitive visual reasoning game, not a clinical IQ test, admission test, employment screen, high-IQ society qualifier, or supervised psychometric assessment.')}</p>
       <div className="actions">
         <button className="primary" onClick={share}>{copy(shareState)}</button>
-        <button className="secondary" onClick={onRankings}>{copy(groupCode ? 'See room rankings' : 'See rankings')}</button>
+        <button className="secondary" disabled={roomRankingsPending} onClick={onRankings}>{copy(roomRankingsPending ? 'Posting score to this room...' : groupCode ? 'See room rankings' : 'See rankings')}</button>
         <button className="secondary" onClick={onUnlock}>{copy('Save rank')}</button>
       </div>
     </div>
@@ -3574,7 +3607,7 @@ function Runner({
   soundEnabled: boolean;
   onSound: (kind: SoundKind) => void;
   onUnlock: () => void;
-  onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => void;
+  onLeaderboard: (entry: LeaderboardEntry, officialRank?: OfficialRankRecord) => Promise<boolean> | boolean | void;
   onRankings: () => void;
   onUsageChange: (usage: PlayUsage) => void;
   groupCode: string | null;
@@ -3965,9 +3998,13 @@ export default function Home({
   }, []);
 
   React.useEffect(() => {
-    const id = readPlayerId();
+    const storedId = readPlayerId();
     const code = readStoredGroupCode(initialGroupCode);
     const name = readStoredGroupName(code);
+    const account = readRecursivAccount();
+    const linkedId = account?.playerId ? cleanPlayerId(account.playerId) : '';
+    const id = linkedId || storedId;
+    if (linkedId && linkedId !== storedId) writePlayerId(linkedId);
     setLeaderboard(getLeaderboardEntries());
     setPaidAccess(false);
     setUsageSnapshot(readPlayUsage());
@@ -3986,7 +4023,6 @@ export default function Home({
     setProfileCity(readOptionalStorage(PLAYER_CITY_STORAGE_KEY));
     setProfileCountry(readOptionalStorage(PLAYER_COUNTRY_STORAGE_KEY));
     setProfileSyncState(readOptionalStorage(PROFILE_SYNC_STATE_STORAGE_KEY));
-    const account = readRecursivAccount();
     setRecursivAccount(account);
     setAuthEmail(account?.email || '');
     const xRecord = readXVerification();
@@ -4515,28 +4551,28 @@ export default function Home({
     }
   }
 
-  function handleLeaderboard(_entry?: LeaderboardEntry, officialRank?: OfficialRankRecord) {
+  async function handleLeaderboard(_entry?: LeaderboardEntry, officialRank?: OfficialRankRecord): Promise<boolean> {
     setLeaderboard(getLeaderboardEntries());
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
     setUsageSnapshot(readPlayUsage());
     if (officialRank) {
-      void submitOfficialResult(officialRank).then((posted) => {
-        if (groupCode) {
-          if (posted) {
-            setRoomSyncState('Room score posted.');
-          } else {
-            setRoomSyncState('Score saved locally. Retrying room board sync...');
-            scheduleRoomScoreRetry(groupCode, groupName, 2);
-          }
+      const posted = await submitOfficialResult(officialRank);
+      if (groupCode) {
+        if (posted) {
+          setRoomSyncState('Room score posted.');
+        } else {
+          setRoomSyncState('Score saved locally. Retrying room board sync...');
+          scheduleRoomScoreRetry(groupCode, groupName, 2);
         }
-      }).finally(() => {
-        setLeaderboard(getLeaderboardEntries());
-        setOfficialSnapshot(readOfficialRank());
-        setOfficialHistory(readOfficialHistory());
-        void refreshSocialBoards(groupCode || null);
-      });
+      }
+      setLeaderboard(getLeaderboardEntries());
+      setOfficialSnapshot(readOfficialRank());
+      setOfficialHistory(readOfficialHistory());
+      void refreshSocialBoards(groupCode || null);
+      return posted;
     }
+    return true;
   }
 
   const handleUsageChange = React.useCallback((usage: PlayUsage) => {
@@ -4877,7 +4913,7 @@ export default function Home({
       const response = await fetch('/api/recursiv-auth/verify-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code }),
+        body: JSON.stringify({ email, code, playerId: playerId || readPlayerId() }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
@@ -4886,9 +4922,34 @@ export default function Home({
       if (!data?.projectMember) {
         throw new Error('IQ WARS project membership is not configured yet.');
       }
-      const account = { email, name: data?.user?.name || null };
+      const linkedPlayerId = cleanPlayerId(data?.playerId) || playerId || readPlayerId();
+      const account = {
+        email,
+        id: typeof data?.user?.id === 'string' ? data.user.id : null,
+        name: data?.user?.name || null,
+        playerId: linkedPlayerId,
+      };
       writeRecursivAccount(account);
       setRecursivAccount({ ...account, updatedAt: Date.now() });
+      if (linkedPlayerId) {
+        writePlayerId(linkedPlayerId);
+        setPlayerId(linkedPlayerId);
+        setPlayerName(readPlayerName(linkedPlayerId));
+        const officialRank = readOfficialRank();
+        if (officialRank?.day === localDayKey()) {
+          try {
+            const claim = await claimServerOfficialAttempt(linkedPlayerId, officialRank);
+            if (claim.attempt) {
+              syncLocalOfficialLock(claim.attempt);
+              setOfficialSnapshot(readOfficialRank());
+              setOfficialHistory(readOfficialHistory());
+              setUsageSnapshot(readPlayUsage());
+            }
+          } catch {
+            // The room sync retry path still has the local official result.
+          }
+        }
+      }
       setAuthState('verified');
       setCheckoutState('idle');
       setCheckoutError('');
@@ -5217,7 +5278,7 @@ export default function Home({
       {view === 'test' ? (
         <section className="test-surface" aria-label={`${copy(modes[mode].label)} test`}>
           <SignalSculpture />
-	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onRankings={() => navigateView('rankings')} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} playerId={playerId} onServerAttemptLocked={handleServerAttemptLocked} />
+	          <Runner key={mode} locale={locale} mode={mode} startRequest={startRequest} isPaid={paidAccess} soundEnabled={settings.soundEnabled} onSound={playInteractionSound} onUnlock={() => setUnlockOpen(true)} onLeaderboard={handleLeaderboard} onRankings={() => groupCode ? navigateGroupRankings(groupCode) : navigateView('rankings')} onUsageChange={handleUsageChange} groupCode={groupCode || null} groupName={groupName} playerId={playerId} onServerAttemptLocked={handleServerAttemptLocked} />
           <StatusRail
             locale={locale}
             isPaid={paidAccess}

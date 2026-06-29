@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { enforceRateLimit } from '../../_lib/rateLimit';
+import { updateJsonStore } from '../../_lib/store';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const IQWARS_PROJECT_ID = process.env.IQWARS_RECURSIV_PROJECT_ID || process.env.RECURSIV_PROJECT_ID || '';
@@ -13,6 +14,20 @@ const IQWARS_APP_HOST = (() => {
   }
 })();
 const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
+const ACCOUNT_LINKS_STORE_KEY = 'world-iq:account-links:v1';
+const ACCOUNT_LINKS_STORE_FILE = 'world-iq-account-links.json';
+const MAX_ACCOUNT_LINKS = 100_000;
+
+type AccountLink = {
+  accountId: string;
+  playerId: string;
+  keyPrefix: string | null;
+  updatedAt: number;
+};
+
+type AccountLinksStore = {
+  links: AccountLink[];
+};
 
 function cleanEmail(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase().slice(0, 180) : '';
@@ -20,6 +35,72 @@ function cleanEmail(value: unknown) {
 
 function cleanCode(value: unknown) {
   return typeof value === 'string' ? value.replace(/\D+/g, '').slice(0, 12) : '';
+}
+
+function cleanPlayerId(value: unknown) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/[^a-zA-Z0-9:_-]+/g, '').slice(0, 100);
+}
+
+function cleanAccountId(value: unknown) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/[^a-zA-Z0-9:_@.-]+/g, '').slice(0, 180);
+}
+
+function fallbackAccountPlayerId(accountId: string) {
+  const cleaned = cleanPlayerId(accountId.replace(/[@.]+/g, '-'));
+  return cleaned ? `recursiv:${cleaned}`.slice(0, 100) : '';
+}
+
+function emptyAccountLinksStore(): AccountLinksStore {
+  return { links: [] };
+}
+
+function isAccountLink(value: unknown): value is AccountLink {
+  if (!value || typeof value !== 'object') return false;
+  const link = value as Partial<AccountLink>;
+  return typeof link.accountId === 'string'
+    && typeof link.playerId === 'string'
+    && typeof link.updatedAt === 'number';
+}
+
+function normalizeAccountLinksStore(parsed: Partial<AccountLinksStore>): AccountLinksStore {
+  return {
+    links: Array.isArray(parsed.links) ? parsed.links.filter(isAccountLink).slice(-MAX_ACCOUNT_LINKS) : [],
+  };
+}
+
+async function resolveLinkedPlayerId(accountId: string, requestedPlayerId: string, keyPrefix: string | null) {
+  const cleanedAccountId = cleanAccountId(accountId);
+  if (!cleanedAccountId) return requestedPlayerId;
+
+  return await updateJsonStore<Partial<AccountLinksStore>, string>(
+    ACCOUNT_LINKS_STORE_KEY,
+    emptyAccountLinksStore(),
+    ACCOUNT_LINKS_STORE_FILE,
+    (parsed) => {
+      const store = normalizeAccountLinksStore(parsed);
+      const existing = store.links.find((link) => link.accountId === cleanedAccountId);
+      const now = Date.now();
+      if (existing?.playerId) {
+        existing.keyPrefix = keyPrefix;
+        existing.updatedAt = now;
+        return { value: store, result: existing.playerId };
+      }
+
+      const playerId = cleanPlayerId(requestedPlayerId) || fallbackAccountPlayerId(cleanedAccountId);
+      if (playerId) {
+        store.links.push({
+          accountId: cleanedAccountId,
+          playerId,
+          keyPrefix,
+          updatedAt: now,
+        });
+      }
+      store.links = store.links.slice(-MAX_ACCOUNT_LINKS);
+      return { value: store, result: playerId };
+    },
+  );
 }
 
 function extractSessionToken(response: Response, data: unknown) {
@@ -40,9 +121,10 @@ function authError(data: unknown, fallback: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null) as { email?: unknown; code?: unknown } | null;
+  const body = await request.json().catch(() => null) as { email?: unknown; code?: unknown; playerId?: unknown } | null;
   const email = cleanEmail(body?.email);
   const otp = cleanCode(body?.code);
+  const requestedPlayerId = cleanPlayerId(body?.playerId);
 
   if (!email.includes('@') || otp.length < 4) {
     return NextResponse.json({ error: 'Enter the email and code.' }, { status: 400 });
@@ -122,10 +204,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Recursiv did not return an IQ WARS player key.' }, { status: 502 });
   }
 
+  const accountId = cleanAccountId(data?.user?.id) || `email:${email}`;
+  const linkedPlayerId = await resolveLinkedPlayerId(accountId, requestedPlayerId, keyPrefix);
+
   const result = NextResponse.json({
     verified: true,
     projectMember,
     keyPrefix,
+    playerId: linkedPlayerId || requestedPlayerId,
     user: data?.user ? {
       id: data.user.id,
       name: data.user.name ?? null,

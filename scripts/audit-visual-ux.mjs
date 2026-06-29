@@ -11,6 +11,7 @@ const debugBase = `http://127.0.0.1:${chromePort}`;
 const userDataDir = path.join(os.tmpdir(), `iqwars-chrome-${chromePort}`);
 const waitMs = Number(valueAfter('--wait-ms') || 2400);
 const homeQuestionChecks = Math.max(1, Number(valueAfter('--home-question-checks') || 3));
+const routeOnly = valueAfter('--route-only') || '';
 const officialQuestionCount = 12;
 const playerCookieName = 'iqwars_player_api_key';
 
@@ -23,7 +24,8 @@ const routes = [
   { id: 'home', path: '/', checks: ['home'] },
   { id: 'room', path: '/g/room-kdljky', checks: ['room'] },
   { id: 'rankings', path: '/rankings?g=room-kdljky', checks: ['rankings'] },
-];
+  ...(homeQuestionChecks >= officialQuestionCount ? [{ id: 'room-run', path: '/g/audit-room-run', checks: ['room-run'] }] : []),
+].filter((route) => !routeOnly || route.id === routeOnly);
 
 const results = [];
 let roomFixture = null;
@@ -68,9 +70,33 @@ function officialWriteStubScript() {
   return `
     (() => {
       const originalFetch = window.fetch.bind(window);
+      window.__iqwarsAuditLeaderboardEntries = [];
+      const boardRows = (entries) => [...entries]
+        .sort((a, b) => (b.score || 0) - (a.score || 0) || (b.beatAi || 0) - (a.beatAi || 0) || (a.timestamp || 0) - (b.timestamp || 0))
+        .slice(0, 50);
+      const geography = () => ({ countries: [], cities: [], towns: [] });
       window.fetch = async (input, init = {}) => {
         const url = typeof input === 'string' ? input : input && input.url ? input.url : '';
         const method = String(init && init.method || input && input.method || 'GET').toUpperCase();
+        if (method === 'GET' && /\\/api\\/leaderboards(?:$|[?#])/.test(url)) {
+          const parsed = new URL(url, window.location.origin);
+          const day = parsed.searchParams.get('day') || '${todayKey()}';
+          const group = parsed.searchParams.get('group') || '';
+          const entries = window.__iqwarsAuditLeaderboardEntries || [];
+          const daily = entries.filter((entry) => entry.day === day);
+          const groupEntries = group ? daily.filter((entry) => entry.groupCode === group) : [];
+          const allTime = group ? entries.filter((entry) => entry.groupCode === group) : [];
+          return new Response(JSON.stringify({
+            day,
+            global: boardRows(daily),
+            group: boardRows(groupEntries),
+            groupAllTime: boardRows(allTime),
+            geography: geography()
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
         if (method === 'POST' && /\\/api\\/attempts(?:$|[?#])/.test(url)) {
           let body = {};
           try { body = JSON.parse(init.body || '{}'); } catch {}
@@ -82,6 +108,7 @@ function officialWriteStubScript() {
         if (method === 'POST' && /\\/api\\/leaderboards(?:$|[?#])/.test(url)) {
           let body = {};
           try { body = JSON.parse(init.body || '{}'); } catch {}
+          await new Promise((resolve) => setTimeout(resolve, 650));
           const entry = {
             id: 'visual-full-run:' + (body.day || 'today') + ':' + (body.playerId || 'player'),
             day: body.day || '',
@@ -101,6 +128,10 @@ function officialWriteStubScript() {
             timestamp: Date.now(),
             geo: body.geo || null
           };
+          window.__iqwarsAuditLeaderboardEntries = [
+            ...window.__iqwarsAuditLeaderboardEntries.filter((item) => item.id !== entry.id),
+            entry
+          ];
           return new Response(JSON.stringify({
             accepted: true,
             entry,
@@ -609,6 +640,11 @@ function evaluationScript(routeId, viewportId) {
         text: text(item),
         rect: rect(item),
       }));
+      const resultButtons = [...document.querySelectorAll('.runner-panel.result button')].map((item) => ({
+        text: text(item),
+        disabled: Boolean(item.disabled),
+        rect: rect(item),
+      }));
       const resultCorrect = document.querySelector('.option.result-correct');
       const resultWrong = document.querySelector('.option.result-wrong');
       const proofPill = document.querySelector('.proof-pill');
@@ -730,6 +766,7 @@ function evaluationScript(routeId, viewportId) {
         questionDifficulty: text(questionHead?.querySelector('span')),
         resultPanel: rect(resultPanel),
         resultText: text(resultPanel).slice(0, 1800),
+        resultButtons,
         lockedScoreGrid: rect(lockedScoreGrid),
         lockedScoreCells,
         lockedActions,
@@ -1586,6 +1623,84 @@ function assertRankings(state, viewportId) {
   assertGeographyFixture(state, viewportId, 'rankings');
 }
 
+async function auditRoomOfficialRun(send, viewport) {
+  const prefix = `${viewport.id} room official run`;
+  const start = await pointerClickButton(send, 'take today');
+  if (start.clicked) pass(`${prefix} starts from the invite room rankings CTA`, start);
+  else {
+    fail(`${prefix} starts from the invite room rankings CTA`, start);
+    return;
+  }
+  await sleep(waitMs);
+
+  const questionStates = [];
+  for (let questionNumber = 1; questionNumber <= officialQuestionCount; questionNumber += 1) {
+    const questionState = await evaluate(send, 'room-run', `${viewport.id}-q${questionNumber}`);
+    questionStates.push(questionState);
+    assertHome(questionState, viewport.id, `room question ${questionNumber}`);
+    const lock = await clickOptionAndLock(send, 'last');
+    if (lock.clicked) pass(`${prefix} question ${questionNumber} locks an answer`, lock);
+    else {
+      fail(`${prefix} question ${questionNumber} locks an answer`, lock);
+      return;
+    }
+
+    if (questionNumber < officialQuestionCount) {
+      const next = await clickPrimaryButton(send, 'next question');
+      if (next.clicked) pass(`${prefix} advances to question ${questionNumber + 1}`, next);
+      else {
+        fail(`${prefix} advances to question ${questionNumber + 1}`, next);
+        return;
+      }
+    }
+  }
+
+  const scoreClick = await clickPrimaryButton(send, 'see score');
+  if (scoreClick.clicked) pass(`${prefix} opens the score panel`, scoreClick);
+  else {
+    fail(`${prefix} opens the score panel`, scoreClick);
+    return;
+  }
+
+  await sleep(120);
+  const pendingState = await evaluate(send, 'room-run', `${viewport.id}-result-pending`);
+  const pendingButton = (pendingState.resultButtons || []).find((button) => /Posting score to this room/i.test(button.text));
+  if (/Posting score to this room/i.test(pendingState.resultText) && pendingButton?.disabled) {
+    pass(`${prefix} holds room rankings while the score is posting`, { result: pendingState.resultText.slice(0, 500), button: pendingButton });
+  } else {
+    fail(`${prefix} holds room rankings while the score is posting`, { result: pendingState.resultText, buttons: pendingState.resultButtons });
+  }
+
+  await sleep(waitMs);
+  const resultState = await evaluate(send, 'room-run', `${viewport.id}-result-posted`);
+  assertFullOfficialRun(questionStates, resultState, viewport.id);
+  const roomButton = (resultState.resultButtons || []).find((button) => /See room rankings/i.test(button.text));
+  if (/Room score posted/i.test(resultState.resultText) && roomButton && !roomButton.disabled) {
+    pass(`${prefix} confirms room score posted and enables room rankings`, { result: resultState.resultText.slice(0, 500), button: roomButton });
+  } else {
+    fail(`${prefix} confirms room score posted and enables room rankings`, { result: resultState.resultText, buttons: resultState.resultButtons });
+  }
+
+  const rankingsClick = await pointerClickButton(send, 'see room rankings');
+  if (rankingsClick.clicked) pass(`${prefix} opens room rankings after posting`, rankingsClick);
+  else {
+    fail(`${prefix} opens room rankings after posting`, rankingsClick);
+    return;
+  }
+  await sleep(waitMs);
+  const rankingsState = await evaluate(send, 'room-run', `${viewport.id}-rankings`);
+  if (/\/rankings\?g=audit-room-run/.test(rankingsState.href) && /Audit Room Run|audit-room-run|Today(?:'|&apos;|&#x27;)s room board/i.test(rankingsState.bodyText)) {
+    pass(`${prefix} lands on the durable room rankings URL`, { href: rankingsState.href });
+  } else {
+    fail(`${prefix} lands on the durable room rankings URL`, { href: rankingsState.href, text: rankingsState.bodyText.slice(0, 900) });
+  }
+  if (rankingsState.primaryRoomRows >= 1 && /137|#30,000|Visual Full Run|visual_full_run/i.test(rankingsState.primaryRoomBoardText)) {
+    pass(`${prefix} renders the just-posted room score in today's board`, { rows: rankingsState.primaryRoomRows, board: rankingsState.primaryRoomBoardText.slice(0, 700) });
+  } else {
+    fail(`${prefix} renders the just-posted room score in today's board`, { rows: rankingsState.primaryRoomRows, board: rankingsState.primaryRoomBoardText });
+  }
+}
+
 async function auditRoute(route, viewport) {
   const url = `${origin.replace(/\/$/, '')}${route.path}`;
   const target = await openTarget('about:blank');
@@ -1596,7 +1711,7 @@ async function auditRoute(route, viewport) {
     await client.send('Runtime.enable');
     await client.send('Network.enable');
     await client.send('Network.setCacheDisabled', { cacheDisabled: true });
-    const preloadScript = `${clearAuditPlayerStorageScript()}\n${route.checks.includes('home') && homeQuestionChecks >= officialQuestionCount ? officialWriteStubScript() : ''}`;
+    const preloadScript = `${clearAuditPlayerStorageScript()}\n${(route.checks.includes('home') || route.checks.includes('room-run')) && homeQuestionChecks >= officialQuestionCount ? officialWriteStubScript() : ''}`;
     await client.send('Page.addScriptToEvaluateOnNewDocument', { source: preloadScript });
     await client.send('Emulation.setDeviceMetricsOverride', {
       width: viewport.width,
@@ -1666,6 +1781,7 @@ async function auditRoute(route, viewport) {
     }
     if (route.checks.includes('room')) assertRoom(state, viewport.id);
     if (route.checks.includes('rankings')) assertRankings(state, viewport.id);
+    if (route.checks.includes('room-run')) await auditRoomOfficialRun(client.send, viewport);
 
     if (client.events.exceptions.length) fail(`${viewport.id} ${route.id} has no runtime exceptions`, client.events.exceptions.slice(0, 3));
     else pass(`${viewport.id} ${route.id} has no runtime exceptions`);
@@ -2742,25 +2858,34 @@ async function auditCreateCopyRoomLink(viewport, { mode = 'success' } = {}) {
 }
 
 await mkdir(outDir, { recursive: true });
-roomFixture = await loadRoomFixture();
 await ensureChrome();
-await auditSoundDesign();
-await auditLateRoomJoinSync();
-roomFixture = await loadRoomFixture();
 
-for (const viewport of viewports) {
-  await auditSpanishLocale(viewport);
-  await auditLockedDailyState(viewport, { loggedIn: false });
-  await auditLockedDailyState(viewport, { loggedIn: true });
-  await auditCreateCopyRoomLink(viewport, { mode: 'success' });
-  await auditCreateCopyRoomLink(viewport, { mode: 'denied' });
-  await auditGroupCommandCenter(viewport);
-  await auditIqProfileHistory(viewport);
-  await auditSettingsMatrix(viewport);
-  await auditLoggedInLogout(viewport);
-  await auditAgentVisibilityDefaults(viewport);
-  for (const route of routes) {
-    await auditRoute(route, viewport);
+if (routeOnly) {
+  for (const viewport of viewports) {
+    for (const route of routes) {
+      await auditRoute(route, viewport);
+    }
+  }
+} else {
+  roomFixture = await loadRoomFixture();
+  await auditSoundDesign();
+  await auditLateRoomJoinSync();
+  roomFixture = await loadRoomFixture();
+
+  for (const viewport of viewports) {
+    await auditSpanishLocale(viewport);
+    await auditLockedDailyState(viewport, { loggedIn: false });
+    await auditLockedDailyState(viewport, { loggedIn: true });
+    await auditCreateCopyRoomLink(viewport, { mode: 'success' });
+    await auditCreateCopyRoomLink(viewport, { mode: 'denied' });
+    await auditGroupCommandCenter(viewport);
+    await auditIqProfileHistory(viewport);
+    await auditSettingsMatrix(viewport);
+    await auditLoggedInLogout(viewport);
+    await auditAgentVisibilityDefaults(viewport);
+    for (const route of routes) {
+      await auditRoute(route, viewport);
+    }
   }
 }
 
