@@ -13,6 +13,7 @@
     "audit:visual": "node scripts/audit-visual-ux.mjs --origin https://iqwars.app",
     "audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app",
     "backup:export": "node scripts/export-iqwars-store.mjs",
+    "deploy:prove": "node scripts/prove-iqwars-deploy.mjs --origin https://iqwars.app",
     "smoke:prod": "node scripts/smoke-iqwars-prod.mjs --origin https://iqwars.app"
   },
   "dependencies": {

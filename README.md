@@ -22,12 +22,26 @@ Run the launch gate when production should be considered release-ready:
 pnpm audit:launch
 ```
 
+Run the production deployment proof when pushing a commit to `iqwars.app`.
+This command monitors `/api/health`, `/api/ready`, and `/api/version` during
+the deployment window and fails if any sample goes unhealthy or the final
+commit does not match:
+
+```bash
+COOLIFY_API_URL=... \
+COOLIFY_API_TOKEN=... \
+pnpm deploy:prove -- --trigger --expected-commit <commit>
+```
+
+If the deploy was already triggered externally, omit `--trigger` and keep the
+same `--expected-commit` to run the no-downtime monitor only.
+
 Production exposes two operational checks:
 
 - `/api/health` returns liveness and storage diagnostics. It may return `200` while `launchReady:false` so the app can remain inspectable during setup.
 - `/api/ready` is the strict release/monitoring gate. It returns `503` until persistent Redis/KV storage is configured, round-trip verified, and the Recursiv project API key can access the IQ WARS project.
 
-`audit:launch` requires persistent storage. Configure one of these production env sets on Vercel before launch:
+`audit:launch` requires persistent storage. Configure one of these production env sets on Coolify before launch:
 
 - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
 - `KV_REST_API_URL` and `KV_REST_API_TOKEN`
@@ -45,21 +59,12 @@ The Recursiv envs must point to the same IQ WARS project:
 
 `/api/health` reports `recursiv.verified` and `recursiv.projectAccess`; both must be true before launch.
 
-Recommended Vercel setup path:
-
-```bash
-vercel integration add upstash/upstash-kv \
-  --name iqwars-redis \
-  --environment production \
-  --plan free \
-  --metadata primaryRegion=iad1 \
-  --metadata eviction=false \
-  --metadata autoUpgrade=false \
-  --no-env-pull \
-  --scope minds-b4320dbb
-```
-
-If the CLI pauses on marketplace terms, accept the terms in the Vercel browser page, rerun the command, redeploy production, and then run `pnpm audit:launch`.
+For launch, Coolify must expose `iqwars.app` and `www.iqwars.app`, provide the
+Redis/KV/Postgres envs above, and set `SOURCE_COMMIT` or another supported
+commit env so `/api/version` can prove what code is live. After every
+production deploy, run `pnpm smoke:prod`, `pnpm audit:launch -- --expected-commit
+<commit>`, and `pnpm deploy:prove -- --expected-commit <commit>` if the proof
+was not already used to trigger the deploy.
 
 ## Usage
 

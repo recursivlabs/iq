@@ -40,12 +40,14 @@ const xCallbackPath = path.join(root, 'src/app/api/x/callback/route.ts');
 const xVerifyPath = path.join(root, 'src/app/api/x/verify-post/route.ts');
 const apiDaysPath = path.join(root, 'src/app/api/_lib/days.ts');
 const apiScoringPath = path.join(root, 'src/app/api/_lib/scoring.ts');
+const initialSocialBoardsPath = path.join(root, 'src/app/_lib/initialSocialBoards.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
 const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
+const deployProofPath = path.join(root, 'scripts/prove-iqwars-deploy.mjs');
 const storageRunbookPath = path.join(root, 'docs/iqwars-storage-runbook.md');
 const packageJsonPath = path.join(root, 'package.json');
 const pageRoutePaths = [
@@ -333,6 +335,7 @@ async function sourceAudit() {
   const xVerify = source(xVerifyPath);
   const apiDays = source(apiDaysPath);
   const apiScoring = source(apiScoringPath);
+  const initialSocialBoards = source(initialSocialBoardsPath);
   const rateLimit = source(rateLimitPath);
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
@@ -340,6 +343,7 @@ async function sourceAudit() {
   const foucTrace = source(foucTracePath);
   const backupScript = source(backupScriptPath);
   const prodSmoke = source(prodSmokePath);
+  const deployProof = source(deployProofPath);
   const storageRunbook = source(storageRunbookPath);
   const packageJson = source(packageJsonPath);
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
@@ -373,10 +377,12 @@ async function sourceAudit() {
   assert(existsSync(xConnectPath) && existsSync(xCallbackPath) && existsSync(xVerifyPath), 'X verification API routes exist.');
   assert(existsSync(apiDaysPath), 'Shared API board-day validator exists.');
   assert(existsSync(apiScoringPath), 'Shared API scoring canonicalizer exists.');
+  assert(existsSync(initialSocialBoardsPath), 'Server initial social-board loader exists.');
   assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
   assert(existsSync(foucTracePath), 'FOUC trace audit harness exists.');
   assert(existsSync(backupScriptPath), 'Storage backup/export operator script exists.');
   assert(existsSync(prodSmokePath), 'Production readiness smoke script exists.');
+  assert(existsSync(deployProofPath), 'Production deploy no-downtime proof script exists.');
   assert(existsSync(storageRunbookPath), 'Storage backup/restore runbook exists.');
   assert(pageRoutePaths.every((routePath) => existsSync(routePath)), 'All public page route files exist.');
 
@@ -501,6 +507,7 @@ async function sourceAudit() {
 
   assert(groupPage.includes('initialView="rankings"') && groupPage.includes('initialGroupCode={params.group}'), 'Friend group route opens directly into the room rankings and injects the room code.');
   assert(rankingsPage.includes('initialView="rankings"') && rankingsPage.includes("searchParams?.g"), 'Rankings route opens directly into a friend room board from ?g=.');
+  assert(initialSocialBoards.includes('loadInitialSocialBoards') && initialSocialBoards.includes('/api/leaderboards?') && initialSocialBoards.includes("agents: 'false'") && groupPage.includes('initialSocialBoards={initialSocialBoards}') && rankingsPage.includes('initialSocialBoards={initialSocialBoards}'), 'Friend room routes server-prefill today and all-time room boards before hydration.');
   assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
@@ -610,6 +617,10 @@ async function sourceAudit() {
   assert(prodSmoke.includes('assertNoStore') && prodSmoke.includes('cache-control') && prodSmoke.includes('no-store'), 'Production smoke verifies no-store cache headers on dynamic readiness APIs.');
   assert(prodSmoke.includes('non-ephemeral storage') && prodSmoke.includes('persistent storage') && prodSmoke.includes('storage provider'), 'Production smoke fails non-persistent or ephemeral storage providers.');
   assert(prodSmoke.includes('criticalRoutes') && prodSmoke.includes('/research') && prodSmoke.includes('/privacy') && prodSmoke.includes('/terms') && prodSmoke.includes('/api/leaderboards?agents=false'), 'Production smoke checks critical public routes and live leaderboard payload.');
+  assert(packageJson.includes('"deploy:prove": "node scripts/prove-iqwars-deploy.mjs --origin https://iqwars.app"'), 'Package scripts expose the production deploy no-downtime proof command.');
+  assert(deployProof.includes('/api/health') && deployProof.includes('/api/ready') && deployProof.includes('/api/version') && deployProof.includes('launchReady'), 'Deploy proof continuously probes health, readiness, and deployed commit metadata.');
+  assert(deployProof.includes('/deploy?uuid=') && deployProof.includes('COOLIFY_API_TOKEN') && deployProof.includes('IQWARS_COOLIFY_APP_UUID') && deployProof.includes('--trigger'), 'Deploy proof can trigger and poll the Coolify app deployment when operator credentials are supplied.');
+  assert(deployProof.includes('No-downtime deploy proof passed') && deployProof.includes('outageSamples') && deployProof.includes('Final deployed commit does not match expected commit'), 'Deploy proof fails closed on downtime samples or deployed-commit mismatch.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(rateLimit.includes("STORE_KEY = 'world-iq:rate-limits:v1'") && rateLimit.includes('updateJsonStore') && rateLimit.includes('retry-after') && rateLimit.includes('status: 429'), 'Shared rate-limit helper stores durable buckets and returns standard 429 responses.');

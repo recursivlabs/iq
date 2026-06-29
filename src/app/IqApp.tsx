@@ -3824,11 +3824,13 @@ export default function Home({
   initialView = 'test',
   initialProfileSlug = '',
   initialBlogSlug = '',
+  initialSocialBoards = null,
 }: {
   initialGroupCode?: string;
   initialView?: ViewKey;
   initialProfileSlug?: string;
   initialBlogSlug?: string;
+  initialSocialBoards?: Partial<SocialBoards> | null;
 }) {
   const [mode, setMode] = React.useState<ModeKey>('world');
   const [view, setView] = React.useState<ViewKey>(initialView);
@@ -3868,7 +3870,16 @@ export default function Home({
   const [xVerification, setXVerification] = React.useState<XVerificationRecord | null>(null);
   const [xState, setXState] = React.useState('');
   const [geoSnapshot, setGeoSnapshot] = React.useState<GeoSnapshot | null>(null);
-  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>({ global: [], group: [], groupAllTime: [], geography: EMPTY_GEOGRAPHY_BOARDS });
+  const [socialBoards, setSocialBoards] = React.useState<SocialBoards>(() => ({
+    global: Array.isArray(initialSocialBoards?.global) ? initialSocialBoards.global as SocialEntry[] : [],
+    group: Array.isArray(initialSocialBoards?.group) ? initialSocialBoards.group as SocialEntry[] : [],
+    groupAllTime: Array.isArray(initialSocialBoards?.groupAllTime) ? initialSocialBoards.groupAllTime as SocialEntry[] : [],
+    geography: initialSocialBoards?.geography && typeof initialSocialBoards.geography === 'object' ? {
+      countries: Array.isArray(initialSocialBoards.geography.countries) ? initialSocialBoards.geography.countries as GeoBoardRow[] : [],
+      cities: Array.isArray(initialSocialBoards.geography.cities) ? initialSocialBoards.geography.cities as GeoBoardRow[] : [],
+      towns: Array.isArray(initialSocialBoards.geography.towns) ? initialSocialBoards.geography.towns as GeoBoardRow[] : [],
+    } : EMPTY_GEOGRAPHY_BOARDS,
+  }));
   const [roomMessages, setRoomMessages] = React.useState<RoomMessage[]>([]);
   const [roomMessageDraft, setRoomMessageDraft] = React.useState('');
   const [roomMessageState, setRoomMessageState] = React.useState('Post');
