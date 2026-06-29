@@ -22,6 +22,15 @@ Run the launch gate when production should be considered release-ready:
 pnpm audit:launch
 ```
 
+Run the authenticated launch gate when profile and room-chat happy paths need
+proof with a real Recursiv project-scoped app-member key. The runner mints a
+throwaway audit player key with the correct IQ WARS project scope and injects
+it only into the child audit process:
+
+```bash
+pnpm audit:launch:authenticated
+```
+
 Run the production deployment proof when pushing a commit to `iqwars.app`.
 This command monitors `/api/health`, `/api/ready`, and `/api/version` during
 the deployment window and fails if any sample goes unhealthy or the final
@@ -43,7 +52,8 @@ Current Coolify/GitHub deployment status:
 - Domains: `iqwars.app`, `www.iqwars.app`, `iq.on.recursiv.io`, `iq-next.on.recursiv.io`
 - Branch: `main`
 - Verified manual path: `pnpm deploy:prove -- --trigger --expected-commit <commit>`
-- Known non-A+ blocker: GitHub currently has no repo webhooks for `recursivlabs/iq`, and the Coolify app reports no GitHub manual webhook secret. Pushes therefore still require the tracked Coolify trigger path until the GitHub-to-Coolify webhook is configured and proven.
+- Verified normal-push path: GitHub webhook id `647492155` auto-deploys `main` pushes to Coolify; keep proving each pushed commit with `pnpm deploy:prove -- --expected-commit <commit>`.
+- Known non-A+ blockers: controlled email-code inbox proof, real checkout completion, reminder deliverability, and legal review remain tracked in `docs/iqwars-feature-status.tsv`.
 
 Production exposes two operational checks:
 

@@ -9,6 +9,7 @@
     "audit:source": "node scripts/audit-iqwars.mjs",
     "audit:live": "node scripts/audit-iqwars.mjs --origin https://iqwars.app",
     "audit:launch": "node scripts/audit-iqwars.mjs --origin https://iqwars.app --require-persistent",
+    "audit:launch:authenticated": "node scripts/run-authenticated-launch-audit.mjs --origin https://iqwars.app",
     "audit:features": "node scripts/audit-feature-ledger.mjs",
     "audit:visual": "node scripts/audit-visual-ux.mjs --origin https://iqwars.app",
     "audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app",

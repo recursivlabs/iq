@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     },
     body: JSON.stringify({
       name: 'IQ WARS player',
-      scopes: ['users:read', 'billing:read', 'billing:write'],
+      scopes: ['users:read', 'projects:read', 'billing:read', 'billing:write'],
       projectId: IQWARS_PROJECT_ID,
     }),
   });

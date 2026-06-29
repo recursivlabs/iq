@@ -45,6 +45,7 @@ const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
+const authenticatedLaunchAuditPath = path.join(root, 'scripts/run-authenticated-launch-audit.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
 const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
 const deployProofPath = path.join(root, 'scripts/prove-iqwars-deploy.mjs');
@@ -341,6 +342,7 @@ async function sourceAudit() {
   const rankingsPage = source(rankingsPagePath);
   const visualAudit = source(visualAuditPath);
   const foucTrace = source(foucTracePath);
+  const authenticatedLaunchAudit = source(authenticatedLaunchAuditPath);
   const backupScript = source(backupScriptPath);
   const prodSmoke = source(prodSmokePath);
   const deployProof = source(deployProofPath);
@@ -593,7 +595,7 @@ async function sourceAudit() {
   assert(checkout.includes("provider: 'payment_link'") && checkout.includes('fallback: true') && checkout.includes('recursivResponse.status !== 401'), 'Checkout API falls back to a configured hosted payment link when Recursiv tier routing is unavailable without masking auth failures.');
   assert(checkoutStatus.includes('PLAYER_API_KEY_COOKIE') && checkoutStatus.includes('setAccessCookie'), 'Checkout status API requires a player key and syncs the access cookie.');
   assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
-  assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID'), 'Email-code verify route creates project-scoped IQ WARS player keys.');
+  assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID') && authVerify.includes("'projects:read'"), 'Email-code verify route creates project-scoped IQ WARS player keys with project-read validation scope.');
   assert(authVerify.includes('world-iq:account-links:v1') && authVerify.includes('resolveLinkedPlayerId') && authVerify.includes('playerId: linkedPlayerId || requestedPlayerId'), 'Email-code verify route persists a stable account-to-player link for cross-device room score continuity.');
   assert(xConnect.includes('safeReturnPath') && xConnect.includes('code_challenge_method'), 'X connect route sanitizes returns and uses PKCE.');
   assert(xCallback.includes('expectedState !== state') && xCallback.includes('redirectWithParams'), 'X callback route verifies state and redirects with status params.');
@@ -634,6 +636,7 @@ async function sourceAudit() {
   assert(deployProof.includes('/api/health') && deployProof.includes('/api/ready') && deployProof.includes('/api/version') && deployProof.includes('launchReady'), 'Deploy proof continuously probes health, readiness, and deployed commit metadata.');
   assert(deployProof.includes('/deploy?uuid=') && deployProof.includes('COOLIFY_API_TOKEN') && deployProof.includes('IQWARS_COOLIFY_APP_UUID') && deployProof.includes('--trigger'), 'Deploy proof can trigger and poll the Coolify app deployment when operator credentials are supplied.');
   assert(deployProof.includes('No-downtime deploy proof passed') && deployProof.includes('outageSamples') && deployProof.includes('Final deployed commit does not match expected commit'), 'Deploy proof fails closed on downtime samples or deployed-commit mismatch.');
+  assert(packageJson.includes('"audit:launch:authenticated": "node scripts/run-authenticated-launch-audit.mjs --origin https://iqwars.app"') && authenticatedLaunchAudit.includes("'projects:read'") && authenticatedLaunchAudit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && authenticatedLaunchAudit.includes('Project-scoped audit key creation failed'), 'Package scripts expose a redacted authenticated launch audit runner that mints correctly scoped IQ WARS audit player keys.');
   assert([leaderboard, attempts, username, profiles, roomMessages, presence].every((route) => route.includes('updateJsonStore')), 'Mutable app APIs use serialized JSON store updates.');
   assert(reminders.includes('updateReminderStore') && remindersSend.includes('updateReminderStore'), 'Reminder signup and send flows use serialized reminder store updates.');
   assert(rateLimit.includes("STORE_KEY = 'world-iq:rate-limits:v1'") && rateLimit.includes('updateJsonStore') && rateLimit.includes('retry-after') && rateLimit.includes('status: 429'), 'Shared rate-limit helper stores durable buckets and returns standard 429 responses.');
