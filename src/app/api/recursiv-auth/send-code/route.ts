@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { enforceRateLimit } from '../../_lib/rateLimit';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
+const IQWARS_PROJECT_ID = process.env.IQWARS_RECURSIV_PROJECT_ID || process.env.RECURSIV_PROJECT_ID || '';
 const IQWARS_PROJECT_API_KEY = process.env.IQWARS_RECURSIV_API_KEY || process.env.RECURSIV_PROJECT_API_KEY || process.env.RECURSIV_API_KEY || '';
 const IQWARS_APP_ORIGIN = (process.env.IQWARS_APP_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || 'https://iqwars.app').replace(/\/$/, '');
 const IQWARS_APP_HOST = (() => {
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
       'Content-Type': 'application/json',
       Host: IQWARS_APP_HOST,
       Origin: IQWARS_APP_ORIGIN,
+      ...(IQWARS_PROJECT_ID ? { 'x-recursiv-app-project': IQWARS_PROJECT_ID } : {}),
     },
     body: JSON.stringify({ email, type: 'sign-in' }),
   });

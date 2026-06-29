@@ -148,6 +148,7 @@ export async function POST(request: NextRequest) {
       'Content-Type': 'application/json',
       Host: IQWARS_APP_HOST,
       Origin: IQWARS_APP_ORIGIN,
+      ...(IQWARS_PROJECT_ID ? { 'x-recursiv-app-project': IQWARS_PROJECT_ID } : {}),
     },
     body: JSON.stringify({ email, otp }),
   });
