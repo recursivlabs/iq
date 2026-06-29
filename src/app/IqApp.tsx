@@ -2348,7 +2348,7 @@ function RoomRecordStrip({
       <div className="section-head">
         <div>
           <p className="kicker">{copy('All-time room highscore')}</p>
-          <h2>{topRecord ? `${copy('Ongoing room record')}: ${topRecord.score}` : copy('No all-time room record yet.')}</h2>
+          <h2>{topRecord ? `${copy('Ongoing room record')}: ${topRecord.score}` : copy('No room record yet.')}</h2>
           <p>{copy('This room keeps old scores for the ongoing highscore race. The daily board still resets every day.')}</p>
           {roomSyncState ? (
             <span className={`room-sync-state ${roomSyncState.toLowerCase().includes('retry') || roomSyncState.toLowerCase().includes('saved locally') ? 'pending' : 'posted'}`} role="status" aria-live="polite">{copy(roomSyncState)}</span>
@@ -8721,7 +8721,14 @@ export default function Home({
             grid-template-columns: 1fr;
           }
           .room-record-strip .section-head h2 {
-            font-size: 30px;
+            max-width: 12ch;
+            font-size: clamp(28px, 10vw, 40px);
+            line-height: .96;
+          }
+          .room-record-strip .section-head p {
+            max-width: 31ch;
+            font-size: 15px;
+            line-height: 1.45;
           }
           .room-record-metrics strong {
             font-size: 30px;
@@ -8911,14 +8918,6 @@ export default function Home({
           .answer-footer .primary {
             width: 100%;
             min-height: 60px;
-          }
-          .runner-panel.feedback-correct .answer-footer,
-          .runner-panel.feedback-wrong .answer-footer {
-            position: relative;
-            bottom: auto;
-            margin-top: 7px;
-            padding-top: 7px;
-            background: transparent;
           }
           .live-score-row div {
             padding: 5px 6px;
