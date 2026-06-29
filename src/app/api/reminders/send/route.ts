@@ -84,6 +84,10 @@ function latestEntry(entries: SocialEntry[]) {
   return [...entries].sort((a, b) => b.timestamp - a.timestamp)[0] || null;
 }
 
+function answerGoal(answers: number) {
+  return [100, 250, 500, 1000].find((goal) => answers < goal) || 1000;
+}
+
 function currentStreakDays(entries: SocialEntry[], today: string) {
   const playedDays = new Set(entries.map((entry) => entry.day));
   const startDay = playedDays.has(today) ? today : addDays(today, -1);
@@ -97,12 +101,15 @@ function currentStreakDays(entries: SocialEntry[], today: string) {
 function buildReminderDigest(reminder: ReminderRecord, entries: SocialEntry[], now: number) {
   const today = dayStamp(now);
   const url = reminder.groupCode ? `${PUBLIC_APP_URL}/g/${reminder.groupCode}` : PUBLIC_APP_URL;
+  const offUrl = `${PUBLIC_APP_URL}/api/reminders/unsubscribe?t=${encodeURIComponent(reminder.unsubscribeToken)}`;
   const room = reminder.groupName || 'IQ WARS';
   const playerEntries = entries.filter((entry) => entry.playerId === reminder.playerId);
   const todayEntry = playerEntries.find((entry) => entry.day === today) || null;
   const streak = currentStreakDays(playerEntries, today);
   const best = bestEntry(playerEntries);
   const latest = latestEntry(playerEntries);
+  const answers = playerEntries.reduce((total, entry) => total + Math.max(0, Math.round(entry.total || 0)), 0);
+  const nextGoal = answerGoal(answers);
   const roomEntries = reminder.groupCode ? entries.filter((entry) => entry.groupCode === reminder.groupCode && !entry.playerId.startsWith('agent-')) : [];
   const roomToday = roomEntries.filter((entry) => entry.day === today);
   const roomRecord = bestEntry(roomEntries);
@@ -114,23 +121,22 @@ function buildReminderDigest(reminder: ReminderRecord, entries: SocialEntry[], n
       : `${room}: today's IQ WARS is live`;
 
   const lines = [
-    `Today's IQ WARS is live for ${room}.`,
-    '',
+    `IQ WARS is live for ${room}.`,
     todayEntry
       ? `Today: ${todayEntry.score} IQ, ${todayEntry.correct}/${todayEntry.total}, ${todayEntry.rank}.`
       : 'You still have one official attempt today.',
   ];
 
-  if (streak > 0) lines.push(`Streak: ${streak} completed day${streak === 1 ? '' : 's'}. Keep it alive with today's board.`);
-  else lines.push('Start a streak today. Your score gets more reliable as your completed days stack up.');
-
-  if (best) lines.push(`Personal best: ${best.score} IQ on ${best.day}.`);
-  if (latest && latest.day !== todayEntry?.day) lines.push(`Last result: ${latest.score} IQ on ${latest.day}.`);
+  if (latest) lines.push(`Score: ${latest.score} IQ. Evidence: ${answers} answers.`);
+  else lines.push(`Evidence: ${answers} answers. First goal: ${nextGoal}.`);
+  lines.push(`Next validity goal: ${nextGoal} answers.`);
+  if (streak > 0) lines.push(`Streak: ${streak} day${streak === 1 ? '' : 's'}.`);
+  if (best) lines.push(`Best: ${best.score} IQ on ${best.day}.`);
   if (reminder.groupCode) {
-    lines.push(`Room today: ${roomToday.length} player${roomToday.length === 1 ? '' : 's'} on the board.`);
+    lines.push(`Room today: ${roomToday.length} player${roomToday.length === 1 ? '' : 's'}.`);
     if (roomRecord) lines.push(`Room record: ${roomRecord.displayName} ${roomRecord.score} IQ on ${roomRecord.day}.`);
   }
-  lines.push('', `Play here: ${url}`, '', 'One official attempt. New board every day.', 'To stop reminders, reply STOP or email bill@recursiv.io.');
+  lines.push('', `Play: ${url}`, `Stop: ${offUrl}`, 'Or reply STOP.');
 
   return {
     subject,
@@ -178,7 +184,7 @@ export async function POST(request: Request) {
 
   const now = Date.now();
   const store = await readReminderStore();
-  const reminders = targetEmail ? store.reminders.filter((reminder) => reminder.email === targetEmail) : store.reminders;
+  const reminders = (targetEmail ? store.reminders.filter((reminder) => reminder.email === targetEmail) : store.reminders).filter((reminder) => !reminder.disabledAt);
   if (targetEmail && reminders.length === 0) {
     return NextResponse.json({ error: 'No reminder found for proof email.' }, { status: 404 });
   }

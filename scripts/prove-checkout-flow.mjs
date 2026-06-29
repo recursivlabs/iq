@@ -191,7 +191,10 @@ async function main() {
     url: checkoutSummary,
   });
   assert(checkoutSummary.host !== 'evil.example', 'Checkout reflected an unsafe return URL host.');
-  assert(['recursiv.io', 'checkout.stripe.com'].some((host) => checkoutSummary.host === host || checkoutSummary.host.endsWith(`.${host}`)), 'Checkout URL is not hosted by Recursiv or Stripe.', {
+  assert(!/^\/(register|login|sign-in|sign-up)(\/|$)/i.test(new URL(checkoutUrl).pathname), 'Checkout returned a generic account registration URL instead of subscription checkout.', {
+    url: checkoutSummary,
+  });
+  assert(['recursiv.io', 'checkout.stripe.com', 'buy.stripe.com'].some((host) => checkoutSummary.host === host || checkoutSummary.host.endsWith(`.${host}`)), 'Checkout URL is not hosted by Recursiv or Stripe.', {
     url: checkoutSummary,
   });
   assert(checkout.data?.provider === 'payment_link' || checkout.data?.provider === 'app_subscription', 'Checkout response provider is unsupported.', {

@@ -39,6 +39,8 @@ function cleanCheckoutUrl(value: unknown) {
   try {
     const parsed = new URL(value.trim());
     if (parsed.protocol !== 'https:') return null;
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'checkout.stripe.com' && host !== 'buy.stripe.com') return null;
     return parsed.toString();
   } catch {
     return null;

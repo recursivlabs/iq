@@ -1265,14 +1265,14 @@ function assertAgentVisibilityState(state, viewportId, label, { expectAgents }) 
     return;
   }
 
-  const agentRows = (board.rows || []).filter((row) => /@agent_|Agent\s+[A-Z]/i.test(row));
+  const agentRows = (board.rows || []).filter((row) => /@(mina_vale|theo_park|lina_ortiz|amir_rao|clara_novak|sofia_m|owen_li|maya_chen|niko_adler|yara_singh)(?=\d|[^a-z0-9_]|$)/i.test(row));
   if (expectAgents) {
-    if (agentRows.length > 0) pass(`${prefix} shows seeded test agents only after the setting is enabled`, { agentRows: agentRows.slice(0, 3) });
-    else fail(`${prefix} shows seeded test agents only after the setting is enabled`, { rows: board.rows?.slice(0, 8), board: board.text.slice(0, 900) });
+    if (agentRows.length > 0) pass(`${prefix} shows seeded benchmark profiles only after the setting is enabled`, { agentRows: agentRows.slice(0, 3) });
+    else fail(`${prefix} shows seeded benchmark profiles only after the setting is enabled`, { rows: board.rows?.slice(0, 8), board: board.text.slice(0, 900) });
   } else if (agentRows.length === 0) {
-    pass(`${prefix} keeps seeded test agents hidden by default`, { rows: board.rowCount });
+    pass(`${prefix} keeps seeded benchmark profiles hidden by default`, { rows: board.rowCount });
   } else {
-    fail(`${prefix} keeps seeded test agents hidden by default`, { agentRows: agentRows.slice(0, 5), rows: board.rows?.slice(0, 8) });
+    fail(`${prefix} keeps seeded benchmark profiles hidden by default`, { agentRows: agentRows.slice(0, 5), rows: board.rows?.slice(0, 8) });
   }
 }
 

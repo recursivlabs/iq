@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { enforceRateLimit } from '../_lib/rateLimit';
-import { updateReminderStore, type ReminderRecord } from '../_lib/reminders';
+import { reminderUnsubscribeToken, updateReminderStore, type ReminderRecord } from '../_lib/reminders';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -26,11 +26,12 @@ function validEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-async function sendConfirmation(email: string, groupCode: string | null, groupName: string | null) {
+async function sendConfirmation(email: string, groupCode: string | null, groupName: string | null, unsubscribeToken: string) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return false;
 
   const url = groupCode ? `${PUBLIC_APP_URL}/g/${groupCode}` : PUBLIC_APP_URL;
+  const offUrl = `${PUBLIC_APP_URL}/api/reminders/unsubscribe?t=${encodeURIComponent(unsubscribeToken)}`;
   const room = groupName || 'IQ WARS';
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -42,7 +43,7 @@ async function sendConfirmation(email: string, groupCode: string | null, groupNa
       from: process.env.IQ_EMAIL_FROM || 'IQ WARS <onboarding@resend.dev>',
       to: email,
       subject: `${room} is ready for tomorrow`,
-      text: `You are on the daily reminder list for ${room}.\n\nYour room: ${url}\n\nOne official attempt opens each day.`,
+      text: `Daily IQ WARS reminder is on for ${room}.\n\nPlay: ${url}\nStop: ${offUrl}`,
     }),
   });
   return response.ok;
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
   const groupName = cleanText(body?.groupName) || (groupCode ? groupCode : null);
   const playerId = cleanText(body?.playerId, 80) || `email:${email}`;
   const id = `${email}:${groupCode || 'global'}`;
+  const unsubscribeToken = reminderUnsubscribeToken(email, groupCode);
 
   const saveResult = await updateReminderStore((store) => {
     const existingIndex = store.reminders.findIndex((item) => item.id === id);
@@ -86,16 +88,18 @@ export async function POST(request: Request) {
       createdAt: existing?.createdAt || now,
       lastSentAt: existing?.lastSentAt || null,
       confirmationSentAt: existing?.confirmationSentAt || null,
+      disabledAt: null,
+      unsubscribeToken: existing?.unsubscribeToken || unsubscribeToken,
     };
     if (existingIndex >= 0) {
       store.reminders[existingIndex] = record;
     } else {
       store.reminders.push(record);
     }
-    return { shouldSendConfirmation: !record.confirmationSentAt };
+    return { shouldSendConfirmation: !record.confirmationSentAt, unsubscribeToken: record.unsubscribeToken };
   });
   const confirmationSent = saveResult.shouldSendConfirmation
-    ? await sendConfirmation(email, groupCode, groupName).catch(() => false)
+    ? await sendConfirmation(email, groupCode, groupName, saveResult.unsubscribeToken || unsubscribeToken).catch(() => false)
     : false;
   if (confirmationSent) {
     await updateReminderStore((store) => {

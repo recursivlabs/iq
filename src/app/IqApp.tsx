@@ -1166,6 +1166,42 @@ function hashNumber(value: string) {
   return Math.abs(hash >>> 0);
 }
 
+const AVATAR_ACCENTS = ['#f4f5f6', '#cbd4dc', '#d8d0c4', '#c5d6cc', '#d4c7d8', '#d7d7c9'];
+
+function avatarModel(seed: string) {
+  const hash = hashNumber(seed || 'iq-wars');
+  return {
+    accent: AVATAR_ACCENTS[hash % AVATAR_ACCENTS.length],
+    turn: ((hash >> 3) % 19) - 9,
+    eyeGap: 4 + ((hash >> 7) % 4),
+    mouth: (hash >> 11) % 3,
+    antenna: ((hash >> 15) & 1) === 1,
+    visor: ((hash >> 18) & 1) === 1,
+  };
+}
+
+function BrandAvatar({ seed, label, size = 'md' }: { seed: string; label: string; size?: 'sm' | 'md' | 'lg' }) {
+  const model = avatarModel(seed);
+  return (
+    <span
+      className={`brand-avatar brand-avatar-${size} ${model.antenna ? 'with-antenna' : ''} ${model.visor ? 'with-visor' : ''} mouth-${model.mouth}`}
+      role="img"
+      aria-label={`${label} avatar`}
+      style={{
+        '--avatar-accent': model.accent,
+        '--avatar-turn': `${model.turn}deg`,
+        '--avatar-eye-gap': `${model.eyeGap}px`,
+      } as React.CSSProperties}
+    >
+      <i aria-hidden="true">
+        <b />
+        <b />
+        <em />
+      </i>
+    </span>
+  );
+}
+
 function normalizedPlaceLabel(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
@@ -2059,6 +2095,10 @@ function scoreEvidenceClass(answers: number) {
   return 'none';
 }
 
+function scoreEvidenceGoal(answers: number) {
+  return [100, 250, 500, 1000].find((goal) => answers < goal) || 1000;
+}
+
 function formatTrend(trend: number | null) {
   if (trend === null) return 'first official day';
   if (trend === 0) return 'even vs previous day';
@@ -2223,6 +2263,7 @@ function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRe
   const profile = getIqProfile(history);
   const recent = sortOfficialHistory(history).slice(0, 14).reverse();
   const evidenceClass = scoreEvidenceClass(profile.answers);
+  const nextGoal = scoreEvidenceGoal(profile.answers);
 
   return (
     <section className={`profile-panel score-evidence-${evidenceClass}`} aria-label={copy('Developing IQ WARS profile')}>
@@ -2231,7 +2272,7 @@ function IqProfilePanel({ history, onUnlock, locale }: { history: OfficialRankRe
           <p className="kicker">{copy('Developing IQ')}</p>
           <h2>{profile.score ? `${profile.score} ${copy('rolling score')}` : copy('Build your score over time.')}</h2>
           <p>{profile.attempts > 0
-            ? `${copy(profile.confidence)} · ${profile.answers} ${copy('answers completed')}. ${copy('One official attempt per day keeps the score honest and lets the profile mature over time.')}`
+            ? `${copy(profile.confidence)} · ${profile.answers} ${copy('answers completed')}. ${copy('Next validity goal')}: ${nextGoal}. ${copy('One official attempt per day keeps the score honest and lets the profile mature over time.')}`
             : copy('Your profile starts with the first official attempt. Each daily result becomes one signal in the rolling score.')}</p>
         </div>
         <button className="secondary" onClick={onUnlock}>{copy('Save profile')}</button>
@@ -2355,6 +2396,7 @@ function SocialLeaderboard({
         {entries.length > 0 ? (
           entries.map((entry, index) => (
             <div key={entry.id} className={`leaderboard-row ${index === 0 ? 'local' : ''}`}>
+              <BrandAvatar seed={`${entry.playerId}:${entry.username || entry.displayName}`} label={entry.username ? `@${entry.username}` : entry.displayName} size="sm" />
               <div className="rank">#{index + 1}</div>
               <div className="leader-copy">
                 <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
@@ -2441,7 +2483,10 @@ function RoomRecordStrip({
         <div className="room-record-podium" aria-label={copy('Best official score per player across days.')}>
           {records.slice(0, 5).map((entry, index) => (
             <article key={entry.id}>
-              <span>#{index + 1}</span>
+              <div className="podium-player">
+                <BrandAvatar seed={`${entry.playerId}:${entry.username || entry.displayName}`} label={entry.username ? `@${entry.username}` : entry.displayName} size="sm" />
+                <span>#{index + 1}</span>
+              </div>
               <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
               <em>{entry.score} - {entry.day}</em>
             </article>
@@ -2515,6 +2560,7 @@ function SocialHub({
           <div className="social-feed-list">
             {roomFeed.length > 0 ? roomFeed.map((entry) => (
               <div key={`${entry.id}:feed`} className="social-feed-item">
+                <BrandAvatar seed={`${entry.playerId}:${entry.username || entry.displayName}`} label={entry.username ? `@${entry.username}` : entry.displayName} size="sm" />
                 <div>
                   <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
                   <span>{entry.correct}/{entry.total} · {formatElapsedTime(entry.elapsedMs)} · {entry.beatAi} {copy('AI misses')}</span>
@@ -2730,13 +2776,17 @@ function ProfileCard({ locale, profile, status, onCopy, copied }: { locale: Loca
   }
   const answers = profile.answers ?? profile.attempts * 12;
   const evidenceClass = scoreEvidenceClass(answers);
+  const nextGoal = scoreEvidenceGoal(answers);
   return (
     <section className={`profile-card public-profile-card score-evidence-${evidenceClass}`}>
       <div className="profile-card-top">
-        <div>
-          <p className="kicker">{profile.agent ? copy('Test agent profile') : copy('IQ WARS profile')}</p>
-          <h2>{profile.username ? `@${profile.username}` : profile.displayName}</h2>
-          <p>{profile.bio || copy('Daily reasoning scorecard.')}</p>
+        <div className="profile-identity">
+          <BrandAvatar seed={`${profile.id}:${profile.username || profile.displayName}`} label={profile.username ? `@${profile.username}` : profile.displayName} size="lg" />
+          <div>
+            <p className="kicker">{profile.agent ? copy('Benchmark profile') : copy('IQ WARS profile')}</p>
+            <h2>{profile.username ? `@${profile.username}` : profile.displayName}</h2>
+            <p>{profile.bio || copy('Daily reasoning scorecard.')} {copy('Next validity goal')}: {nextGoal} {copy('answers')}.</p>
+          </div>
         </div>
         {onCopy ? <button className={`secondary ${copied ? 'copied' : ''}`} onClick={onCopy}>{copy(copied ? 'Copied' : 'Copy profile')}</button> : null}
       </div>
@@ -2750,7 +2800,7 @@ function ProfileCard({ locale, profile, status, onCopy, copied }: { locale: Loca
       <div className="profile-meta-line">
         {profileLocationText(profile) ? <span>{profileLocationText(profile)}</span> : null}
         {profile.xHandle ? <span>@{profile.xHandle} {profile.xVerified ? copy('verified') : ''}</span> : null}
-        {profile.agent ? <span>{copy('Seeded test profile')}</span> : null}
+        {profile.agent ? <span>{copy('Benchmark profile')}</span> : null}
       </div>
     </section>
   );
@@ -2960,6 +3010,16 @@ type BlogArticle = {
 };
 
 const RESEARCH_SOURCES = [
+  {
+    title: 'Testing standards set the bar for validity, fairness, reliability, scoring, and use.',
+    body: 'The Standards for Educational and Psychological Testing are the best-practice reference for serious assessment claims. IQ WARS follows the spirit of those standards by separating competitive game scores from clinical or high-stakes claims.',
+    url: 'https://www.testingstandards.net/open-access-files.html',
+  },
+  {
+    title: 'Item Response Theory explains why more answers improve score confidence.',
+    body: 'IRT models connect item difficulty, response data, scoring, validation, and test linking. IQ WARS is not yet a calibrated IRT exam, but the product direction is aligned with accumulating item-level evidence over repeated official runs.',
+    url: 'https://arxiv.org/abs/2108.08604',
+  },
   {
     title: 'Matrix reasoning has a cognitive model, not just vibes.',
     body: 'Carpenter, Just, and Shell modeled Raven-style item solving as rule induction, goal management, and visual-relation integration. IQ WARS uses that tradition for daily competitive reasoning, not clinical diagnosis.',
@@ -5290,6 +5350,7 @@ export default function Home({
             </div>
             <div className="command-scroll">
               <div className="command-profile">
+                <BrandAvatar seed={`${localProfile.id}:${claimedUsername || navIdentity}`} label={navIdentity} size="sm" />
                 <span className={`account-light ${recursivAccount ? 'on' : ''}`} aria-hidden="true" />
                 <div>
                   <strong>{navIdentity}</strong>
@@ -5564,7 +5625,9 @@ export default function Home({
             <article><strong>{copy('Country rankings')}</strong><p>{copy('The geography board asks a simple public question: which countries, cities, towns, and regions produce the strongest active-player daily reasoning scores?')}</p></article>
             <article><strong>{copy('Individual rankings')}</strong><p>{copy('Each player gets one full official run per day, creating a rolling profile that becomes less noisy as more daily signals accumulate.')}</p></article>
             <article><strong>{copy('Academic framing')}</strong><p>{copy('The puzzles emphasize matrix reasoning, abstraction, symbolic transformation, timing, and AI-resistant pattern discovery. Results are comparative gameplay signals, not clinical IQ diagnoses, educational/admission decisions, employment signals, or proof of innate intelligence.')}</p></article>
-            <article><strong>{copy('Proofed answer key')}</strong><p>{copy('Every official matrix item stores a human-readable proof, a formal rule over dots, bars, rings, rotation, and color, and a computed checksum tied to the configured answer option. After each lock, the short proof is visible and the formal proof is available on hover or keyboard focus.')}</p></article>
+            <article><strong>{copy('Score calculation')}</strong><p>{copy('The official score is server-derived from one daily 12-question run: 90 plus accuracy times 52, plus a speed bonus up to 8 points against a 45-second-per-item target. The rolling profile weights the most recent 14 official days, and confidence rises at 100, 250, 500, and 1000 completed answers.')}</p></article>
+            <article><strong>{copy('Proofed answer key')}</strong><p>{copy('Every official matrix item stores a human-readable proof, a formal rule over dots, bars, rings, and rotation, plus a computed checksum tied to the configured answer option. Color may support visual grouping, but it is not the sole basis of an official answer because fairness and color-vision accessibility matter.')}</p></article>
+            <article><strong>{copy('How humans can verify it')}</strong><p>{copy('After each lock, the short explanation is visible. The proof button exposes the formal rule and checksum so a mathematically inclined player can verify that the correct tile follows from the item definition instead of taste or guesswork.')}</p></article>
           </div>
           <div className="monetization">
             <div><strong>{copy('Social layer')}</strong><p>{copy('Logged-in players can build profiles, friend rooms, score feeds, and private competitive groups. Public visitors see the daily test first; social features unlock after account connection.')}</p></div>
@@ -6115,7 +6178,7 @@ export default function Home({
         .leaderboard, .features, .profile-panel { max-width: 1180px; margin: 16px auto 0; }
         .section-head p { color: var(--muted); max-width: 720px; line-height: 24px; }
         .leaderboard-rows { display: grid; gap: 8px; margin-top: 18px; }
-        .leaderboard-row { border: 1px solid var(--line); border-radius: 18px; padding: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr) 70px; align-items: center; gap: 12px; background: rgba(255,255,250,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); }
+        .leaderboard-row { border: 1px solid var(--line); border-radius: 18px; padding: 12px; display: grid; grid-template-columns: 34px 42px minmax(0, 1fr) 70px; align-items: center; gap: 12px; background: rgba(255,255,250,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); }
         .leaderboard-row.local { border-color: var(--ink); background: rgba(255,255,250,.38); }
         .empty-board { border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; gap: 6px; background: rgba(255,255,250,.2); }
         .empty-board span { color: var(--muted); font-size: 13px; line-height: 20px; font-weight: 700; }
@@ -6184,7 +6247,7 @@ export default function Home({
           .live-score-row strong { font-size: 22px; line-height: 22px; }
           .feature-grid { grid-template-columns: 1fr; }
           .geo-grid { grid-template-columns: 1fr; }
-          .leaderboard-row { grid-template-columns: 38px minmax(0, 1fr) 54px; padding: 10px; }
+          .leaderboard-row { grid-template-columns: 30px 34px minmax(0, 1fr) 54px; padding: 10px; }
           .leader-score strong { font-size: 21px; }
           .plans { grid-template-columns: 1fr; }
         }
@@ -6553,7 +6616,7 @@ export default function Home({
         }
         .command-profile {
           display: grid;
-          grid-template-columns: 10px minmax(0, 1fr);
+          grid-template-columns: 34px 10px minmax(0, 1fr);
           gap: 12px;
           align-items: center;
           padding: 14px;
@@ -7321,8 +7384,9 @@ export default function Home({
         }
         .feedback-topline {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: space-between;
+          flex-wrap: wrap;
           gap: 10px;
         }
         .answer-feedback p {
@@ -7404,8 +7468,8 @@ export default function Home({
         }
         .runner-panel.feedback-correct .answer-footer,
         .runner-panel.feedback-wrong .answer-footer {
-          margin-top: 4px;
-          padding-top: 6px;
+          margin-top: 12px;
+          padding-top: 12px;
         }
         .runner-panel.feedback-correct .answer-footer p,
         .runner-panel.feedback-wrong .answer-footer p {
@@ -8245,7 +8309,7 @@ export default function Home({
         }
         .social-feed-item {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-columns: 34px minmax(0, 1fr) auto;
           align-items: center;
           gap: 12px;
         }
@@ -8606,6 +8670,19 @@ export default function Home({
           justify-content: space-between;
           align-items: flex-start;
           gap: 18px;
+        }
+        .profile-identity,
+        .podium-player {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .profile-identity {
+          align-items: flex-start;
+        }
+        .profile-identity > div {
+          min-width: 0;
         }
         .profile-card h2,
         .settings-page h2,
@@ -9196,6 +9273,8 @@ export default function Home({
           .answer-feedback {
             margin-top: 6px;
             padding: 7px 8px;
+            gap: 6px;
+            overflow: visible;
           }
           .answer-feedback strong {
             font-size: 9.5px;
@@ -9206,6 +9285,7 @@ export default function Home({
           }
           .answer-feedback .proof-pill {
             min-height: 21px;
+            margin-left: auto;
             padding: 0 7px;
           }
           .proof-popover {
@@ -9233,6 +9313,13 @@ export default function Home({
           .answer-footer .primary {
             width: 100%;
             min-height: 60px;
+          }
+          .runner-panel.feedback-correct .answer-footer,
+          .runner-panel.feedback-wrong .answer-footer {
+            position: static;
+            margin-top: 12px;
+            padding-top: 10px;
+            background: transparent;
           }
           .live-score-row div {
             padding: 5px 6px;

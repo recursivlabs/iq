@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readJsonStore, updateJsonStore } from './store';
 
 export type ReminderRecord = {
@@ -9,6 +10,8 @@ export type ReminderRecord = {
   createdAt: number;
   lastSentAt: number | null;
   confirmationSentAt: number | null;
+  disabledAt: number | null;
+  unsubscribeToken: string;
 };
 
 export type ReminderStore = {
@@ -42,6 +45,14 @@ function cleanTimestamp(value: unknown, fallback: number | null) {
   return Number.isFinite(timestamp) && timestamp > 0 ? Math.round(timestamp) : fallback;
 }
 
+export function reminderUnsubscribeToken(email: string, groupCode: string | null) {
+  const secret = process.env.IQ_REMINDER_UNSUBSCRIBE_SECRET || process.env.IQ_REMINDER_CRON_TOKEN || 'iqwars-reminders';
+  return createHash('sha256')
+    .update(`${secret}:${email}:${groupCode || 'global'}`)
+    .digest('base64url')
+    .slice(0, 32);
+}
+
 function normalizeReminder(value: unknown): ReminderRecord | null {
   if (!value || typeof value !== 'object') return null;
   const reminder = value as Partial<ReminderRecord>;
@@ -59,6 +70,10 @@ function normalizeReminder(value: unknown): ReminderRecord | null {
     createdAt: cleanTimestamp(reminder.createdAt, Date.now()) || Date.now(),
     lastSentAt: cleanTimestamp(reminder.lastSentAt, null),
     confirmationSentAt: cleanTimestamp(reminder.confirmationSentAt, null),
+    disabledAt: cleanTimestamp(reminder.disabledAt, null),
+    unsubscribeToken: typeof reminder.unsubscribeToken === 'string' && reminder.unsubscribeToken.trim()
+      ? reminder.unsubscribeToken.trim().replace(/[^a-zA-Z0-9_-]+/g, '').slice(0, 64)
+      : reminderUnsubscribeToken(email, groupCode),
   };
 }
 

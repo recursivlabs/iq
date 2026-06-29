@@ -34,6 +34,25 @@ function safeReturnUrl(value: unknown, origin: string) {
   }
 }
 
+function safeCheckoutUrl(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== 'https:') return null;
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    if ((host === 'recursiv.io' || host.endsWith('.recursiv.io')) && /^\/(register|login|sign-in|sign-up)(\/|$)/.test(path)) {
+      return null;
+    }
+    if (host === 'checkout.stripe.com' || host === 'buy.stripe.com' || host === 'recursiv.io' || host.endsWith('.recursiv.io')) {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const playerApiKey = request.cookies.get(PLAYER_API_KEY_COOKIE)?.value || '';
   if (!playerApiKey) {
@@ -82,17 +101,10 @@ export async function POST(request: NextRequest) {
   });
 
   const data = await recursivResponse.json().catch(() => null) as { data?: { url?: string }, error?: string, message?: string } | null;
-  if (!recursivResponse.ok || typeof data?.data?.url !== 'string') {
-    if (config.paymentLinkUrl && recursivResponse.status !== 401 && recursivResponse.status !== 403) {
-      return NextResponse.json({
-        url: config.paymentLinkUrl,
-        provider: 'payment_link',
-        tier: null,
-        fallback: true,
-      });
-    }
-    return jsonError(data?.message || data?.error || 'Could not open Recursiv checkout.', recursivResponse.status || 502);
+  const checkoutUrl = safeCheckoutUrl(data?.data?.url);
+  if (!recursivResponse.ok || !checkoutUrl) {
+    return jsonError(data?.message || data?.error || 'Could not open Recursiv checkout.', recursivResponse.ok ? 502 : recursivResponse.status || 502);
   }
 
-  return NextResponse.json({ url: data.data.url, provider: config.provider, tier });
+  return NextResponse.json({ url: checkoutUrl, provider: config.provider, tier });
 }

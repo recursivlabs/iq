@@ -286,11 +286,14 @@ async function main() {
   assert(/protect your 1-day IQ streak|today's IQ WARS is live|today's IQ board/i.test(subject), 'Reminder subject does not contain daily/streak positioning.', {
     subject,
   });
-  assert(/Streak: 1 completed day/i.test(body), 'Reminder body does not include the proof streak.');
-  assert(/Personal best: 137 IQ/i.test(body), 'Reminder body does not include the proof personal best.');
-  assert(/Room record: Reminder Proof 137 IQ/i.test(body), 'Reminder body does not include the room record.');
-  assert(/Play here: .*\/g\/reminder-/i.test(body), 'Reminder body does not include the room play link.');
-  assert(/reply STOP|bill@recursiv\.io/i.test(body), 'Reminder body does not include stop/unsubscribe copy.');
+  assert(/Score: 137 IQ\. Evidence: 12 answers\./i.test(body), 'Reminder body does not include score evidence.');
+  assert(/Next validity goal: 100 answers\./i.test(body), 'Reminder body does not include the next validity goal.');
+  assert(/Streak: 1 day\./i.test(body), 'Reminder body does not include the proof streak.');
+  assert(/Best: 137 IQ on \d{4}-\d{2}-\d{2}\./i.test(body), 'Reminder body does not include the proof personal best.');
+  assert(/Room record: Reminder Proof 137 IQ on \d{4}-\d{2}-\d{2}\./i.test(body), 'Reminder body does not include the room record.');
+  assert(/Play: .*\/g\/reminder-/i.test(body), 'Reminder body does not include the room play link.');
+  assert(/Stop: .*\/api\/reminders\/unsubscribe\?t=/i.test(body), 'Reminder body does not include one-click unsubscribe copy.');
+  assert(/Or reply STOP\./i.test(body), 'Reminder body does not include reply STOP copy.');
 
   console.log(`PASS IQ WARS reminder email proof passed for ${redactEmail(email)}`);
   console.log(JSON.stringify({
