@@ -3534,7 +3534,7 @@ function Result({
         <strong>{copy(statusCopy.title)}</strong>
         <span>{copy(statusCopy.body)}</span>
       </div>
-      <p className="trust-note">{copy('IQ WARS is a competitive visual reasoning game, not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
+      <p className="trust-note">{copy('IQ WARS is a competitive visual reasoning game, not a clinical IQ test, admission test, employment screen, high-IQ society qualifier, or supervised psychometric assessment.')}</p>
       <div className="actions">
         <button className="primary" onClick={share}>{copy(shareState)}</button>
         <button className="secondary" onClick={onRankings}>{copy(groupCode ? 'See room rankings' : 'See rankings')}</button>
@@ -5376,14 +5376,14 @@ export default function Home({
           <div className="section-head">
             <div>
               <p className="kicker">{copy('IQ WARS research game')}</p>
-              <h2>{copy('A daily global intelligence ranking for individuals and geographies.')}</h2>
-              <p>{copy('IQ WARS is a standardized reasoning competition designed to compare daily abstract problem-solving performance across people, friend groups, cities, countries, and regions.')}</p>
+              <h2>{copy('A daily global reasoning-game ranking for players, groups, and geographies.')}</h2>
+              <p>{copy('IQ WARS is a standardized reasoning-game competition that compares daily abstract problem-solving performance among active players, friend groups, cities, countries, and regions.')}</p>
             </div>
           </div>
           <div className="feature-grid">
-            <article><strong>{copy('Country rankings')}</strong><p>{copy('The geography board asks a simple public question: which countries, cities, towns, and regions produce the strongest daily reasoning scores?')}</p></article>
-            <article><strong>{copy('Individual rankings')}</strong><p>{copy('Each player gets one full official test per day, creating a rolling profile that improves as more daily data accumulates.')}</p></article>
-            <article><strong>{copy('Academic framing')}</strong><p>{copy('The puzzles emphasize matrix reasoning, abstraction, symbolic transformation, timing, and AI-resistant pattern discovery. Results are comparative game signals, not clinical IQ diagnoses.')}</p></article>
+            <article><strong>{copy('Country rankings')}</strong><p>{copy('The geography board asks a simple public question: which countries, cities, towns, and regions produce the strongest active-player daily reasoning scores?')}</p></article>
+            <article><strong>{copy('Individual rankings')}</strong><p>{copy('Each player gets one full official run per day, creating a rolling profile that becomes less noisy as more daily signals accumulate.')}</p></article>
+            <article><strong>{copy('Academic framing')}</strong><p>{copy('The puzzles emphasize matrix reasoning, abstraction, symbolic transformation, timing, and AI-resistant pattern discovery. Results are comparative gameplay signals, not clinical IQ diagnoses, educational/admission decisions, employment signals, or proof of innate intelligence.')}</p></article>
             <article><strong>{copy('Proofed answer key')}</strong><p>{copy('Every official matrix item stores a human-readable proof, a formal rule over dots, bars, rings, rotation, and color, and a computed checksum tied to the configured answer option. After each lock, the short proof is visible and the formal proof is available on hover or keyboard focus.')}</p></article>
           </div>
           <div className="monetization">
@@ -5401,7 +5401,7 @@ export default function Home({
             <div><strong>{copy('IQ WARS Unlimited')}</strong><p>{copy('Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.')}</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>{copy('Save profile')}</button>
           </div>
-          <p className="trust-note">{copy('IQ WARS is not a clinical IQ test, admission test, or supervised psychometric assessment.')}</p>
+          <p className="trust-note">{copy('IQ WARS is not a clinical IQ test, admission test, employment screen, high-IQ society qualifier, or supervised psychometric assessment.')}</p>
         </section>
       ) : null}
 
