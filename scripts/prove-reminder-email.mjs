@@ -42,6 +42,18 @@ function redactEmail(email) {
   return `<redacted>@${domain}`;
 }
 
+function emailHeaderDomain(value) {
+  const raw = String(value || '');
+  const bracketMatch = raw.match(/<[^@\s<>]+@([^>\s]+)>/);
+  const plainMatch = raw.match(/[^@\s<>]+@([^>\s]+)/);
+  return String(bracketMatch?.[1] || plainMatch?.[1] || '').toLowerCase();
+}
+
+function redactEmailHeader(value) {
+  const raw = String(value || '');
+  return raw.replace(/<[^>]+>/g, '<redacted>').replace(/[A-Z0-9._%+-]+@([A-Z0-9.-]+\.[A-Z]{2,})/gi, '<redacted>@$1');
+}
+
 function dayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
@@ -221,6 +233,7 @@ async function main() {
   const origin = String(valueAfter('--origin') || process.env.IQWARS_AUDIT_ORIGIN || 'https://iqwars.app').replace(/\/+$/, '');
   const resendApiKey = valueAfter('--resend-api-key') || env.RESEND_API_KEY || '';
   const cronToken = valueAfter('--cron-token') || env.IQ_REMINDER_CRON_TOKEN || '';
+  const expectedFromDomain = String(valueAfter('--expect-from-domain') || env.IQ_REMINDER_EXPECT_FROM_DOMAIN || emailHeaderDomain(env.IQ_EMAIL_FROM) || '').toLowerCase();
   const timeoutMs = Number(valueAfter('--timeout-ms') || 90_000);
   const pollMs = Number(valueAfter('--poll-ms') || 3_000);
 
@@ -262,7 +275,14 @@ async function main() {
     pollMs,
   });
   const subject = String(reminder.subject || '');
+  const from = String(reminder.from || '');
   const body = `${reminder.text || ''}\n${reminder.html || ''}`;
+  if (expectedFromDomain) {
+    assert(emailHeaderDomain(from) === expectedFromDomain, 'Reminder sender does not use the expected verified domain.', {
+      from: redactEmailHeader(from),
+      expectedFromDomain,
+    });
+  }
   assert(/protect your 1-day IQ streak|today's IQ WARS is live|today's IQ board/i.test(subject), 'Reminder subject does not contain daily/streak positioning.', {
     subject,
   });
@@ -282,6 +302,7 @@ async function main() {
     reminderEmail: {
       id: reminder.id,
       subject,
+      from: redactEmailHeader(from),
       lastEvent: reminder.last_event || reminder.lastEvent || null,
       createdAt: reminder.created_at || reminder.createdAt || null,
     },
