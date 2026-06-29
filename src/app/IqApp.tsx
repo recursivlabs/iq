@@ -271,6 +271,7 @@ const QUESTION_ORDER_STORAGE_KEY = 'world-iq-question-order-v3';
 const QUESTION_STARTER_HISTORY_STORAGE_KEY = 'world-iq-question-starters-v2';
 const QUESTION_SET_HISTORY_STORAGE_KEY = 'world-iq-question-set-history-v1';
 const PLAYER_ID_STORAGE_KEY = 'world-iq-player-id';
+const PLAYER_ID_HISTORY_STORAGE_KEY = 'world-iq-player-id-history';
 const PLAYER_NAME_STORAGE_KEY = 'world-iq-player-name';
 const PLAYER_USERNAME_STORAGE_KEY = 'world-iq-player-username';
 const GROUP_CODE_STORAGE_KEY = 'world-iq-group-code';
@@ -1419,9 +1420,41 @@ function readStoredGroupName(code: string) {
   return saved?.trim() || groupNameFromCode(code);
 }
 
+function readStoredPlayerId() {
+  if (typeof window === 'undefined') return 'server-player';
+  return cleanPlayerId(window.localStorage.getItem(PLAYER_ID_STORAGE_KEY) || '');
+}
+
+function readPlayerIdHistory() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PLAYER_ID_HISTORY_STORAGE_KEY) || '[]') as unknown;
+    return Array.isArray(parsed) ? [...new Set(parsed.map(cleanPlayerId).filter(Boolean))].slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePlayerIdHistory(ids: string[]) {
+  if (typeof window === 'undefined') return;
+  const unique = [...new Set(ids.map(cleanPlayerId).filter(Boolean))].slice(0, 8);
+  window.localStorage.setItem(PLAYER_ID_HISTORY_STORAGE_KEY, JSON.stringify(unique));
+}
+
+function rememberPlayerId(id: string) {
+  const cleaned = cleanPlayerId(id);
+  if (!cleaned || typeof window === 'undefined') return;
+  writePlayerIdHistory([cleaned, ...readPlayerIdHistory()]);
+}
+
+function playerIdCandidates(preferred?: string) {
+  const candidates = [preferred, readStoredPlayerId(), ...readPlayerIdHistory()].map(cleanPlayerId).filter(Boolean);
+  return [...new Set(candidates)];
+}
+
 function readPlayerId() {
   if (typeof window === 'undefined') return 'server-player';
-  const existing = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+  const existing = readStoredPlayerId();
   if (existing) return existing;
   const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -1438,6 +1471,8 @@ function cleanPlayerId(value: unknown) {
 function writePlayerId(id: string) {
   if (typeof window === 'undefined') return;
   const cleaned = cleanPlayerId(id);
+  const existing = readStoredPlayerId();
+  if (existing && existing !== cleaned) rememberPlayerId(existing);
   if (cleaned) window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, cleaned);
 }
 
@@ -4520,16 +4555,20 @@ export default function Home({
 
     if (!officialRank) {
       try {
-        const serverAttempt = await readServerOfficialAttempt(playerId || readPlayerId());
-        if (serverAttempt?.day === localDayKey()) {
-          syncLocalOfficialLock(serverAttempt);
-          setOfficialSnapshot(readOfficialRank());
-          setOfficialHistory(readOfficialHistory());
-          setUsageSnapshot(readPlayUsage());
-          officialRank = serverAttempt;
+        for (const candidateId of playerIdCandidates(playerId || readPlayerId())) {
+          const serverAttempt = await readServerOfficialAttempt(candidateId);
+          if (serverAttempt?.day === localDayKey()) {
+            if (serverAttempt.playerId !== (playerId || readStoredPlayerId())) rememberPlayerId(serverAttempt.playerId);
+            syncLocalOfficialLock(serverAttempt);
+            setOfficialSnapshot(readOfficialRank());
+            setOfficialHistory(readOfficialHistory());
+            setUsageSnapshot(readPlayUsage());
+            officialRank = serverAttempt;
+            break;
+          }
         }
       } catch {
-        // Local room membership still works if the server attempt lookup is unavailable.
+        // Local room membership still works if server attempt recovery is unavailable.
       }
     }
 

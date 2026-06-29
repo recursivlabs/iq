@@ -517,7 +517,8 @@ async function sourceAudit() {
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
   assert(app.includes('async function syncOfficialRankToGroup') && app.includes('submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name })'), 'Opening a friend room can backfill today\'s saved official score into that room.');
-  assert(app.includes('readServerOfficialAttempt(playerId || readPlayerId())') && app.includes('syncLocalOfficialLock(serverAttempt)') && app.includes('Local room membership still works if the server attempt lookup is unavailable.'), 'Friend room late-join sync falls back to today\'s server-locked official attempt when local storage is missing.');
+  assert(app.includes('function playerIdCandidates') && app.includes('readPlayerIdHistory()') && app.includes('rememberPlayerId(existing)'), 'Friend room recovery preserves prior anonymous player ids when account identity changes.');
+  assert(app.includes('for (const candidateId of playerIdCandidates(playerId || readPlayerId()))') && app.includes('readServerOfficialAttempt(candidateId)') && app.includes('syncLocalOfficialLock(serverAttempt)') && app.includes('Local room membership still works if server attempt recovery is unavailable.'), 'Friend room late-join sync falls back to today\'s server-locked official attempt across current and recent player ids.');
   assert(app.includes('scheduleRoomScoreRetry') && app.includes('Retrying room score sync...') && app.includes('Score saved locally. Retrying room board sync...'), 'Friend room score sync surfaces failed room writes and retries them instead of silently dropping a completed score.');
   assert(app.includes('Promise<boolean>') && app.includes('if (!response.ok) return false') && app.includes("setRoomSyncState('Room score posted.')"), 'Leaderboard submissions return a success signal so room score sync can show posted or retrying state.');
   assert(app.includes('writePlayerId(linkedPlayerId)') && app.includes('claimServerOfficialAttempt(linkedPlayerId, officialRank)') && app.includes('body: JSON.stringify({ email, code, playerId: playerId || readPlayerId() })'), 'Email account connection links the Recursiv account to a durable player id and reclaims today\'s official score before room sync.');
@@ -1144,6 +1145,44 @@ async function liveAudit() {
 
   const attemptGet = await requestJson(`${origin}/api/attempts?day=${day}&playerId=${encodeURIComponent(playerId)}`);
   assert(attemptGet.response.ok && attemptGet.data.locked === true && attemptGet.data.attempt?.playerId === playerId, 'Live attempt API reads back the server-side daily lock.');
+
+  const lateRoomPlayerId = `audit-late-room-${randomUUID()}`;
+  const lateRoomAttempt = {
+    ...attempt,
+    playerId: lateRoomPlayerId,
+    correct: 9,
+    beatAi: 2,
+    elapsedMs: 390000,
+  };
+  const lateRoomAttemptPost = await requestJson(`${origin}/api/attempts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(lateRoomAttempt),
+  });
+  const lateRoomAttemptGet = await requestJson(`${origin}/api/attempts?day=${day}&playerId=${encodeURIComponent(lateRoomPlayerId)}`);
+  assert(lateRoomAttemptPost.response.ok && lateRoomAttemptPost.data.accepted === true && lateRoomAttemptGet.data.locked === true, 'Live late room-join audit first locks an official attempt outside the room.');
+
+  const lockedLateAttempt = lateRoomAttemptGet.data.attempt || lateRoomAttemptPost.data.attempt || lateRoomAttempt;
+  const lateRoomBackfill = await requestJson(`${origin}/api/leaderboards?agents=false`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...lockedLateAttempt,
+      displayName: 'Late Room Audit',
+      username: 'late_room_audit',
+      groupCode: group,
+      groupName: 'Audit Room',
+      geo,
+    }),
+  });
+  const lateRoomBoard = await requestJson(`${origin}/api/leaderboards?day=${day}&group=${group}&agents=false`);
+  const lateRoomRows = lateRoomBoard.data.group || [];
+  const lateRoomRecords = lateRoomBoard.data.groupAllTime || [];
+  assert(lateRoomBackfill.response.ok && lateRoomBackfill.data.entry?.playerId === lateRoomPlayerId, 'Live late room-join audit backfills the locked official attempt into the room board.');
+  if (persistent && verified && storageLaunchReady) {
+    assert(lateRoomRows.some((row) => row.playerId === lateRoomPlayerId && row.groupCode === group), 'Live friend room board includes a player who joined the room after locking today\'s official attempt.');
+    assert(lateRoomRecords.some((row) => row.playerId === lateRoomPlayerId && row.groupCode === group), 'Live friend room all-time highscores include late-joined official attempts.');
+  }
 
   const futureLeaderboardWrite = await requestJson(`${origin}/api/leaderboards?agents=false`, {
     method: 'POST',
