@@ -43,6 +43,17 @@ emails are still Recursiv-branded instead of IQ WARS-branded:
 RESEND_API_KEY=... pnpm auth:proof
 ```
 
+Run the checkout-start proof when the paid upgrade path needs production
+verification without completing a real charge. This mints a throwaway
+project-scoped IQ WARS player key, verifies public billing config does not leak
+checkout URLs, opens checkout with a hostile return URL, confirms the returned
+URL is hosted by Recursiv or Stripe, and verifies unpaid access remains inactive
+until a real payment completes:
+
+```bash
+pnpm checkout:proof
+```
+
 Run the reminder/streak proof when the daily re-engagement loop needs full
 production verification. This creates a controlled proof room and reminder,
 triggers the cron endpoint for only that generated recipient, retrieves the

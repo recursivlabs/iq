@@ -46,6 +46,7 @@ const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
 const authenticatedLaunchAuditPath = path.join(root, 'scripts/run-authenticated-launch-audit.mjs');
+const checkoutProofPath = path.join(root, 'scripts/prove-checkout-flow.mjs');
 const reminderProofPath = path.join(root, 'scripts/prove-reminder-email.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
 const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
@@ -345,6 +346,7 @@ async function sourceAudit() {
   const visualAudit = source(visualAuditPath);
   const foucTrace = source(foucTracePath);
   const authenticatedLaunchAudit = source(authenticatedLaunchAuditPath);
+  const checkoutProof = source(checkoutProofPath);
   const backupScript = source(backupScriptPath);
   const prodSmoke = source(prodSmokePath);
   const deployProof = source(deployProofPath);
@@ -604,6 +606,10 @@ async function sourceAudit() {
   assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl') && checkout.includes('resolveBillingConfig'), 'Checkout API requires a player key, sanitizes return URLs, and uses shared billing config.');
   assert(checkout.includes("provider: 'payment_link'") && checkout.includes('fallback: true') && checkout.includes('recursivResponse.status !== 401'), 'Checkout API falls back to a configured hosted payment link when Recursiv tier routing is unavailable without masking auth failures.');
   assert(checkoutStatus.includes('PLAYER_API_KEY_COOKIE') && checkoutStatus.includes('setAccessCookie'), 'Checkout status API requires a player key and syncs the access cookie.');
+  assert(packageConfig.scripts?.['checkout:proof'] === 'node scripts/prove-checkout-flow.mjs --origin https://iqwars.app', 'Package exposes a production checkout-start proof command.');
+  assert(checkoutProof.includes('createAuditPlayerKey') && checkoutProof.includes('billing:read') && checkoutProof.includes('billing:write'), 'Checkout proof mints or accepts a project-scoped IQ WARS player key with billing scopes.');
+  assert(checkoutProof.includes('maliciousReturnUrl') && checkoutProof.includes("checkoutSummary.host !== 'evil.example'") && checkoutProof.includes('checkout.stripe.com'), 'Checkout proof verifies unsafe return URLs are not reflected and checkout goes to Recursiv or Stripe.');
+  assert(checkoutProof.includes('paymentLinkUrl') && checkoutProof.includes('Billing config leaks a checkout URL') && checkoutProof.includes('world_iq_paid='), 'Checkout proof verifies public config URL non-disclosure and paid-access cookie status sync.');
   assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
   assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID') && authVerify.includes("'projects:read'"), 'Email-code verify route creates project-scoped IQ WARS player keys with project-read validation scope.');
   assert(authVerify.includes('world-iq:account-links:v1') && authVerify.includes('resolveLinkedPlayerId') && authVerify.includes('playerId: linkedPlayerId || requestedPlayerId'), 'Email-code verify route persists a stable account-to-player link for cross-device room score continuity.');
