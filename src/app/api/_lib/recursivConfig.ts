@@ -9,6 +9,12 @@ export type RecursivProjectAuthStatus = {
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const IQWARS_PROJECT_ID = process.env.IQWARS_RECURSIV_PROJECT_ID || process.env.RECURSIV_PROJECT_ID || '';
 const IQWARS_PROJECT_API_KEY = process.env.IQWARS_RECURSIV_API_KEY || process.env.RECURSIV_PROJECT_API_KEY || process.env.RECURSIV_API_KEY || '';
+const RECURSIV_AUTH_CACHE_MS = 5 * 60 * 1000;
+
+const recursivCache = globalThis as typeof globalThis & {
+  __iqwarsRecursivProjectAuth?: { status: RecursivProjectAuthStatus; expiresAt: number };
+  __iqwarsRecursivProjectAuthPromise?: Promise<RecursivProjectAuthStatus>;
+};
 
 async function readErrorCode(response: Response) {
   const data = await response.json().catch(() => null) as { error?: { code?: string; type?: string } | string } | null;
@@ -16,7 +22,7 @@ async function readErrorCode(response: Response) {
   return (data?.error?.code || data?.error?.type || `http_${response.status}`).slice(0, 80);
 }
 
-export async function verifyRecursivProjectAuth(): Promise<RecursivProjectAuthStatus> {
+async function fetchRecursivProjectAuth(): Promise<RecursivProjectAuthStatus> {
   const configured = Boolean(IQWARS_PROJECT_ID && IQWARS_PROJECT_API_KEY);
   if (!configured) {
     return {
@@ -73,4 +79,34 @@ export async function verifyRecursivProjectAuth(): Promise<RecursivProjectAuthSt
       error: error instanceof Error && error.message ? error.message.slice(0, 80) : 'recursiv_unreachable',
     };
   }
+}
+
+export async function verifyRecursivProjectAuth(): Promise<RecursivProjectAuthStatus> {
+  const cached = recursivCache.__iqwarsRecursivProjectAuth;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.status;
+  }
+
+  if (!recursivCache.__iqwarsRecursivProjectAuthPromise) {
+    recursivCache.__iqwarsRecursivProjectAuthPromise = fetchRecursivProjectAuth().then((status) => {
+      if (status.verified && status.projectAccess) {
+        recursivCache.__iqwarsRecursivProjectAuth = {
+          status,
+          expiresAt: Date.now() + RECURSIV_AUTH_CACHE_MS,
+        };
+      }
+      return status;
+    }).finally(() => {
+      recursivCache.__iqwarsRecursivProjectAuthPromise = undefined;
+    });
+  }
+
+  const status = await recursivCache.__iqwarsRecursivProjectAuthPromise;
+  if (!status.verified || !status.projectAccess) {
+    const stale = recursivCache.__iqwarsRecursivProjectAuth?.status;
+    if (stale && status.error === 'rate_limit_exceeded') {
+      return stale;
+    }
+  }
+  return status;
 }
