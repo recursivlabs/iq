@@ -48,6 +48,7 @@ const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
 const authenticatedLaunchAuditPath = path.join(root, 'scripts/run-authenticated-launch-audit.mjs');
 const checkoutProofPath = path.join(root, 'scripts/prove-checkout-flow.mjs');
 const reminderProofPath = path.join(root, 'scripts/prove-reminder-email.mjs');
+const legalProofPath = path.join(root, 'scripts/prove-legal-pages.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
 const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
 const deployProofPath = path.join(root, 'scripts/prove-iqwars-deploy.mjs');
@@ -347,6 +348,7 @@ async function sourceAudit() {
   const foucTrace = source(foucTracePath);
   const authenticatedLaunchAudit = source(authenticatedLaunchAuditPath);
   const checkoutProof = source(checkoutProofPath);
+  const legalProof = source(legalProofPath);
   const backupScript = source(backupScriptPath);
   const prodSmoke = source(prodSmokePath);
   const deployProof = source(deployProofPath);
@@ -387,6 +389,7 @@ async function sourceAudit() {
   assert(existsSync(initialSocialBoardsPath), 'Server initial social-board loader exists.');
   assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
   assert(existsSync(foucTracePath), 'FOUC trace audit harness exists.');
+  assert(existsSync(legalProofPath), 'Legal page proof harness exists.');
   assert(existsSync(backupScriptPath), 'Storage backup/export operator script exists.');
   assert(existsSync(prodSmokePath), 'Production readiness smoke script exists.');
   assert(existsSync(deployProofPath), 'Production deploy no-downtime proof script exists.');
@@ -511,6 +514,10 @@ async function sourceAudit() {
   assert(researchSection.includes('https://doi.org/10.1037/0033-295X.97.3.404') && researchSection.includes('https://doi.org/10.1073/pnas.0801268105') && researchSection.includes('https://doi.org/10.1037/a0028228') && researchSection.includes('https://doi.org/10.1177/1529100616661983') && researchSection.includes('https://arxiv.org/abs/2302.04238'), 'Research page cites primary/review sources for matrix reasoning, cognitive training, and AI reasoning benchmarks.');
   assert(researchView.includes('we do not claim a browser game clinically raises innate IQ') && researchView.includes('not clinical IQ certification') && researchView.includes('What remains unproven'), 'Research page keeps IQ-improvement claims conservative and clearly labels what remains unproven.');
   assert(app.includes('reasoning-game ranking for players, groups, and geographies') && app.includes('among active players') && app.includes('strongest active-player daily reasoning scores') && app.includes('becomes less noisy as more daily signals accumulate') && app.includes('not clinical IQ diagnoses, educational/admission decisions, employment signals, or proof of innate intelligence') && app.includes('not a clinical IQ test, admission test, employment screen, high-IQ society qualifier, or supervised psychometric assessment'), 'About page keeps intelligence-positioning copy conservative and excludes clinical, admissions, employment, society-qualification, or innate-intelligence claims.');
+  assert(app.includes('Privacy choices and rights') && app.includes('Global Privacy Control') && app.includes('Cookies, local storage, analytics, and ads') && app.includes('International users') && app.includes('We do not sell personal data for money'), 'Privacy policy covers privacy choices, browser opt-out signals, ads/analytics storage, international processing, and no-sale positioning.');
+  assert(app.includes('Billing, cancellation, and refunds') && app.includes('manage or cancel paid access') && app.includes('Agents and automation') && app.includes('Ads and sponsored content'), 'Terms cover cancellation/refunds, agent disclosure, and advertising without changing score placement.');
+  assert(packageConfig.scripts?.['legal:proof'] === 'node scripts/prove-legal-pages.mjs --origin https://iqwars.app', 'Package exposes a production legal proof command.');
+  assert(legalProof.includes('Privacy choices and rights') && legalProof.includes('Billing, cancellation, and refunds') && legalProof.includes('Global Privacy Control') && legalProof.includes('/about'), 'Legal proof verifies strengthened privacy, terms, and about-page legal-safe copy.');
   assert(blogSlugs.length >= 10 && new Set(blogSlugs).size === blogSlugs.length, 'Blog inventory contains at least 10 unique SEO article routes.');
   assert(['best-online-iq-test', 'can-iq-puzzles-make-you-smarter', 'raven-matrices-and-fluid-intelligence', 'iq-leaderboard-countries-cities', 'ai-vs-human-iq-test', 'best-iq-test-for-friend-groups'].every((slug) => blogSlugs.includes(slug)), 'Blog inventory covers viral IQ, research, geography, AI, daily habit, and friend-group topics.');
   assert(blogSection.includes('keywords:') && blogSection.includes('regionIntent:') && blogSection.includes('IQ WARS treats daily scores as competitive reasoning signals, not clinical proof of innate ability.'), 'Blog articles include SEO keywords, geo/search intent, and conservative intelligence-claim caveats.');
@@ -1344,8 +1351,8 @@ async function liveAudit() {
     ['/blog', ['Viral IQ research', 'Search-optimized explainers'], 'Live blog route renders article index content.'],
     ['/blog/best-online-iq-test', ['Best Online IQ Test', 'Why IQ WARS is different'], 'Live blog article route renders a routed article.'],
     ['/blog/can-iq-puzzles-make-you-smarter', ['Can IQ Puzzles Make You Smarter?', 'competitive reasoning signals'], 'Live blog article route renders a research caveat article.'],
-    ['/privacy', ['IQ WARS Privacy Policy', 'Recursiv Labs'], 'Live privacy route renders operator and policy text.'],
-    ['/terms', ['IQ WARS Terms of Service', 'Fair play'], 'Live terms route renders fair-play terms.'],
+    ['/privacy', ['IQ WARS Privacy Policy', 'Recursiv Labs', 'Privacy choices and rights', 'Cookies, local storage, analytics, and ads'], 'Live privacy route renders strengthened operator, rights, ads/analytics, and policy text.'],
+    ['/terms', ['IQ WARS Terms of Service', 'Fair play', 'Billing, cancellation, and refunds', 'Agents and automation'], 'Live terms route renders fair-play, billing/cancellation, and agent-disclosure terms.'],
     ['/profile', ['Connect account to manage your profile.'], 'Live logged-out profile route renders the account gate.'],
     ['/settings', ['Connect account to manage settings.'], 'Live logged-out settings route renders the account gate.'],
     ['/u/agent_euclid', ['IQ WARS'], 'Live public profile route renders the shell for a profile slug.'],

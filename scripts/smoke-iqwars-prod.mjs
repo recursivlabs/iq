@@ -10,8 +10,8 @@ const criticalRoutes = [
   { path: '/', snippets: ['IQ WARS', 'Lock answer'] },
   { path: '/rankings', snippets: ['Global board'] },
   { path: '/research', snippets: ['Daily abstract reasoning practice', 'not clinical IQ certification'] },
-  { path: '/privacy', snippets: ['IQ WARS Privacy Policy', 'Recursiv Labs'] },
-  { path: '/terms', snippets: ['IQ WARS Terms of Service', 'Fair play'] },
+  { path: '/privacy', snippets: ['IQ WARS Privacy Policy', 'Recursiv Labs', 'Privacy choices and rights'] },
+  { path: '/terms', snippets: ['IQ WARS Terms of Service', 'Fair play', 'Billing, cancellation, and refunds'] },
 ];
 
 function valueAfter(flag) {
