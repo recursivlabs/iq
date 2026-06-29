@@ -7,6 +7,7 @@ export const contentType = 'image/png';
 
 export default function Image() {
   const cells = Array.from({ length: 12 }, (_, index) => index);
+  const gridLines = Array.from({ length: 12 }, (_, index) => index);
   return new ImageResponse(
     (
       <div
@@ -21,16 +22,32 @@ export default function Image() {
           overflow: 'hidden',
         }}
       >
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background:
-              'linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px)',
-            backgroundSize: '72px 72px',
-            opacity: .55,
-          }}
-        />
+        {gridLines.map((line) => (
+          <div
+            key={`v-${line}`}
+            style={{
+              position: 'absolute',
+              left: 70 + line * 86,
+              top: 0,
+              width: 1,
+              height: '100%',
+              backgroundColor: 'rgba(255,255,255,.05)',
+            }}
+          />
+        ))}
+        {gridLines.slice(0, 7).map((line) => (
+          <div
+            key={`h-${line}`}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 56 + line * 82,
+              width: '100%',
+              height: 1,
+              backgroundColor: 'rgba(255,255,255,.04)',
+            }}
+          />
+        ))}
         <div
           style={{
             position: 'absolute',
@@ -40,9 +57,18 @@ export default function Image() {
             top: 56,
             borderRadius: 520,
             border: '1px solid rgba(255,255,255,.18)',
-            background:
-              'radial-gradient(circle at 34% 30%, rgba(255,255,255,.34), rgba(255,255,255,.05) 24%, rgba(0,0,0,.18) 62%, rgba(0,0,0,.8) 100%)',
-            boxShadow: '0 0 120px rgba(255,255,255,.10), inset -55px -40px 110px rgba(0,0,0,.68)',
+            backgroundColor: '#111417',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            width: 180,
+            height: 180,
+            right: 368,
+            top: 94,
+            borderRadius: 180,
+            backgroundColor: 'rgba(255,255,255,.16)',
           }}
         />
         <div
@@ -68,18 +94,29 @@ export default function Image() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: cell % 5 === 0 ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.045)',
+                backgroundColor: cell % 5 === 0 ? '#33383d' : '#171a1d',
               }}
             >
               <div
                 style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: 7,
-                  background: '#f4f5f6',
-                  boxShadow: cell % 3 === 0 ? '16px 0 0 #f4f5f6, -16px 0 0 #f4f5f6' : cell % 3 === 1 ? '0 16px 0 #f4f5f6' : '12px 12px 0 #f4f5f6',
+                  display: 'flex',
+                  gap: 7,
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
-              />
+              >
+                {Array.from({ length: cell % 3 === 0 ? 3 : cell % 3 === 1 ? 2 : 1 }, (_, dot) => (
+                  <span
+                    key={dot}
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 7,
+                      backgroundColor: '#f4f5f6',
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -100,10 +137,9 @@ export default function Image() {
             <div style={{ fontSize: 22, letterSpacing: 6, color: '#9da3a8' }}>001 / 012</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 620 }}>
-            <div style={{ fontSize: 82, lineHeight: .92, fontWeight: 800, letterSpacing: -3 }}>
-              12 QUESTIONS.
-              <br />
-              1 ATTEMPT.
+            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 82, lineHeight: .92, fontWeight: 800, letterSpacing: -3 }}>
+              <span>12 QUESTIONS.</span>
+              <span>1 ATTEMPT.</span>
             </div>
             <div style={{ fontSize: 30, color: '#c4c8cc', lineHeight: 1.25 }}>
               Beat your friends on the daily reasoning board.
