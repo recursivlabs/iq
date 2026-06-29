@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appPath = path.join(root, 'src/app/IqApp.tsx');
 const layoutPath = path.join(root, 'src/app/layout.tsx');
+const openGraphImagePath = path.join(root, 'src/app/opengraph-image.tsx');
 const i18nPath = path.join(root, 'src/app/i18n.ts');
 const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
@@ -308,6 +309,7 @@ function simulateOfficialQuestionRotation({ ids, starterIds, difficultyRanks, qu
 async function sourceAudit() {
   const app = source(appPath);
   const layout = source(layoutPath);
+  const openGraphImage = source(openGraphImagePath);
   const audit = source(fileURLToPath(import.meta.url));
   const i18n = source(i18nPath);
   const leaderboard = source(leaderboardPath);
@@ -361,6 +363,7 @@ async function sourceAudit() {
 
   assert(existsSync(appPath), 'IqApp source exists.');
   assert(existsSync(layoutPath), 'Root layout source exists.');
+  assert(existsSync(openGraphImagePath), 'Generated social OG image route exists.');
   assert(existsSync(i18nPath), 'I18n source exists.');
   assert(existsSync(leaderboardPath), 'Leaderboard API route exists.');
   assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
@@ -498,8 +501,10 @@ async function sourceAudit() {
   assert(result.includes("copy(roomRankingsPending ? 'Posting score to this room...' : groupCode ? 'See room rankings' : 'See rankings')"), 'Official result exposes room rankings only after score sync is not actively posting.');
 
   const runner = app.slice(app.indexOf('function Runner('), app.indexOf('export default function Home'));
+  const resultView = functionText(findFunction(ts, tree, 'Result'), app);
   assert(runner.includes('readServerOfficialAttempt') && runner.includes('onServerAttemptLocked'), 'Runner syncs server-side daily attempt locks.');
   assert(runner.includes('locked-score-grid') && runner.includes("copy(groupCode ? 'View room rankings' : 'View rankings')") && runner.includes("copy('Unlock profile')"), 'Locked daily state shows the saved score and routes players to rankings before upgrade.');
+  assert(resultView.indexOf('className="actions result-actions"') > -1 && resultView.indexOf('className="actions result-actions"') < resultView.indexOf('className="share-card"'), 'Result challenge actions render before the scorecard details so the friend loop is visible immediately after finish.');
 
   const handleLeaderboard = app.slice(app.indexOf('function handleLeaderboard'), app.indexOf('const handleUsageChange'));
   assert(handleLeaderboard.includes('refreshSocialBoards(groupCode || null)') && !handleLeaderboard.includes("navigateView('rankings')") && !handleLeaderboard.includes('navigateGroupRankings(groupCode)'), 'Completing the official run keeps the score panel visible while refreshing rankings in the background.');
@@ -564,7 +569,15 @@ async function sourceAudit() {
   assert(visualAudit.includes('auditAgentVisibilityDefaults') && visualAudit.includes('keeps seeded test agents hidden by default') && visualAudit.includes('shows seeded test agents only after the setting is enabled'), 'Visual audit covers seeded agent visibility defaults and opt-in ranking mode.');
   assert(visualAudit.includes('const day = todayKey();') && visualAudit.includes("new URLSearchParams({ day, group: room, agents: 'false' })"), 'Visual audit room/geography fixtures use the same local day as the browser client.');
   assert(layout.includes("import './critical.css'") && layout.includes('data-iqwars-critical') && layout.includes('theme-color') && layout.includes('background:#060708'), 'Root layout inlines dark first-paint CSS before external resources.');
+  assert(layout.includes("card: 'summary_large_image'") && layout.includes("url: '/opengraph-image'") && layout.includes('IQ WARS daily scorecard challenge') && openGraphImage.includes('12 QUESTIONS.') && openGraphImage.includes('Beat your friends on the daily reasoning board.'), 'Metadata uses a large thumbnail-style OG image backed by the generated scorecard image route.');
   assert(packageJson.includes('"audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app"') && foucTrace.includes('Network.emulateNetworkConditions') && foucTrace.includes('Page.captureScreenshot') && foucTrace.includes('__iqwarsFoucSamples'), 'Package scripts expose a throttled FOUC trace with screenshots and first-paint samples.');
+  assert(app.includes("copy('Pricing')") && app.includes('command-pricing-card') && app.includes('View pricing') && app.includes('1 free official attempt daily. Paid unlocks archive, score history, reports, and extra practice.'), 'Command sidebar makes pricing visible without blocking the free daily attempt.');
+  assert(app.includes("groupCode ? 'Copy room link' : 'Challenge friends'") && app.includes("setShareState('Room link copied')") && app.includes("setShareState('Challenge copied')") && app.includes('Copy the room link and send it to the group chat.'), 'Result screen primary CTA is a challenge/copy-room-link loop after completion.');
+  assert(app.includes('FOUNDER_PASS_PRICE_LABEL') && app.includes('$19 one-time') && app.includes('Founder Pass pilot. One-time offer test; checkout appears only after Recursiv billing is configured for this tier.'), 'Pricing tests a one-time Founder Pass offer alongside monthly Unlimited without exposing a broken checkout.');
+  assert(app.includes('IQ WARS comparison') && app.includes('Random IQ quizzes') && app.includes('Brain-training apps') && app.includes('Usually one-off score bait') && app.includes('public daily competition with conservative research claims'), 'About page compares IQ WARS against random IQ quizzes and brain-training apps.');
+  assert(app.includes('Beta proof slots') && app.includes('No fabricated testimonials') && app.includes('Real beta quotes, room screenshots, and public scorecards will appear here only after players give permission.'), 'Proof/testimonial slots exist without fabricated testimonials.');
+  assert(app.includes('12 questions. 1 attempt. New board daily.') && app.includes('Think your group is smarter than the internet?') && app.includes('footer-challenge'), 'Footer ends with a shareable daily challenge, not just utility/legal links.');
+  assert(i18n.includes('Copy room link') && i18n.includes('Challenge friends') && i18n.includes('View pricing') && i18n.includes('Beta proof slots') && i18n.includes('Random IQ quizzes'), 'New viral-loop pricing, sharing, comparison, and proof-slot copy is localized.');
   assert(app.includes('const ADSENSE_READY = /^ca-pub-\\d{8,}$/') && app.includes('if (!ADSENSE_READY || typeof window') && app.includes('{ADSENSE_READY ?'), 'AdSense slot renders and pushes ads only when client and slot are valid.');
   assert(layout.includes('const adsenseSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_SLOT') && layout.includes('const adsenseReady = /^ca-pub-\\d{8,}$/') && layout.includes('{adsenseReady ?'), 'Root layout loads the Google ad script only when the full AdSense config is valid.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');

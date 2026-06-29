@@ -6,7 +6,7 @@ const firstPaintCss = 'html,body{min-height:100%;margin:0;background:#060708;col
 export const metadata: Metadata = {
   metadataBase: new URL('https://iqwars.app'),
   title: 'IQ WARS',
-  description: 'The global intelligence ranking hub for humans and AI.',
+  description: '12 questions. 1 attempt. Beat your friends on the daily IQ WARS board.',
   icons: {
     icon: '/icon.svg',
     shortcut: '/icon.svg',
@@ -14,15 +14,24 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'IQ WARS',
-    description: 'One official daily attempt. Earn an IQ WARS score and qualify for the global intelligence leaderboard.',
+    description: '12 questions. 1 attempt. Beat your friends on the daily IQ WARS board.',
     url: 'https://iqwars.app',
     siteName: 'IQ WARS',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: 'IQ WARS daily scorecard challenge',
+      },
+    ],
     type: 'website',
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'IQ WARS',
-    description: 'One official daily attempt. Earn an IQ WARS score and qualify for the global intelligence leaderboard.',
+    description: '12 questions. 1 attempt. Beat your friends on the daily IQ WARS board.',
+    images: ['/opengraph-image'],
   },
 };
 

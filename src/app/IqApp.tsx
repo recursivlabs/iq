@@ -251,6 +251,7 @@ const OFFICIAL_RAMP_PLAN = [
   { minRank: 5, maxRank: 5, take: OFFICIAL_QUESTION_COUNT },
 ];
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
+const FOUNDER_PASS_PRICE_LABEL = '$19 one-time';
 const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
 const DEFAULT_BILLING_UI_CONFIG: BillingUiConfig = {
   provider: CHECKOUT_READY ? 'app_subscription' : 'not_configured',
@@ -3276,6 +3277,14 @@ function SiteFooter({ locale, onView }: { locale: LocaleKey; onView: (view: View
         <strong>IQ WARS</strong>
         <span>{copy('IQ WARS operated by Recursiv Labs, Inc.')}</span>
       </div>
+      <div className="footer-challenge">
+        <span>{copy('12 questions. 1 attempt. New board daily.')}</span>
+        <strong>{copy('Think your group is smarter than the internet?')}</strong>
+        <div className="footer-challenge-actions">
+          <button onClick={() => onView('test')}>{copy('Take today\'s test')}</button>
+          <button onClick={() => onView('rankings')}>{copy('See rankings')}</button>
+        </div>
+      </div>
       <div className="footer-links">
         <button onClick={() => onView('about')}>{copy('About')}</button>
         <button onClick={() => onView('research')}>{copy('Research')}</button>
@@ -3443,7 +3452,7 @@ function Result({
   onServerAttemptLocked: (record: OfficialRankRecord) => void;
 }) {
   const copy = (text: string) => translate(locale, text);
-  const [shareState, setShareState] = React.useState(groupCode ? 'Invite friends' : 'Share result');
+  const [shareState, setShareState] = React.useState(groupCode ? 'Copy room link' : 'Challenge friends');
   const [resultStatus, setResultStatus] = React.useState<'pending' | 'official' | 'practice' | 'daily' | 'lab'>('pending');
   const [roomPostState, setRoomPostState] = React.useState<'idle' | 'posting' | 'posted' | 'retrying'>('idle');
   const submittedRef = React.useRef(false);
@@ -3456,6 +3465,10 @@ function Result({
   const beatAi = answers.filter((answer) => answer.correct && !answer.aiSolved).length;
   const officialWorldRun = mode === 'world' && total >= 6;
   const shareText = buildShareText({ locale, mode, score, rank, percentile, correct, total, beatAi, elapsedMs, speedBonus, answers, status: resultStatus, groupCode, groupName });
+
+  React.useEffect(() => {
+    setShareState(groupCode ? 'Copy room link' : 'Challenge friends');
+  }, [groupCode]);
 
   React.useEffect(() => {
     if (submittedRef.current) return;
@@ -3533,20 +3546,26 @@ function Result({
   }, [beatAi, correct, elapsedMs, locale, mode, officialWorldRun, onLeaderboard, onServerAttemptLocked, percentile, playerId, rank, score, speedBonus, total]);
 
   async function share() {
+    const challengeUrl = groupShareUrl(groupCode);
     try {
+      if (groupCode) {
+        await navigator.clipboard.writeText(challengeUrl);
+        setShareState('Room link copied');
+        return;
+      }
       if (navigator.share) {
         await navigator.share({
-          title: groupCode ? `${groupName} on IQ WARS` : 'IQ WARS',
+          title: 'IQ WARS',
           text: shareText,
-          url: groupShareUrl(groupCode),
+          url: challengeUrl,
         });
         setShareState('Shared');
         return;
       }
-      await navigator.clipboard.writeText(shareText);
-      setShareState(groupCode ? 'Invite copied' : 'Copied');
+      await navigator.clipboard.writeText(`${shareText}\n${challengeUrl}`);
+      setShareState('Challenge copied');
     } catch {
-      setShareState('Ready');
+      setShareState(groupCode ? 'Copy failed' : 'Share ready');
     }
   }
 
@@ -3600,6 +3619,11 @@ function Result({
         <div><strong>{formatElapsedTime(elapsedMs)}</strong><span>{copy('official time')}</span></div>
         <div><strong>+{speedBonus}</strong><span>{copy('speed bonus')}</span></div>
       </div>
+      <div className="actions result-actions">
+        <button className="primary" onClick={share}>{copy(shareState)}</button>
+        <button className="secondary" disabled={roomRankingsPending} onClick={onRankings}>{copy(roomRankingsPending ? 'Posting score to this room...' : groupCode ? 'See room rankings' : 'See rankings')}</button>
+        <button className="secondary" onClick={onUnlock}>{copy('Save score history')}</button>
+      </div>
       <div className="share-card">
         <div>
           <strong>{mode === 'world' ? `IQ WARS ${localDayKey()}` : copy(modes[mode].label)}</strong>
@@ -3610,6 +3634,7 @@ function Result({
             <span key={answer.id} className={answer.correct ? 'hit' : 'miss'} />
           ))}
         </div>
+        <p>{copy(groupCode ? 'Copy the room link and send it to the group chat. The board updates after each official run.' : 'Send this scorecard to a friend. A fresh daily board opens every day.')}</p>
         <p>{shareText}</p>
       </div>
       <div className={`qualification ${resultStatus === 'official' ? 'qualified' : ''}`}>
@@ -3620,11 +3645,6 @@ function Result({
         <p className={`room-sync-state ${roomPostState === 'retrying' ? 'pending' : 'posted'}`} role="status" aria-live="polite">{copy(roomPostCopy)}</p>
       ) : null}
       <p className="trust-note">{copy('IQ WARS is a competitive visual reasoning game, not a clinical IQ test, admission test, employment screen, high-IQ society qualifier, or supervised psychometric assessment.')}</p>
-      <div className="actions">
-        <button className="primary" onClick={share}>{copy(shareState)}</button>
-        <button className="secondary" disabled={roomRankingsPending} onClick={onRankings}>{copy(roomRankingsPending ? 'Posting score to this room...' : groupCode ? 'See room rankings' : 'See rankings')}</button>
-        <button className="secondary" onClick={onUnlock}>{copy('Save rank')}</button>
-      </div>
     </div>
   );
 }
@@ -3665,6 +3685,7 @@ function Runner({
   const [step, setStep] = React.useState(0);
   const [selected, setSelected] = React.useState<number | null>(null);
   const [feedback, setFeedback] = React.useState<AnswerFeedback | null>(null);
+  const [proofOpen, setProofOpen] = React.useState(false);
   const [answers, setAnswers] = React.useState<AnswerRecord[]>([]);
   const [playUsage, setPlayUsage] = React.useState<PlayUsage>(() => blankPlayUsage());
   const [timerStartedAt, setTimerStartedAt] = React.useState(0);
@@ -3680,6 +3701,10 @@ function Runner({
   const liveDelta = liveScore - 100;
   const answeredCount = visibleAnswers.length;
   const isLastQuestion = step + 1 >= questions.length;
+
+  React.useEffect(() => {
+    setProofOpen(false);
+  }, [current?.id, feedback?.id]);
 
   React.useEffect(() => {
     const usage = readPlayUsage();
@@ -3891,7 +3916,17 @@ function Runner({
         <div className={`answer-feedback ${feedback.correct ? 'correct' : 'wrong'}`} aria-live="polite">
           <div className="feedback-topline">
             <strong>{copy(feedback.correct ? 'Correct' : 'Not quite')}</strong>
-            <span className="proof-pill" tabIndex={0} aria-label={copy('Verified proof detail')}>
+            <button
+              type="button"
+              className={`proof-pill ${proofOpen ? 'open' : ''}`}
+              aria-label={copy('Verified proof detail')}
+              aria-expanded={proofOpen}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setProofOpen((open) => !open);
+              }}
+            >
               {copy('Proof')}
               <span className="proof-popover" role="tooltip">
                 <b>{copy('Visual proof')}</b>
@@ -3901,7 +3936,7 @@ function Runner({
                 <b>{copy('Answer checksum')}</b>
                 <code>{current.solutionProof.checksum}</code>
               </span>
-            </span>
+            </button>
           </div>
           <p>{copy(feedback.correct ? 'Clean read.' : `Correct answer: ${String.fromCharCode(65 + current.answerIndex)}.`)} {copy(current.solutionProof.lay)}</p>
         </div>
@@ -5273,8 +5308,22 @@ export default function Home({
                 <button className={view === 'about' ? 'active' : ''} onClick={() => navigateView('about')}>{copy('About')}</button>
                 <button className={view === 'research' ? 'active' : ''} onClick={() => navigateView('research')}>{copy('Research')}</button>
                 <button className={view === 'blog' ? 'active' : ''} onClick={() => navigateView('blog')}>{copy('Blog')}</button>
+                <button onClick={() => {
+                  setNavOpen(false);
+                  setUnlockOpen(true);
+                }}>{copy('Pricing')}</button>
                 {recursivAccount ? <button className={view === 'profile' ? 'active' : ''} onClick={() => navigateView('profile')}>{copy('Profile')}</button> : null}
                 {recursivAccount ? <button className={view === 'settings' ? 'active' : ''} onClick={() => navigateView('settings')}>{copy('Settings')}</button> : null}
+              </div>
+              <div className="command-pricing-card">
+                <span>{copy('Pricing')}</span>
+                <strong>{unlimitedPriceLabel} {copy('Unlimited')}</strong>
+                <p>{copy('1 free official attempt daily. Paid unlocks archive, score history, reports, and extra practice.')}</p>
+                <em>{FOUNDER_PASS_PRICE_LABEL} {copy('Founder Pass pilot')}</em>
+                <button onClick={() => {
+                  setNavOpen(false);
+                  setUnlockOpen(true);
+                }}>{copy('View pricing')}</button>
               </div>
               <div className="command-groups">
                 <div className="command-section-head">
@@ -5532,6 +5581,15 @@ export default function Home({
             <div><strong>{copy('IQ WARS Unlimited')}</strong><p>{copy('Free players get 1 official attempt per day. Paid profiles unlock archive access, saved history, private reasoning reports, and extra hard practice.')}</p></div>
             <button className="secondary" onClick={() => setUnlockOpen(true)}>{copy('Save profile')}</button>
           </div>
+          <div className="comparison-grid" aria-label={copy('IQ WARS comparison')}>
+            <article><strong>{copy('IQ WARS')}</strong><p>{copy('One official daily run, proofed matrix answers, friend rooms, geography boards, and a developing score that gets more reliable over time.')}</p></article>
+            <article><strong>{copy('Random IQ quizzes')}</strong><p>{copy('Usually one-off score bait, weak proofs, unlimited guessing, and no durable friend-group board.')}</p></article>
+            <article><strong>{copy('Brain-training apps')}</strong><p>{copy('Usually habit products. IQ WARS is built around a public daily competition with conservative research claims and visible answer proofs.')}</p></article>
+          </div>
+          <div className="proof-slots">
+            <strong>{copy('Beta proof slots')}</strong>
+            <p>{copy('Real beta quotes, room screenshots, and public scorecards will appear here only after players give permission. No fabricated testimonials.')}</p>
+          </div>
           <p className="trust-note">{copy('IQ WARS is not a clinical IQ test, admission test, employment screen, high-IQ society qualifier, or supervised psychometric assessment.')}</p>
         </section>
       ) : null}
@@ -5575,7 +5633,8 @@ export default function Home({
                 : copy('Free visitors get one full official IQ WARS run per day. Email connection saves your developing score, profile, settings, friend rooms, and reminders without blocking play.')}</p>
             <div className="plans">
               <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
-              <div><strong>{copy(checkoutReady ? unlimitedPriceLabel : 'Upgrade soon')}</strong><span>{copy('archive + reports + extra practice')}</span></div>
+              <div className="featured-plan"><strong>{copy(checkoutReady ? `${unlimitedPriceLabel} Unlimited` : 'Upgrade soon')}</strong><span>{copy('archive + reports + extra practice')}</span></div>
+              <div><strong>{FOUNDER_PASS_PRICE_LABEL}</strong><span>{copy('Founder Pass pilot. One-time offer test; checkout appears only after Recursiv billing is configured for this tier.')}</span></div>
             </div>
             {paidAccess ? (
               <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
@@ -6578,6 +6637,52 @@ export default function Home({
           font-size: 17px;
           letter-spacing: 0;
         }
+        .command-pricing-card {
+          display: grid;
+          gap: 10px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 8px;
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015)),
+            #0c0d0f;
+          padding: 18px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.055);
+        }
+        .command-pricing-card span,
+        .command-pricing-card em {
+          color: #777d82;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-style: normal;
+          font-weight: 500;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+        }
+        .command-pricing-card strong {
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: 17px;
+          font-weight: 600;
+          letter-spacing: .03em;
+        }
+        .command-pricing-card p {
+          margin: 0;
+          color: #9ba1a6;
+          font-size: 12px;
+          line-height: 1.55;
+        }
+        .command-pricing-card button {
+          min-height: 44px;
+          color: #0b0c0e;
+          background: #e9ebec;
+          border: 0;
+          border-radius: 3px;
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: .18em;
+          text-transform: uppercase;
+        }
         .command-groups {
           min-height: min(560px, 64vh);
           display: grid;
@@ -7192,6 +7297,7 @@ export default function Home({
           display: grid;
           gap: 3px;
           position: relative;
+          z-index: 6;
         }
         .answer-feedback.correct {
           border-color: rgba(186,245,207,.28);
@@ -7242,6 +7348,7 @@ export default function Home({
           line-height: 1;
           padding: 0 9px;
           text-transform: uppercase;
+          appearance: none;
         }
         .proof-popover {
           position: absolute;
@@ -7268,6 +7375,7 @@ export default function Home({
         .proof-pill:focus .proof-popover,
         .proof-pill:focus-visible .proof-popover,
         .proof-pill:focus-within .proof-popover,
+        .proof-pill.open .proof-popover,
         .proof-pill:active .proof-popover {
           opacity: 1;
           transform: translateY(0);
@@ -7772,6 +7880,12 @@ export default function Home({
         .share-pattern .hit {
           background: #f4f5f6;
         }
+        .result-actions {
+          margin-top: 18px;
+        }
+        .result-actions .primary {
+          flex: 1 1 220px;
+        }
         .qualification {
           margin-top: 24px;
           border: 1px solid rgba(255,255,255,.10);
@@ -8243,6 +8357,41 @@ export default function Home({
         .social-architecture strong {
           color: #f4f5f6;
         }
+        .comparison-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 1px;
+          margin-top: 16px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          overflow: hidden;
+          background: rgba(255,255,255,.08);
+        }
+        .comparison-grid article {
+          min-width: 0;
+          padding: 18px;
+          background: #0e1012;
+        }
+        .comparison-grid strong,
+        .proof-slots strong {
+          color: #f4f5f6;
+        }
+        .comparison-grid p,
+        .proof-slots p {
+          margin: 8px 0 0;
+          color: #969ba0;
+          font-size: 14px;
+          line-height: 1.6;
+        }
+        .proof-slots {
+          margin-top: 16px;
+          border: 1px solid rgba(255,255,255,.08);
+          border-radius: 8px;
+          background:
+            linear-gradient(160deg, rgba(255,255,255,.04), rgba(255,255,255,.012)),
+            #0b0c0e;
+          padding: 20px;
+        }
         .social-architecture p {
           color: #969ba0;
           line-height: 1.6;
@@ -8344,6 +8493,13 @@ export default function Home({
         }
         .fine-print.success {
           color: #baf5cf;
+        }
+        .modal .plans {
+          grid-template-columns: 1fr;
+        }
+        .plans .featured-plan {
+          background: linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.02)), #111316;
+          box-shadow: inset 2px 0 0 #f4f5f6;
         }
         .rankings-globe-hero {
           min-height: 560px;
@@ -8589,12 +8745,40 @@ export default function Home({
         }
         .footer-brand span,
         .footer-links a,
-        .footer-links button {
+        .footer-links button,
+        .footer-challenge span,
+        .footer-challenge button {
           color: #6f767b;
           font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
           font-size: 10px;
           letter-spacing: .16em;
           text-transform: uppercase;
+        }
+        .footer-challenge {
+          display: grid;
+          gap: 10px;
+          max-width: 360px;
+          margin-right: auto;
+        }
+        .footer-challenge strong {
+          color: #f4f5f6;
+          font-family: "Space Grotesk", system-ui, sans-serif;
+          font-size: clamp(18px, 2.4vw, 28px);
+          font-weight: 500;
+          line-height: 1;
+          letter-spacing: -.01em;
+        }
+        .footer-challenge-actions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .footer-challenge button {
+          min-height: 34px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 3px;
+          background: rgba(255,255,255,.025);
+          padding: 0 11px;
         }
         .footer-links {
           display: flex;
@@ -9126,6 +9310,7 @@ export default function Home({
           .stats,
           .profile-stats,
           .social-architecture,
+          .comparison-grid,
           .plans,
           .social-hub-grid {
             grid-template-columns: 1fr;
