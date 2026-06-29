@@ -36,6 +36,15 @@ pnpm deploy:prove -- --trigger --expected-commit <commit>
 If the deploy was already triggered externally, omit `--trigger` and keep the
 same `--expected-commit` to run the no-downtime monitor only.
 
+Current Coolify/GitHub deployment status:
+
+- GitHub repo: `recursivlabs/iq`
+- Coolify app: `recursiv-iq-standalone` (`nu38x7705v0z961mpbighllf`)
+- Domains: `iqwars.app`, `www.iqwars.app`, `iq.on.recursiv.io`, `iq-next.on.recursiv.io`
+- Branch: `main`
+- Verified manual path: `pnpm deploy:prove -- --trigger --expected-commit <commit>`
+- Known non-A+ blocker: GitHub currently has no repo webhooks for `recursivlabs/iq`, and the Coolify app reports no GitHub manual webhook secret. Pushes therefore still require the tracked Coolify trigger path until the GitHub-to-Coolify webhook is configured and proven.
+
 Production exposes two operational checks:
 
 - `/api/health` returns liveness and storage diagnostics. It may return `200` while `launchReady:false` so the app can remain inspectable during setup.
