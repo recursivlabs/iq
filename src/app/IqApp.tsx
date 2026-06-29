@@ -2326,6 +2326,7 @@ function RoomRecordStrip({
   todayCount,
   inviteState,
   fallbackUrl,
+  roomSyncState,
   onCopyInvite,
 }: {
   locale: LocaleKey;
@@ -2334,6 +2335,7 @@ function RoomRecordStrip({
   todayCount: number;
   inviteState: string;
   fallbackUrl: string;
+  roomSyncState: string;
   onCopyInvite: () => void | Promise<void>;
 }) {
   const copy = (text: string) => translate(locale, text);
@@ -2348,6 +2350,9 @@ function RoomRecordStrip({
           <p className="kicker">{copy('All-time room highscore')}</p>
           <h2>{topRecord ? `${copy('Ongoing room record')}: ${topRecord.score}` : copy('No all-time room record yet.')}</h2>
           <p>{copy('This room keeps old scores for the ongoing highscore race. The daily board still resets every day.')}</p>
+          {roomSyncState ? (
+            <span className={`room-sync-state ${roomSyncState.toLowerCase().includes('retry') || roomSyncState.toLowerCase().includes('saved locally') ? 'pending' : 'posted'}`} role="status" aria-live="polite">{copy(roomSyncState)}</span>
+          ) : null}
         </div>
         <button className={`secondary copy-link ${ctaCopied ? 'copied' : ''}`} onClick={onCopyInvite}>{copy(inviteState)}</button>
       </div>
@@ -3233,6 +3238,7 @@ function StatusRail({
   reminderState,
   inviteState,
   inviteFallbackUrl,
+  roomSyncState,
   onCreateGroup,
   onCopyInvite,
   onPlayerNameChange,
@@ -3257,6 +3263,7 @@ function StatusRail({
   reminderState: string;
   inviteState: string;
   inviteFallbackUrl: string;
+  roomSyncState: string;
   onCreateGroup: () => void | Promise<void>;
   onCopyInvite: () => void | Promise<void>;
   onPlayerNameChange: (name: string) => void;
@@ -3298,6 +3305,9 @@ function StatusRail({
         <p className="rail-label">{copy('Friend room')}</p>
         <strong>{groupCode ? groupName : copy('No room yet')}</strong>
         <span>{groupCode ? `${groupRoomIdentity(groupCode)} · /g/${groupCode}. ${copy('Only real people who open this link appear on the room board.')}` : copy('Create a different private room for each friend circle. Rooms start empty and fill only from the invite link.')}</span>
+        {groupCode && roomSyncState ? (
+          <span className={`room-sync-state ${roomSyncState.toLowerCase().includes('retry') || roomSyncState.toLowerCase().includes('saved locally') ? 'pending' : 'posted'}`} role="status" aria-live="polite">{copy(roomSyncState)}</span>
+        ) : null}
         {groupCode ? (
           <>
             <label className="name-field">
@@ -3861,6 +3871,7 @@ export default function Home({
   const [inviteState, setInviteState] = React.useState('Copy link');
   const [inviteFallbackUrl, setInviteFallbackUrl] = React.useState('');
   const [copiedGroupCode, setCopiedGroupCode] = React.useState('');
+  const [roomSyncState, setRoomSyncState] = React.useState('');
   const [recursivAccount, setRecursivAccount] = React.useState<RecursivAccountRecord | null>(null);
   const [authEmail, setAuthEmail] = React.useState('');
   const [authCode, setAuthCode] = React.useState('');
@@ -3895,8 +3906,14 @@ export default function Home({
   const commandToggleRef = React.useRef<HTMLButtonElement | null>(null);
   const commandPanelRef = React.useRef<HTMLElement | null>(null);
   const closeCommandRef = React.useRef<HTMLButtonElement | null>(null);
+  const roomSyncRetryTimersRef = React.useRef<number[]>([]);
   const [livePresence, setLivePresence] = React.useState<LivePresence>({ active: 1, updatedAt: 0, source: 'local' });
   const copy = React.useCallback((text: string) => translate(locale, text), [locale]);
+
+  React.useEffect(() => () => {
+    roomSyncRetryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    roomSyncRetryTimersRef.current = [];
+  }, []);
 
   function closeNavMenu() {
     setNavOpen(false);
@@ -4375,7 +4392,18 @@ export default function Home({
     playInteractionSound('tap');
   }, [playInteractionSound, settings.soundEnabled]);
 
-  async function submitOfficialResult(record: OfficialRankRecord, targetRoom?: { groupCode: string | null; groupName?: string }) {
+  function scheduleRoomScoreRetry(code: string, name: string, retriesLeft = 2) {
+    const cleaned = cleanGroupCode(code);
+    if (!cleaned || retriesLeft <= 0 || typeof window === 'undefined') return;
+    const delay = retriesLeft === 2 ? 1800 : 4200;
+    const timer = window.setTimeout(() => {
+      roomSyncRetryTimersRef.current = roomSyncRetryTimersRef.current.filter((item) => item !== timer);
+      void syncOfficialRankToGroup(cleaned, name, { retriesLeft: retriesLeft - 1, fromRetry: true });
+    }, delay);
+    roomSyncRetryTimersRef.current.push(timer);
+  }
+
+  async function submitOfficialResult(record: OfficialRankRecord, targetRoom?: { groupCode: string | null; groupName?: string }): Promise<boolean> {
     const id = playerId || readPlayerId();
     const username = claimedUsername || readClaimedUsername();
     const displayName = (username ? `@${username}` : playerName || readPlayerName(id)).trim();
@@ -4406,6 +4434,7 @@ export default function Home({
         }),
       });
       const data = await response.json().catch(() => null);
+      if (!response.ok) return false;
       if (response.ok && Array.isArray(data?.global)) {
         setSocialBoards({
           global: data.global,
@@ -4418,12 +4447,14 @@ export default function Home({
           } : EMPTY_GEOGRAPHY_BOARDS,
         });
       }
+      return true;
     } catch {
       // The local official result remains saved even if the social board cannot sync.
+      return false;
     }
   }
 
-  async function syncOfficialRankToGroup(code: string, name: string) {
+  async function syncOfficialRankToGroup(code: string, name: string, options: { retriesLeft?: number; fromRetry?: boolean } = {}) {
     const cleaned = cleanGroupCode(code);
     if (!cleaned) return;
     let officialRank = readOfficialRank();
@@ -4447,8 +4478,19 @@ export default function Home({
     }
 
     if (officialRank) {
-      void submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name }).finally(() => refreshSocialBoards(cleaned));
+      const retriesLeft = options.retriesLeft ?? 2;
+      setRoomSyncState(options.fromRetry ? 'Retrying room score sync...' : 'Posting score to this room...');
+      const posted = await submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name });
+      if (posted) {
+        setRoomSyncState('Room score posted.');
+        void refreshSocialBoards(cleaned);
+      } else {
+        setRoomSyncState(retriesLeft > 0 ? 'Score saved locally. Retrying room board sync...' : 'Score saved locally. Open this room again to retry sync.');
+        scheduleRoomScoreRetry(cleaned, name, retriesLeft);
+        void refreshSocialBoards(cleaned);
+      }
     } else {
+      setRoomSyncState('');
       void refreshSocialBoards(cleaned);
     }
   }
@@ -4459,7 +4501,16 @@ export default function Home({
     setOfficialHistory(readOfficialHistory());
     setUsageSnapshot(readPlayUsage());
     if (officialRank) {
-      void submitOfficialResult(officialRank).finally(() => {
+      void submitOfficialResult(officialRank).then((posted) => {
+        if (groupCode) {
+          if (posted) {
+            setRoomSyncState('Room score posted.');
+          } else {
+            setRoomSyncState('Score saved locally. Retrying room board sync...');
+            scheduleRoomScoreRetry(groupCode, groupName, 2);
+          }
+        }
+      }).finally(() => {
         setLeaderboard(getLeaderboardEntries());
         setOfficialSnapshot(readOfficialRank());
         setOfficialHistory(readOfficialHistory());
@@ -4822,6 +4873,7 @@ export default function Home({
       setCheckoutState('idle');
       setCheckoutError('');
       setAuthMessage('IQ WARS account connected. Profile and settings are unlocked.');
+      if (groupCode) void syncOfficialRankToGroup(groupCode, groupName);
     } catch (error) {
       setAuthState('error');
       setAuthMessage(error instanceof Error ? error.message : 'Code could not be verified.');
@@ -5162,6 +5214,7 @@ export default function Home({
             reminderState={reminderState}
             inviteState={inviteState}
             inviteFallbackUrl={inviteFallbackUrl}
+            roomSyncState={roomSyncState}
             onCreateGroup={createGroup}
             onCopyInvite={copyInvite}
             onPlayerNameChange={handlePlayerNameChange}
@@ -5204,6 +5257,7 @@ export default function Home({
               todayCount={displayBoards.group.length}
               inviteState={inviteState}
               fallbackUrl={inviteFallbackUrl}
+              roomSyncState={roomSyncState}
               onCopyInvite={copyInvite}
             />
           ) : null}
@@ -7410,6 +7464,23 @@ export default function Home({
         .friend-panel strong,
         .friend-panel span {
           margin-top: 0;
+        }
+        .room-sync-state {
+          width: fit-content;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 999px;
+          padding: 7px 10px;
+          color: #d8dbde;
+          background: rgba(255,255,255,.055);
+          font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+          font-size: 10px;
+          letter-spacing: .12em;
+          line-height: 1;
+          text-transform: uppercase;
+        }
+        .room-sync-state.pending {
+          border-color: rgba(255,255,255,.22);
+          color: #f0f1f2;
         }
         .name-field {
           display: grid;

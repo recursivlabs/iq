@@ -837,6 +837,25 @@ nav .command-grid button::after {
   margin-top: 0;
 }
 
+.room-sync-state {
+  width: fit-content;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #d8dbde;
+  background: rgba(255, 255, 255, .055);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.room-sync-state.pending {
+  border-color: rgba(255, 255, 255, .22);
+  color: #f0f1f2;
+}
+
 .name-field {
   gap: 7px;
 }

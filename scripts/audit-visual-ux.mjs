@@ -384,8 +384,10 @@ function fail(message, details = null) {
 
 async function loadRoomFixture() {
   const room = 'room-kdljky';
+  const day = todayKey();
   try {
-    const response = await fetch(`${origin.replace(/\/$/, '')}/api/leaderboards?group=${encodeURIComponent(room)}&agents=false`, { cache: 'no-store' });
+    const params = new URLSearchParams({ day, group: room, agents: 'false' });
+    const response = await fetch(`${origin.replace(/\/$/, '')}/api/leaderboards?${params.toString()}`, { cache: 'no-store' });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data) {
       fail('production room fixture API is readable for visual audit', { status: response.status, data });
