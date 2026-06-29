@@ -552,7 +552,7 @@ async function sourceAudit() {
   assert(profiles.includes('xVerified: false') && !profiles.includes('Boolean(value.xVerified)') && profiles.includes('normalizeProfile(profile as Record<string, unknown>)'), 'Profile API does not trust client-submitted X badges or legacy stored profile flags.');
   assert(app.includes('const xProfileVisible = X_CONNECTOR_VISIBLE && settings.showXBadge && xVerification?.status === \'verified\'') && app.includes('showXBadge: xProfileVisible'), 'Local public profiles suppress X handles and badges unless the hidden connector is intentionally enabled and verified.');
   assert(!app.includes('settingKey="showXBadge"') && !app.includes('onClick={connectX}') && !app.includes('onClick={verifyXPost}') && !app.includes('onClick={postXScorecard}'), 'Launch UI does not expose X badge settings or incomplete X verification actions.');
-  assert(playerAuth.includes('PLAYER_API_KEY_COOKIE') && playerAuth.includes('/api/v1/users/me') && playerAuth.includes('status: 401') && playerAuth.includes('status: 503'), 'Shared player auth validator verifies Recursiv player keys and fails closed.');
+  assert(playerAuth.includes('PLAYER_API_KEY_COOKIE') && playerAuth.includes('/api/v1/users/me') && playerAuth.includes('/api/v1/projects/') && playerAuth.includes('IQWARS_PROJECT_ID') && playerAuth.includes('Connect an IQ WARS project account before continuing.'), 'Shared player auth validator verifies Recursiv player keys, requires IQ WARS project access, and fails closed.');
   assert(profiles.includes('validatePlayerAccount') && profiles.includes('Connect an IQ WARS account before saving a profile.'), 'Profile write API requires a verified IQ WARS player account.');
   assert(roomMessages.includes('MAX_ROOM_MESSAGES') && roomMessages.includes('sanitizeBody'), 'Room messages API limits and sanitizes room chat.');
   assert(roomMessages.includes('validatePlayerAccount') && roomMessages.includes('Connect an IQ WARS account before posting room chat.'), 'Room chat write API requires a verified IQ WARS player account.');
@@ -900,6 +900,23 @@ async function liveAudit() {
     });
     assert([401, 503].includes(invalidProfilePost.response.status), 'Live profile API rejects invalid player-key cookies.');
     warn('Live authenticated social-write success checks skipped because IQWARS_AUDIT_PLAYER_API_KEY is not configured.');
+  }
+
+  const nonProjectApiKey = process.env.RECURSIV_API_KEY && process.env.RECURSIV_API_KEY !== auditPlayerApiKey
+    ? process.env.RECURSIV_API_KEY
+    : '';
+  if (nonProjectApiKey) {
+    const nonProjectProfilePost = await requestJson(`${origin}/api/profiles`, {
+      method: 'POST',
+      headers: { Cookie: `iqwars_player_api_key=${nonProjectApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: playerId,
+        slug: `${profileSlug}-nonproject`,
+        username,
+        displayName: 'Non Project Key',
+      }),
+    });
+    assert([401, 503].includes(nonProjectProfilePost.response.status), 'Live profile API rejects Recursiv keys without IQ WARS project access.');
   }
 
   const roomMissing = await requestJson(`${origin}/api/rooms/messages`);
