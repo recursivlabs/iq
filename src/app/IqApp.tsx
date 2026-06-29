@@ -4331,11 +4331,30 @@ export default function Home({
     }
   }
 
-  function syncOfficialRankToGroup(code: string, name: string) {
+  async function syncOfficialRankToGroup(code: string, name: string) {
     const cleaned = cleanGroupCode(code);
     if (!cleaned) return;
-    const officialRank = readOfficialRank();
-    if (officialRank?.day === localDayKey()) {
+    let officialRank = readOfficialRank();
+    if (officialRank?.day !== localDayKey()) {
+      officialRank = null;
+    }
+
+    if (!officialRank) {
+      try {
+        const serverAttempt = await readServerOfficialAttempt(playerId || readPlayerId());
+        if (serverAttempt?.day === localDayKey()) {
+          syncLocalOfficialLock(serverAttempt);
+          setOfficialSnapshot(readOfficialRank());
+          setOfficialHistory(readOfficialHistory());
+          setUsageSnapshot(readPlayUsage());
+          officialRank = serverAttempt;
+        }
+      } catch {
+        // Local room membership still works if the server attempt lookup is unavailable.
+      }
+    }
+
+    if (officialRank) {
       void submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name }).finally(() => refreshSocialBoards(cleaned));
     } else {
       void refreshSocialBoards(cleaned);

@@ -12,6 +12,7 @@ const i18nPath = path.join(root, 'src/app/i18n.ts');
 const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
 const geoPath = path.join(root, 'src/app/api/geo/route.ts');
+const agentsManifestPath = path.join(root, 'src/app/api/agents/manifest/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
 const rateLimitPath = path.join(root, 'src/app/api/_lib/rateLimit.ts');
 const healthPath = path.join(root, 'src/app/api/health/route.ts');
@@ -299,6 +300,7 @@ async function sourceAudit() {
   const i18n = source(i18nPath);
   const leaderboard = source(leaderboardPath);
   const attempts = source(attemptsPath);
+  const agentsManifest = source(agentsManifestPath);
   const store = source(storePath);
   const health = source(healthPath);
   const ready = source(readyPath);
@@ -338,6 +340,7 @@ async function sourceAudit() {
   assert(existsSync(i18nPath), 'I18n source exists.');
   assert(existsSync(leaderboardPath), 'Leaderboard API route exists.');
   assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
+  assert(existsSync(agentsManifestPath), 'Agent readiness manifest API route exists.');
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(rateLimitPath), 'Shared durable rate-limit helper exists.');
@@ -471,6 +474,9 @@ async function sourceAudit() {
   const footer = functionText(findFunction(ts, tree, 'SiteFooter'), app);
   assert(!footer.includes("onView('agents')"), 'Public footer keeps secondary agent tools out of the main logged-out loop.');
   assert(app.includes("view === 'agents' && !recursivAccount") && app.includes('Connect account to use agent tools.'), 'Agent-ready surface is gated behind account connection for logged-out visitors.');
+  assert(agentsManifest.includes("status: 'evaluation_contract_ready'") && agentsManifest.includes("loggedOutAgentsRouteBehavior: 'account_gate'") && agentsManifest.includes("privateRoomPolicy: 'agents_excluded'"), 'Agent readiness manifest preserves human-first launch policy and keeps private rooms agent-free.');
+  assert(agentsManifest.includes('agentDisclosureRequired') && agentsManifest.includes('toolPermissions') && agentsManifest.includes('retryPolicy') && agentsManifest.includes('telemetrySchema'), 'Agent readiness manifest defines identity, capability, integrity, and telemetry disclosure requirements.');
+  assert(agentsManifest.includes('humansDefault') && agentsManifest.includes('agents=false') && agentsManifest.includes('disclosedAgentsOptIn') && agentsManifest.includes('cache-control') && agentsManifest.includes('no-store'), 'Agent readiness manifest exposes default human leaderboard and opt-in disclosed-agent leaderboard semantics without caching stale policy.');
   const researchSection = app.slice(app.indexOf('const RESEARCH_SOURCES'), app.indexOf('const BLOG_ARTICLES'));
   const blogSection = app.slice(app.indexOf('const BLOG_ARTICLES'), app.indexOf('function activeBlogSlugFromPath'));
   const researchView = app.slice(app.indexOf('function ResearchView'), app.indexOf('function AgentsView'));
@@ -486,7 +492,8 @@ async function sourceAudit() {
   assert(app.includes("if (code || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard reads force agents=false.');
   assert(app.includes("if (submittedGroupCode || !settings.showAgentActivity) params.set('agents', 'false');"), 'Private room leaderboard writes force agents=false in the response.');
   assert(app.includes('groupRecords.map((group) => group.code)') && app.includes('randomRoomCode(knownCodes)'), 'New room creation checks current and saved room codes before generating a unique link.');
-  assert(app.includes('function syncOfficialRankToGroup') && app.includes('submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name })'), 'Opening a friend room can backfill today\'s saved official score into that room.');
+  assert(app.includes('async function syncOfficialRankToGroup') && app.includes('submitOfficialResult(officialRank, { groupCode: cleaned, groupName: name })'), 'Opening a friend room can backfill today\'s saved official score into that room.');
+  assert(app.includes('readServerOfficialAttempt(playerId || readPlayerId())') && app.includes('syncLocalOfficialLock(serverAttempt)') && app.includes('Local room membership still works if the server attempt lookup is unavailable.'), 'Friend room late-join sync falls back to today\'s server-locked official attempt when local storage is missing.');
   assert(app.includes('if (code) syncOfficialRankToGroup(code, name)') && app.includes('syncOfficialRankToGroup(queryGroup, name)'), 'Route and query room joins sync today\'s official score before refreshing the room board.');
   assert(app.includes('syncOfficialRankToGroup(cleaned, displayName)') && app.includes('syncOfficialRankToGroup(code, name)'), 'Sidebar room opens and newly created rooms share the same score sync path.');
   assert(leaderboard.includes('function groupAllTimeRows') && leaderboard.includes('groupAllTime: groupCode ? groupAllTimeRows'), 'Friend room API returns an all-time room record board alongside today\'s board.');
@@ -1174,6 +1181,13 @@ async function liveAudit() {
   const geoCheck = await requestJson(`${origin}/api/geo?tz=America%2FNew_York&locale=en-US`);
   assert(geoCheck.response.ok && geoCheck.data.countryCode === 'US', 'Live geo endpoint infers country from browser locale fallback.');
   assert(geoCheck.response.ok && Boolean(geoCheck.data.city || geoCheck.data.town), 'Live geo endpoint returns usable city/town signal from edge or timezone data.');
+
+  const agentManifest = await requestJson(`${origin}/api/agents/manifest`);
+  assert(agentManifest.response.ok && agentManifest.data.status === 'evaluation_contract_ready', 'Live agent manifest route exposes an evaluation-ready machine-readable contract.');
+  assert(agentManifest.response.headers.get('cache-control')?.includes('no-store'), 'Live agent manifest route is not cached as stale policy.');
+  assert(agentManifest.data.humanFirstPolicy?.loggedOutAgentsRouteBehavior === 'account_gate' && agentManifest.data.humanFirstPolicy?.privateRoomPolicy === 'agents_excluded', 'Live agent manifest keeps public visitors on the daily test and excludes agents from private rooms.');
+  assert(agentManifest.data.leaderboardAccess?.humansDefault?.includes('agents=false') && agentManifest.data.leaderboardAccess?.disclosedAgentsOptIn?.endsWith('/api/leaderboards'), 'Live agent manifest documents human-default and disclosed-agent opt-in leaderboard access.');
+  assert(Array.isArray(agentManifest.data.agentDisclosureRequired) && agentManifest.data.agentDisclosureRequired.includes('model') && agentManifest.data.agentDisclosureRequired.includes('toolPermissions') && agentManifest.data.agentDisclosureRequired.includes('retryPolicy'), 'Live agent manifest requires model, tool, and retry-policy disclosure.');
 
   const groupPage = await requestText(`${origin}/g/${group}`);
   assert(groupPage.response.ok && groupPage.text.includes('Audit') && /Room records|All-time room highscores|Best scores ever in this room/.test(groupPage.text), 'Live /g/[group] route renders the unique group rankings and room records.');
