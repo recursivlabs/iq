@@ -93,6 +93,14 @@ assert(ready.data?.checks?.storage?.provider === health.data?.storage?.provider,
   ready: ready.data?.checks?.storage?.provider || null,
 });
 
+const version = await request('/api/version');
+assert(version.status === 200 && version.data?.ok === true && version.data?.app === 'iqwars', '/api/version returns deployment metadata', { status: version.status });
+assertNoStore(version, '/api/version');
+assert(/^[a-f0-9]{7,40}$/.test(String(version.data?.commit || '')), '/api/version exposes deployed commit', {
+  shortCommit: version.data?.shortCommit || null,
+  source: version.data?.source || null,
+});
+
 const leaderboard = await request('/api/leaderboards?agents=false');
 assert(leaderboard.status === 200 && Array.isArray(leaderboard.data?.global) && leaderboard.data?.geography, '/api/leaderboards returns live ranking payload');
 assertNoStore(leaderboard, '/api/leaderboards');
@@ -112,6 +120,7 @@ console.log(JSON.stringify({
   failures: failures.length,
   storageProvider: health.data?.storage?.provider || null,
   recursivProjectAccess: Boolean(health.data?.recursiv?.projectAccess),
+  commit: version.data?.shortCommit || null,
 }, null, 2));
 
 if (failures.length) process.exit(1);

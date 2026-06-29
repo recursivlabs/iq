@@ -15,8 +15,10 @@ const geoPath = path.join(root, 'src/app/api/geo/route.ts');
 const agentsManifestPath = path.join(root, 'src/app/api/agents/manifest/route.ts');
 const storePath = path.join(root, 'src/app/api/_lib/store.ts');
 const rateLimitPath = path.join(root, 'src/app/api/_lib/rateLimit.ts');
+const buildInfoPath = path.join(root, 'src/app/api/_lib/buildInfo.ts');
 const healthPath = path.join(root, 'src/app/api/health/route.ts');
 const readyPath = path.join(root, 'src/app/api/ready/route.ts');
+const versionPath = path.join(root, 'src/app/api/version/route.ts');
 const recursivConfigPath = path.join(root, 'src/app/api/_lib/recursivConfig.ts');
 const playerAuthPath = path.join(root, 'src/app/api/_lib/playerAuth.ts');
 const usernamePath = path.join(root, 'src/app/api/username/route.ts');
@@ -98,6 +100,7 @@ const explicitOrigin = findArg('--origin') || process.env.IQWARS_AUDIT_ORIGIN ||
 const runLive = Boolean(explicitOrigin);
 const origin = explicitOrigin.replace(/\/$/, '');
 const requirePersistent = process.argv.includes('--require-persistent') || process.env.REQUIRE_REDIS === '1' || process.env.REQUIRE_PERSISTENT_STORE === '1';
+const expectedCommit = findArg('--expected-commit') || process.env.IQWARS_EXPECTED_COMMIT || '';
 
 async function parseTs(file, kind) {
   const ts = await import('typescript');
@@ -302,8 +305,10 @@ async function sourceAudit() {
   const attempts = source(attemptsPath);
   const agentsManifest = source(agentsManifestPath);
   const store = source(storePath);
+  const buildInfo = source(buildInfoPath);
   const health = source(healthPath);
   const ready = source(readyPath);
+  const version = source(versionPath);
   const recursivConfig = source(recursivConfigPath);
   const playerAuth = source(playerAuthPath);
   const geo = source(geoPath);
@@ -344,8 +349,10 @@ async function sourceAudit() {
   assert(existsSync(geoPath), 'Geo API route exists.');
   assert(existsSync(storePath), 'Shared JSON/Redis store exists.');
   assert(existsSync(rateLimitPath), 'Shared durable rate-limit helper exists.');
+  assert(existsSync(buildInfoPath), 'Shared deployment build-info helper exists.');
   assert(existsSync(healthPath), 'Storage health API route exists.');
   assert(existsSync(readyPath), 'Launch readiness API route exists.');
+  assert(existsSync(versionPath), 'Deployment version API route exists.');
   assert(existsSync(recursivConfigPath), 'Shared Recursiv project auth verifier exists.');
   assert(existsSync(playerAuthPath), 'Shared player auth validator exists.');
   assert(existsSync(usernamePath), 'Username API route exists.');
@@ -575,6 +582,7 @@ async function sourceAudit() {
   assert(store.includes("path.join('/tmp'"), 'Store has only an ephemeral /tmp fallback when no persistent store is configured.');
   assert(store.includes('if (!config) return undefined') && store.includes('if (rest !== undefined) return rest'), 'Redis REST command routing preserves nil command results.');
   assert(store.includes('verifyPersistentStore') && store.includes("'SET', key, nonce, 'EX', '120'") && store.includes('postgresWriteJsonStore') && store.includes('postgresReadJsonStore'), 'Persistent store health verifies configured storage with a write/read round trip.');
+  assert(buildInfo.includes('COMMIT_ENV_KEYS') && buildInfo.includes('readGitInfoFromDir') && buildInfo.includes('cleanCommit') && version.includes('getBuildInfo') && version.includes('cache-control') && version.includes('no-store'), 'Deployment version endpoint exposes sanitized commit metadata from env or git with no-store cache policy.');
   assert(store.includes('updateJsonStore') && store.includes('withLocalLock') && store.includes("'SET', key, token, 'NX', 'PX', '5000'") && store.includes('pg_advisory_xact_lock'), 'Shared store serializes read-modify-write updates locally and with persistent store locks.');
   assert(packageJson.includes('"backup:export": "node scripts/export-iqwars-store.mjs"'), 'Package scripts expose the IQ WARS storage export tool.');
   assert(backupScript.includes('STORE_KEYS') && backupScript.includes('world-iq:leaderboards:v2') && backupScript.includes('world-iq:official-attempts:v1') && backupScript.includes('world-iq:rate-limits:v1'), 'Storage export script covers every app-owned durable JSON key.');
@@ -588,6 +596,7 @@ async function sourceAudit() {
   assert(ready.includes('launchReady ? 200 : 503') && ready.includes('verifyPersistentStore') && ready.includes('verifyRecursivProjectAuth') && ready.includes('cache-control'), 'Readiness API returns 503 until persistent storage and Recursiv project access are launch-ready.');
   assert(packageJson.includes('"smoke:prod": "node scripts/smoke-iqwars-prod.mjs --origin https://iqwars.app"'), 'Package scripts expose a production readiness smoke command.');
   assert(prodSmoke.includes('/api/health') && prodSmoke.includes('/api/ready') && prodSmoke.includes('launchReady') && prodSmoke.includes('projectAccess'), 'Production smoke checks health, readiness, launchReady, and Recursiv project access.');
+  assert(prodSmoke.includes('/api/version') && prodSmoke.includes('deployed commit') && prodSmoke.includes('shortCommit'), 'Production smoke checks deployed commit metadata.');
   assert(prodSmoke.includes('assertNoStore') && prodSmoke.includes('cache-control') && prodSmoke.includes('no-store'), 'Production smoke verifies no-store cache headers on dynamic readiness APIs.');
   assert(prodSmoke.includes('non-ephemeral storage') && prodSmoke.includes('persistent storage') && prodSmoke.includes('storage provider'), 'Production smoke fails non-persistent or ephemeral storage providers.');
   assert(prodSmoke.includes('criticalRoutes') && prodSmoke.includes('/research') && prodSmoke.includes('/privacy') && prodSmoke.includes('/terms') && prodSmoke.includes('/api/leaderboards?agents=false'), 'Production smoke checks critical public routes and live leaderboard payload.');
@@ -731,6 +740,15 @@ async function liveAudit() {
     assert(ready.response.ok && ready.data.ok === true && ready.data.launchReady === true, 'Live readiness endpoint passes only when storage and Recursiv project access are verified.');
   } else {
     assert(ready.response.status === 503 && ready.data.launchReady === false, 'Live readiness endpoint fails closed until storage and Recursiv project access are verified.');
+  }
+
+  const version = await requestJson(`${origin}/api/version`);
+  const liveCommit = String(version.data?.commit || '');
+  assert(version.response.ok && version.data?.ok === true && version.data?.app === 'iqwars', 'Live version endpoint returns IQ WARS deployment metadata.');
+  assert(version.response.headers.get('cache-control')?.includes('no-store'), 'Live version endpoint is not cached as stale deployment state.');
+  assert(/^[a-f0-9]{7,40}$/.test(liveCommit) && typeof version.data?.shortCommit === 'string', 'Live version endpoint exposes a sanitized deployed commit.');
+  if (expectedCommit) {
+    assert(liveCommit.startsWith(expectedCommit.toLowerCase().slice(0, Math.min(12, expectedCommit.length))), 'Live version endpoint matches the expected deployed commit.');
   }
 
   const usernameInvalid = await requestJson(`${origin}/api/username?username=ab`);
