@@ -57,11 +57,9 @@ async function requestJson(path) {
 async function publicProbe(label) {
   const startedAt = Date.now();
   try {
-    const [health, ready, version] = await Promise.all([
-      requestJson('/api/health'),
-      requestJson('/api/ready'),
-      requestJson('/api/version'),
-    ]);
+    const health = await requestJson('/api/health');
+    const ready = await requestJson('/api/ready');
+    const version = await requestJson('/api/version');
     const sample = {
       label,
       ok: health.response.ok && ready.response.ok && version.response.ok,
