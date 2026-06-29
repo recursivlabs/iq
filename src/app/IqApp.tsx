@@ -2399,14 +2399,19 @@ function RoomRecordStrip({
   const topRecord = records[0] || null;
   const ctaCopied = inviteState === 'Link copied';
   const showFallbackUrl = Boolean(fallbackUrl && inviteState === 'Link ready');
+  const topRecordName = topRecord ? (topRecord.username ? `@${topRecord.username}` : topRecord.displayName) : '';
 
   return (
     <section className="leaderboard room-record-strip" aria-label={copy('Ongoing room highscore')}>
       <div className="section-head">
         <div>
-          <p className="kicker">{copy('All-time room highscore')}</p>
-          <h2>{topRecord ? `${copy('Ongoing room record')}: ${topRecord.score}` : copy('No room record yet.')}</h2>
-          <p>{copy('This room keeps old scores for the ongoing highscore race. The daily board still resets every day.')}</p>
+          <p className="kicker">{copy('Room record chase')}</p>
+          <h2>{topRecord ? `${topRecord.score} ${copy('room highscore')}` : copy('No room record yet.')}</h2>
+          <p>
+            {topRecord
+              ? `${topRecordName} ${copy('owns the all-time room record from')} ${topRecord.day}. ${copy('Today resets; old official scores stay on this room link.')}`
+              : copy('Today resets daily, but the first completed official run starts the permanent room highscore race.')}
+          </p>
           {roomSyncState ? (
             <span className={`room-sync-state ${roomSyncState.toLowerCase().includes('retry') || roomSyncState.toLowerCase().includes('saved locally') ? 'pending' : 'posted'}`} role="status" aria-live="polite">{copy(roomSyncState)}</span>
           ) : null}
@@ -2433,7 +2438,7 @@ function RoomRecordStrip({
       </div>
       {records.length > 0 ? (
         <div className="room-record-podium" aria-label={copy('Best official score per player across days.')}>
-          {records.slice(0, 3).map((entry, index) => (
+          {records.slice(0, 5).map((entry, index) => (
             <article key={entry.id}>
               <span>#{index + 1}</span>
               <strong>{entry.username ? `@${entry.username}` : entry.displayName}</strong>
@@ -8005,7 +8010,7 @@ export default function Home({
         }
         .room-record-podium {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
           gap: 10px;
           margin-top: 12px;
         }
