@@ -31,6 +31,18 @@ it only into the child audit process:
 pnpm audit:launch:authenticated
 ```
 
+Run the email-code auth proof when the signup/login path needs full production
+verification. This sends two IQ WARS OTP emails to a generated controlled test
+address, retrieves the sent messages through Resend, verifies the OTPs through
+`iqwars.app`, proves the project-scoped player cookie can write/read a profile,
+and confirms the second login returns the first login's stable linked player ID.
+This is the release gate for `IQWARS-025`; it will fail while production OTP
+emails are still Recursiv-branded instead of IQ WARS-branded:
+
+```bash
+RESEND_API_KEY=... pnpm auth:proof
+```
+
 Run the production deployment proof when pushing a commit to `iqwars.app`.
 This command monitors `/api/health`, `/api/ready`, and `/api/version` during
 the deployment window and fails if any sample goes unhealthy or the final
@@ -53,7 +65,7 @@ Current Coolify/GitHub deployment status:
 - Branch: `main`
 - Verified manual path: `pnpm deploy:prove -- --trigger --expected-commit <commit>`
 - Verified normal-push path: GitHub webhook id `647492155` auto-deploys `main` pushes to Coolify; keep proving each pushed commit with `pnpm deploy:prove -- --expected-commit <commit>`.
-- Known non-A+ blockers: controlled email-code inbox proof, real checkout completion, reminder deliverability, and legal review remain tracked in `docs/iqwars-feature-status.tsv`.
+- Known non-A+ blockers: email-code OTP branding proof, real checkout completion, reminder deliverability, and legal review remain tracked in `docs/iqwars-feature-status.tsv`.
 
 Production exposes two operational checks:
 
