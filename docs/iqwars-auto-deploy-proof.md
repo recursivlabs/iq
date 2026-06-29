@@ -9,3 +9,4 @@ Proof push target:
 - Domain: `https://iqwars.app`
 - GitHub webhook id: `647492155`
 - Created for proof cycle: `2026-06-29`
+- Health-check retry proof: `2026-06-29`, after enabling Coolify `/api/ready` health checks.
