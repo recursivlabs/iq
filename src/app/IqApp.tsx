@@ -269,6 +269,7 @@ const PRESENCE_SESSION_STORAGE_KEY = 'world-iq-presence-session';
 const LAUNCH_APP_DOCS_URL = 'https://docs.recursiv.io/guides/ai-tools/connect-claude-desktop';
 const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT || '';
 const ADSENSE_SLOT = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_SLOT || '';
+const ADSENSE_READY = /^ca-pub-\d{8,}$/.test(ADSENSE_CLIENT) && /^\d{4,}$/.test(ADSENSE_SLOT);
 const EMPTY_GEOGRAPHY_BOARDS: SocialBoards['geography'] = { countries: [], cities: [], towns: [] };
 const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   profilePublic: true,
@@ -3007,7 +3008,7 @@ function activeBlogSlugFromPath(fallback = '') {
 
 function AdSenseSlot({ label = 'Advertisement' }: { label?: string }) {
   React.useEffect(() => {
-    if (!ADSENSE_CLIENT || !ADSENSE_SLOT || typeof window === 'undefined') return;
+    if (!ADSENSE_READY || typeof window === 'undefined') return;
     try {
       const adsWindow = window as Window & { adsbygoogle?: unknown[] };
       adsWindow.adsbygoogle = adsWindow.adsbygoogle || [];
@@ -3020,7 +3021,7 @@ function AdSenseSlot({ label = 'Advertisement' }: { label?: string }) {
   return (
     <aside className="ad-slot" aria-label={label}>
       <span>{label}</span>
-      {ADSENSE_CLIENT && ADSENSE_SLOT ? (
+      {ADSENSE_READY ? (
         <ins
           className="adsbygoogle"
           style={{ display: 'block' }}

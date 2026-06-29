@@ -509,6 +509,8 @@ async function sourceAudit() {
   assert(visualAudit.includes('auditAgentVisibilityDefaults') && visualAudit.includes('keeps seeded test agents hidden by default') && visualAudit.includes('shows seeded test agents only after the setting is enabled'), 'Visual audit covers seeded agent visibility defaults and opt-in ranking mode.');
   assert(layout.includes("import './critical.css'") && layout.includes('data-iqwars-critical') && layout.includes('theme-color') && layout.includes('background:#060708'), 'Root layout inlines dark first-paint CSS before external resources.');
   assert(packageJson.includes('"audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app"') && foucTrace.includes('Network.emulateNetworkConditions') && foucTrace.includes('Page.captureScreenshot') && foucTrace.includes('__iqwarsFoucSamples'), 'Package scripts expose a throttled FOUC trace with screenshots and first-paint samples.');
+  assert(app.includes('const ADSENSE_READY = /^ca-pub-\\d{8,}$/') && app.includes('if (!ADSENSE_READY || typeof window') && app.includes('{ADSENSE_READY ?'), 'AdSense slot renders and pushes ads only when client and slot are valid.');
+  assert(layout.includes('const adsenseSlot = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_SLOT') && layout.includes('const adsenseReady = /^ca-pub-\\d{8,}$/') && layout.includes('{adsenseReady ?'), 'Root layout loads the Google ad script only when the full AdSense config is valid.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');
   assert(apiScoring.includes('canonicalOfficialScore') && leaderboard.includes('canonicalOfficialScore') && leaderboard.includes('safeCorrect > safeTotal'), 'Leaderboard API derives canonical score/rank server-side and rejects impossible totals.');
   assert(leaderboard.includes('beatAi > correct') && leaderboard.includes('safeBeatAi > safeCorrect'), 'Leaderboard API rejects impossible AI-beat counts.');
@@ -595,6 +597,7 @@ async function sourceAudit() {
   assert(audit.includes('Live durable leaderboard/geography readback skipped because storage is ephemeral.') && audit.includes('Live durable leaderboard/geography readback cannot be verified without persistent storage.'), 'Live audit only treats durable leaderboard/geography readback as required when persistent storage is configured.');
   assert(audit.includes('IQWARS_AUDIT_PLAYER_API_KEY') && audit.includes('Live authenticated social-write success checks skipped'), 'Live audit only runs authenticated social-write success checks with a real audit player key.');
   assert(audit.includes("['/privacy'") && audit.includes("['/terms'") && audit.includes("['/blog/best-online-iq-test'") && audit.includes('assertLivePage'), 'Live audit covers the public page route surface.');
+  assert(audit.includes('assertLiveAdSensePage') && audit.includes('/blog/can-iq-puzzles-make-you-smarter') && audit.includes('keeps ads safely disabled without loading the Google ad script'), 'Live audit covers configured and disabled AdSense page behavior.');
 
   if (!process.env.UPSTASH_REDIS_REST_URL && !process.env.KV_REST_API_URL && !process.env.REDIS_URL && !process.env.IQWARS_DATABASE_URL && !process.env.POSTGRES_URL && !process.env.DATABASE_URL) {
     const message = 'No persistent store env is visible in this shell; production must configure Redis/KV/Postgres or leaderboard/map/profile writes are only ephemeral per runtime.';
@@ -634,6 +637,18 @@ async function requestText(url) {
 async function assertLivePage(route, expectedSnippets, message) {
   const page = await requestText(`${origin}${route}`);
   assert(page.response.ok && expectedSnippets.every((snippet) => page.text.includes(snippet)), message);
+  return page;
+}
+
+function assertLiveAdSensePage(page, route) {
+  const hasAdScript = page.text.includes('pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
+  const hasSlot = page.text.includes('class="adsbygoogle"') && page.text.includes('data-ad-client=') && page.text.includes('data-ad-slot=');
+  const hasPlaceholder = page.text.includes('IQ WARS supports free daily play with sponsorship and ads.');
+  if (hasAdScript || hasSlot) {
+    assert(hasAdScript && hasSlot && !hasPlaceholder, `Live ${route} renders a configured AdSense script and slot without fallback copy.`);
+  } else {
+    assert(hasPlaceholder && !page.text.includes('pagead/js/adsbygoogle.js'), `Live ${route} keeps ads safely disabled without loading the Google ad script.`);
+  }
 }
 
 async function requestRedirect(url) {
@@ -1187,7 +1202,10 @@ async function liveAudit() {
     ['/u/agent_euclid', ['IQ WARS'], 'Live public profile route renders the shell for a profile slug.'],
   ];
   for (const [route, snippets, message] of publicPages) {
-    await assertLivePage(route, snippets, message);
+    const page = await assertLivePage(route, snippets, message);
+    if (['/research', '/blog', '/blog/best-online-iq-test', '/blog/can-iq-puzzles-make-you-smarter'].includes(route)) {
+      assertLiveAdSensePage(page, route);
+    }
   }
 }
 
