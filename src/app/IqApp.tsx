@@ -2265,6 +2265,7 @@ function SocialLeaderboard({
   variant = 'standard',
   fallbackUrl = '',
   showDay = false,
+  ctaKind = 'copy',
 }: {
   locale: LocaleKey;
   kicker: string;
@@ -2278,10 +2279,16 @@ function SocialLeaderboard({
   variant?: 'standard' | 'primary';
   fallbackUrl?: string;
   showDay?: boolean;
+  ctaKind?: 'copy' | 'action';
 }) {
   const copy = (text: string) => translate(locale, text);
   const ctaCopied = cta === copy('Link copied');
-  const showFallbackUrl = Boolean(fallbackUrl && cta === copy('Link ready'));
+  const showFallbackUrl = Boolean(ctaKind === 'copy' && fallbackUrl && cta === copy('Link ready'));
+  const ctaClassName = [
+    variant === 'primary' ? 'primary' : 'secondary',
+    ctaKind === 'copy' ? 'copy-link' : '',
+    ctaCopied ? 'copied' : '',
+  ].filter(Boolean).join(' ');
   return (
     <section className={`leaderboard social-board ${variant === 'primary' ? 'primary-board' : ''}`}>
       <div className="section-head">
@@ -2290,7 +2297,7 @@ function SocialLeaderboard({
           <h2>{title}</h2>
           <p>{description}</p>
         </div>
-        <button className={`${variant === 'primary' ? 'primary copy-link' : 'secondary'} ${ctaCopied ? 'copied' : ''}`} onClick={onCta}>{cta}</button>
+        <button className={ctaClassName} onClick={onCta}>{cta}</button>
       </div>
       {showFallbackUrl ? <code className="copy-fallback-link">{fallbackUrl}</code> : null}
       <div className="leaderboard-rows">
@@ -4355,6 +4362,19 @@ export default function Home({
     }
   }
 
+  function navigateGroupTest() {
+    setNavOpen(false);
+    setView('test');
+    setActiveBlogSlug('');
+    if (typeof window !== 'undefined') {
+      const path = groupCode ? groupPath(groupCode) : VIEW_PATHS.test;
+      if (window.location.pathname !== path) {
+        window.history.pushState({}, '', path);
+      }
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    }
+  }
+
   function openBlogArticle(slug: string) {
     setActiveBlogSlug(slug);
     setView('blog');
@@ -5269,10 +5289,11 @@ export default function Home({
             entries={displayBoards.group}
             empty={copy(groupCode ? 'No friends have locked today.' : 'No friend room yet.')}
             emptyDetail={friendRoomEmptyDetail}
-            cta={copy(groupCode ? inviteState : 'Create & copy link')}
-            onCta={groupCode ? copyInvite : createGroup}
+            cta={copy(groupCode && !officialSnapshot ? 'Take today\'s test' : groupCode ? inviteState : 'Create & copy link')}
+            onCta={groupCode && !officialSnapshot ? navigateGroupTest : groupCode ? copyInvite : createGroup}
             variant="primary"
             fallbackUrl={groupCode ? inviteFallbackUrl : ''}
+            ctaKind={groupCode && !officialSnapshot ? 'action' : 'copy'}
           />
           {groupCode ? (
             <SocialLeaderboard

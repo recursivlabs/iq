@@ -184,6 +184,7 @@ const translations: Record<Exclude<LocaleKey, 'en'>, Record<string, string>> = {
     'daily board': 'tablero diario',
     'One invite link. One official attempt each. The room resets daily and keeps the pressure local.': 'Un enlace de invitacion. Un intento oficial cada uno. La sala se reinicia a diario.',
     'Friend rooms are the fastest loop: create a link, send it to a group chat, and compare official scores today.': 'Las salas de amigos son el bucle mas rapido: crea un enlace, mandalo al chat y comparen puntajes hoy.',
+    'Take today\'s test': 'Tomar prueba de hoy',
     'No friends have locked today.': 'Ningun amigo cerro hoy.',
     'No friend room yet.': 'Aun no hay sala de amigos.',
     'Ongoing room highscore': 'Record historico de sala',
