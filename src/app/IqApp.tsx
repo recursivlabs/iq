@@ -155,6 +155,15 @@ type RecursivAccountRecord = {
   updatedAt: number;
 };
 
+type BillingUiConfig = {
+  provider: 'app_subscription' | 'payment_link' | 'not_configured';
+  checkoutReady: boolean;
+  tier: string | null;
+  productName: string;
+  priceCents: number;
+  priceLabel: string;
+};
+
 type LivePresence = {
   active: number;
   updatedAt: number;
@@ -241,6 +250,14 @@ const OFFICIAL_RAMP_PLAN = [
 ];
 const UNLIMITED_PRICE_LABEL = '$4.99/mo';
 const CHECKOUT_READY = process.env.NEXT_PUBLIC_IQWARS_CHECKOUT_READY === 'true';
+const DEFAULT_BILLING_UI_CONFIG: BillingUiConfig = {
+  provider: CHECKOUT_READY ? 'app_subscription' : 'not_configured',
+  checkoutReady: CHECKOUT_READY,
+  tier: null,
+  productName: 'IQ WARS Unlimited',
+  priceCents: 499,
+  priceLabel: UNLIMITED_PRICE_LABEL,
+};
 const X_CONNECTOR_VISIBLE = false;
 const LEGACY_FREE_PLAY_STORAGE_KEY = 'world-iq-free-play-date';
 const PLAY_USAGE_STORAGE_KEY = 'world-iq-play-usage';
@@ -2013,6 +2030,27 @@ function readRecursivAccount(): RecursivAccountRecord | null {
   } catch {
     return null;
   }
+}
+
+function normalizeBillingUiConfig(value: unknown): BillingUiConfig {
+  const data = value && typeof value === 'object' ? value as Partial<BillingUiConfig> : {};
+  const provider = data.provider === 'app_subscription' || data.provider === 'payment_link' || data.provider === 'not_configured'
+    ? data.provider
+    : DEFAULT_BILLING_UI_CONFIG.provider;
+  const priceCents = typeof data.priceCents === 'number' && Number.isFinite(data.priceCents)
+    ? Math.max(100, Math.min(99_900, Math.round(data.priceCents)))
+    : DEFAULT_BILLING_UI_CONFIG.priceCents;
+  const priceLabel = typeof data.priceLabel === 'string' && data.priceLabel.trim()
+    ? data.priceLabel.trim().slice(0, 24)
+    : `$${(priceCents / 100).toFixed(2).replace(/\.00$/, '')}/mo`;
+  return {
+    provider,
+    checkoutReady: Boolean(data.checkoutReady) && provider !== 'not_configured',
+    tier: typeof data.tier === 'string' && data.tier.trim() ? data.tier.trim().slice(0, 64) : null,
+    productName: typeof data.productName === 'string' && data.productName.trim() ? data.productName.trim().slice(0, 80) : DEFAULT_BILLING_UI_CONFIG.productName,
+    priceCents,
+    priceLabel,
+  };
 }
 
 function writeRecursivAccount(record: Omit<RecursivAccountRecord, 'updatedAt'>) {
@@ -3803,6 +3841,7 @@ export default function Home({
   const [paidAccess, setPaidAccess] = React.useState(false);
   const [checkoutState, setCheckoutState] = React.useState<'idle' | 'opening' | 'verifying' | 'active' | 'error'>('idle');
   const [checkoutError, setCheckoutError] = React.useState('');
+  const [billingConfig, setBillingConfig] = React.useState<BillingUiConfig>(DEFAULT_BILLING_UI_CONFIG);
   const [usageSnapshot, setUsageSnapshot] = React.useState<PlayUsage>(() => blankPlayUsage());
   const [officialSnapshot, setOfficialSnapshot] = React.useState<OfficialRankRecord | null>(null);
   const [officialHistory, setOfficialHistory] = React.useState<OfficialRankRecord[]>([]);
@@ -4125,6 +4164,27 @@ export default function Home({
     }
     void refreshRoomMessages(groupCode || null);
   }, [groupCode, recursivAccount, refreshRoomMessages]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function refreshBillingConfig() {
+      try {
+        const response = await fetch('/api/billing/config', { cache: 'no-store' });
+        const data = await response.json().catch(() => null);
+        if (!cancelled && response.ok) {
+          setBillingConfig(normalizeBillingUiConfig(data));
+        }
+      } catch {
+        // The default config keeps free play and account connection available.
+      }
+    }
+
+    void refreshBillingConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -4757,6 +4817,8 @@ export default function Home({
     }
   }
 
+  const checkoutReady = billingConfig.checkoutReady;
+  const unlimitedPriceLabel = billingConfig.priceLabel || UNLIMITED_PRICE_LABEL;
   const checkoutBusy = checkoutState === 'opening' || checkoutState === 'verifying';
 
   async function startCheckout() {
@@ -4767,7 +4829,7 @@ export default function Home({
       setAuthMessage('Create an IQ WARS account before checkout.');
       return;
     }
-    if (!CHECKOUT_READY) {
+    if (!checkoutReady) {
       setCheckoutState('error');
       setCheckoutError('Paid upgrade is not live yet. Your account is connected and the free daily test is active.');
       return;
@@ -5317,7 +5379,7 @@ export default function Home({
                 : copy('Free visitors get one full official IQ WARS run per day. Email connection saves your developing score, profile, settings, friend rooms, and reminders without blocking play.')}</p>
             <div className="plans">
               <div><strong>{copy('Free')}</strong><span>{copy('1 official attempt / day')}</span></div>
-              <div><strong>{copy(CHECKOUT_READY ? UNLIMITED_PRICE_LABEL : 'Upgrade soon')}</strong><span>{copy('archive + reports + extra practice')}</span></div>
+              <div><strong>{copy(checkoutReady ? unlimitedPriceLabel : 'Upgrade soon')}</strong><span>{copy('archive + reports + extra practice')}</span></div>
             </div>
             {paidAccess ? (
               <button className="primary full" onClick={() => setUnlockOpen(false)}>{copy('Continue playing')}</button>
@@ -5338,7 +5400,7 @@ export default function Home({
                     navigateView('settings');
                   }}>{copy('Open settings')}</button>
                 </div>
-                {CHECKOUT_READY ? (
+                {checkoutReady ? (
                   <button className="secondary full" disabled={checkoutBusy} onClick={startCheckout}>
                     {copy(checkoutState === 'opening' ? 'Opening checkout' : checkoutState === 'verifying' ? 'Verifying payment' : 'Continue to checkout')}
                   </button>
@@ -5378,8 +5440,8 @@ export default function Home({
             <span className="fine-print">
               {paidAccess
                 ? copy('Archive access and extra practice are enabled.')
-                : CHECKOUT_READY
-                  ? `${copy('Games-style pricing at')} ${UNLIMITED_PRICE_LABEL}. ${copy('Checkout is created securely by Recursiv.')}`
+                : checkoutReady
+                  ? `${copy('Games-style pricing at')} ${unlimitedPriceLabel}. ${copy('Checkout is created securely by Recursiv.')}`
                   : copy('Paid upgrade is not live yet. Nothing else is required to keep playing your daily official test.')}
             </span>
             {checkoutError ? <span className="fine-print error">{copy(checkoutError)}</span> : null}

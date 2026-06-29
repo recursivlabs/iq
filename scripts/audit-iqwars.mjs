@@ -29,6 +29,8 @@ const remindersPath = path.join(root, 'src/app/api/reminders/route.ts');
 const remindersSendPath = path.join(root, 'src/app/api/reminders/send/route.ts');
 const remindersLibPath = path.join(root, 'src/app/api/_lib/reminders.ts');
 const accessPath = path.join(root, 'src/app/api/access/route.ts');
+const billingConfigPath = path.join(root, 'src/app/api/billing/config/route.ts');
+const billingConfigLibPath = path.join(root, 'src/app/api/_lib/billingConfig.ts');
 const checkoutPath = path.join(root, 'src/app/api/checkout/route.ts');
 const checkoutStatusPath = path.join(root, 'src/app/api/checkout-status/route.ts');
 const authSendPath = path.join(root, 'src/app/api/recursiv-auth/send-code/route.ts');
@@ -320,6 +322,8 @@ async function sourceAudit() {
   const remindersSend = source(remindersSendPath);
   const remindersLib = source(remindersLibPath);
   const access = source(accessPath);
+  const billingConfig = source(billingConfigPath);
+  const billingConfigLib = source(billingConfigLibPath);
   const checkout = source(checkoutPath);
   const checkoutStatus = source(checkoutStatusPath);
   const authSend = source(authSendPath);
@@ -362,6 +366,7 @@ async function sourceAudit() {
   assert(existsSync(remindersPath), 'Reminder API route exists.');
   assert(existsSync(remindersSendPath), 'Reminder cron send API route exists.');
   assert(existsSync(accessPath), 'Access API route exists.');
+  assert(existsSync(billingConfigPath) && existsSync(billingConfigLibPath), 'Billing config API and shared resolver exist.');
   assert(existsSync(checkoutPath), 'Checkout API route exists.');
   assert(existsSync(checkoutStatusPath), 'Checkout status API route exists.');
   assert(existsSync(authSendPath) && existsSync(authVerifyPath), 'Recursiv email auth API routes exist.');
@@ -564,7 +569,11 @@ async function sourceAudit() {
   assert(remindersSend.includes('readLeaderboardEntries') && remindersSend.includes("LEADERBOARD_STORE_KEY = 'world-iq:leaderboards:v2'"), 'Reminder cron reads leaderboard history to personalize daily streak emails.');
   assert(remindersSend.includes('reply STOP') && remindersSend.includes('bill@recursiv.io'), 'Reminder emails include a simple stop-reminders instruction.');
   assert(access.includes('PLAYER_API_KEY_COOKIE') && access.includes('app-subscriptions/status'), 'Access API checks Recursiv app subscription status from the player key.');
-  assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl'), 'Checkout API requires a player key and sanitizes return URLs.');
+  assert(billingConfigLib.includes('resolveBillingConfig') && billingConfigLib.includes('IQWARS_SUBSCRIPTION_TIER') && billingConfigLib.includes('NEXT_PUBLIC_STRIPE_PAYMENT_LINK') && billingConfigLib.includes('paymentLinkUrl'), 'Billing config resolver supports Recursiv app-subscription tiers and hosted payment-link fallback.');
+  assert(billingConfig.includes('publicBillingConfig') && billingConfig.includes('cache-control') && !billingConfig.includes('paymentLinkUrl'), 'Billing config API exposes checkout readiness without leaking the hosted checkout URL.');
+  assert(app.includes("fetch('/api/billing/config'") && app.includes('normalizeBillingUiConfig') && app.includes('billingConfig.checkoutReady'), 'Unlock modal reads billing readiness at runtime instead of relying only on a build-time public flag.');
+  assert(checkout.includes('PLAYER_API_KEY_COOKIE') && checkout.includes('safeReturnUrl') && checkout.includes('resolveBillingConfig'), 'Checkout API requires a player key, sanitizes return URLs, and uses shared billing config.');
+  assert(checkout.includes("provider: 'payment_link'") && checkout.includes('fallback: true') && checkout.includes('recursivResponse.status !== 401'), 'Checkout API falls back to a configured hosted payment link when Recursiv tier routing is unavailable without masking auth failures.');
   assert(checkoutStatus.includes('PLAYER_API_KEY_COOKIE') && checkoutStatus.includes('setAccessCookie'), 'Checkout status API requires a player key and syncs the access cookie.');
   assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
   assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID'), 'Email-code verify route creates project-scoped IQ WARS player keys.');
@@ -952,6 +961,15 @@ async function liveAudit() {
 
   const accessNoCookie = await requestJson(`${origin}/api/access`);
   assert(accessNoCookie.response.ok && accessNoCookie.data.active === false, 'Live access API returns inactive without a player account cookie.');
+
+  const billingConfigLive = await requestJson(`${origin}/api/billing/config`);
+  assert(billingConfigLive.response.ok && typeof billingConfigLive.data?.checkoutReady === 'boolean', 'Live billing config API returns checkout readiness.');
+  assert(!Object.prototype.hasOwnProperty.call(billingConfigLive.data || {}, 'paymentLinkUrl') && !Object.prototype.hasOwnProperty.call(billingConfigLive.data || {}, 'url'), 'Live billing config API does not expose hosted checkout URLs.');
+  if (billingConfigLive.data?.checkoutReady) {
+    pass(`Live billing config exposes configured checkout provider (${billingConfigLive.data.provider || 'unknown'}).`);
+  } else {
+    warn('Live billing config is not checkout-ready; paid upgrade remains optional but cannot be A+ until a provider is configured.');
+  }
 
   const checkoutNoCookie = await requestJson(`${origin}/api/checkout`, {
     method: 'POST',

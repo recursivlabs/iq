@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { resolveBillingConfig } from '../_lib/billingConfig';
 import { enforceRateLimit } from '../_lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
@@ -6,7 +7,6 @@ export const runtime = 'nodejs';
 
 const RECURSIV_AUTH_ORIGIN = (process.env.RECURSIV_AUTH_ORIGIN || 'https://api.recursiv.io').replace(/\/$/, '');
 const PLAYER_API_KEY_COOKIE = 'iqwars_player_api_key';
-const DEFAULT_TIER = (process.env.IQWARS_SUBSCRIPTION_TIER || '').trim();
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -49,9 +49,22 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const returnUrl = safeReturnUrl((body as { returnUrl?: unknown }).returnUrl, requestOrigin(request));
+  const config = resolveBillingConfig();
   const tier = typeof (body as { tier?: unknown }).tier === 'string' && (body as { tier?: string }).tier
     ? (body as { tier: string }).tier
-    : DEFAULT_TIER;
+    : config.tier;
+  if (!config.checkoutReady) {
+    return jsonError('Paid upgrade is not configured yet. Your IQ WARS account is connected and the free daily test is active.', 503);
+  }
+
+  if (config.provider === 'payment_link' && config.paymentLinkUrl) {
+    return NextResponse.json({
+      url: config.paymentLinkUrl,
+      provider: config.provider,
+      tier: null,
+    });
+  }
+
   if (!tier) {
     return jsonError('Paid upgrade is not configured yet. Your IQ WARS account is connected and the free daily test is active.', 503);
   }
@@ -70,8 +83,16 @@ export async function POST(request: NextRequest) {
 
   const data = await recursivResponse.json().catch(() => null) as { data?: { url?: string }, error?: string, message?: string } | null;
   if (!recursivResponse.ok || typeof data?.data?.url !== 'string') {
+    if (config.paymentLinkUrl && recursivResponse.status !== 401 && recursivResponse.status !== 403) {
+      return NextResponse.json({
+        url: config.paymentLinkUrl,
+        provider: 'payment_link',
+        tier: null,
+        fallback: true,
+      });
+    }
     return jsonError(data?.message || data?.error || 'Could not open Recursiv checkout.', recursivResponse.status || 502);
   }
 
-  return NextResponse.json({ url: data.data.url, tier });
+  return NextResponse.json({ url: data.data.url, provider: config.provider, tier });
 }
