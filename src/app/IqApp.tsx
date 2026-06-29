@@ -4081,6 +4081,27 @@ export default function Home({
     refreshSocialBoards(groupCode || null);
   }, [groupCode, refreshSocialBoards]);
 
+  React.useEffect(() => {
+    if (!groupCode || typeof window === 'undefined') return undefined;
+    let cancelled = false;
+
+    const refreshVisibleRoom = () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      void refreshSocialBoards(groupCode);
+    };
+
+    const interval = window.setInterval(refreshVisibleRoom, 12_000);
+    window.addEventListener('focus', refreshVisibleRoom);
+    document.addEventListener('visibilitychange', refreshVisibleRoom);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshVisibleRoom);
+      document.removeEventListener('visibilitychange', refreshVisibleRoom);
+    };
+  }, [groupCode, refreshSocialBoards]);
+
   const refreshRoomMessages = React.useCallback(async (code: string | null) => {
     if (!code) {
       setRoomMessages([]);
