@@ -310,8 +310,8 @@ async function releaseRedisLock(key: string, token: string) {
 export async function verifyPersistentStore() {
   const provider = storeProvider();
   const configurationError = storageConfigurationError();
-  const nonce = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-  const key = 'world-iq:health-check:v1';
+  const nonce = randomUUID();
+  const key = `world-iq:health-check:v1:${nonce}`;
 
   if (configurationError) {
     return {
@@ -333,8 +333,14 @@ export async function verifyPersistentStore() {
         };
       }
       try {
-        await postgresWriteJsonStore(pool, key, { nonce });
-        const stored = await postgresReadJsonStore<{ nonce: string }>(pool, key, { nonce: '' });
+        let stored = { nonce: '' };
+        try {
+          await postgresWriteJsonStore(pool, key, { nonce });
+          stored = await postgresReadJsonStore<{ nonce: string }>(pool, key, { nonce: '' });
+        } finally {
+          const table = postgresTableName();
+          if (table) await pool.query(`delete from ${table} where key = $1`, [key]).catch(() => undefined);
+        }
         return {
           provider,
           persistent: true,
@@ -361,6 +367,7 @@ export async function verifyPersistentStore() {
   try {
     await redisCommand(['SET', key, nonce, 'EX', '120']);
     const stored = await redisCommand(['GET', key]);
+    await redisCommand(['DEL', key]).catch(() => null);
     return {
       provider,
       persistent: true,
