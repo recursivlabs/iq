@@ -11,6 +11,7 @@
     "audit:launch": "node scripts/audit-iqwars.mjs --origin https://iqwars.app --require-persistent",
     "audit:features": "node scripts/audit-feature-ledger.mjs",
     "audit:visual": "node scripts/audit-visual-ux.mjs --origin https://iqwars.app",
+    "audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app",
     "backup:export": "node scripts/export-iqwars-store.mjs",
     "smoke:prod": "node scripts/smoke-iqwars-prod.mjs --origin https://iqwars.app"
   },

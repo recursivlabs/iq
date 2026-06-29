@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appPath = path.join(root, 'src/app/IqApp.tsx');
+const layoutPath = path.join(root, 'src/app/layout.tsx');
 const i18nPath = path.join(root, 'src/app/i18n.ts');
 const leaderboardPath = path.join(root, 'src/app/api/leaderboards/route.ts');
 const attemptsPath = path.join(root, 'src/app/api/attempts/route.ts');
@@ -37,6 +38,7 @@ const apiScoringPath = path.join(root, 'src/app/api/_lib/scoring.ts');
 const groupPagePath = path.join(root, 'src/app/g/[group]/page.tsx');
 const rankingsPagePath = path.join(root, 'src/app/rankings/page.tsx');
 const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
+const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
 const prodSmokePath = path.join(root, 'scripts/smoke-iqwars-prod.mjs');
 const storageRunbookPath = path.join(root, 'docs/iqwars-storage-runbook.md');
@@ -292,6 +294,7 @@ function simulateOfficialQuestionRotation({ ids, starterIds, difficultyRanks, qu
 
 async function sourceAudit() {
   const app = source(appPath);
+  const layout = source(layoutPath);
   const audit = source(fileURLToPath(import.meta.url));
   const i18n = source(i18nPath);
   const leaderboard = source(leaderboardPath);
@@ -323,6 +326,7 @@ async function sourceAudit() {
   const groupPage = source(groupPagePath);
   const rankingsPage = source(rankingsPagePath);
   const visualAudit = source(visualAuditPath);
+  const foucTrace = source(foucTracePath);
   const backupScript = source(backupScriptPath);
   const prodSmoke = source(prodSmokePath);
   const storageRunbook = source(storageRunbookPath);
@@ -330,6 +334,7 @@ async function sourceAudit() {
   const { ts, tree } = await parseTs(appPath, (await import('typescript')).ScriptKind.TSX);
 
   assert(existsSync(appPath), 'IqApp source exists.');
+  assert(existsSync(layoutPath), 'Root layout source exists.');
   assert(existsSync(i18nPath), 'I18n source exists.');
   assert(existsSync(leaderboardPath), 'Leaderboard API route exists.');
   assert(existsSync(attemptsPath), 'Server attempt lock API route exists.');
@@ -354,6 +359,7 @@ async function sourceAudit() {
   assert(existsSync(apiDaysPath), 'Shared API board-day validator exists.');
   assert(existsSync(apiScoringPath), 'Shared API scoring canonicalizer exists.');
   assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
+  assert(existsSync(foucTracePath), 'FOUC trace audit harness exists.');
   assert(existsSync(backupScriptPath), 'Storage backup/export operator script exists.');
   assert(existsSync(prodSmokePath), 'Production readiness smoke script exists.');
   assert(existsSync(storageRunbookPath), 'Storage backup/restore runbook exists.');
@@ -501,6 +507,8 @@ async function sourceAudit() {
 
   assert(leaderboard.includes("request.nextUrl.searchParams.get('agents') !== 'false'"), 'Leaderboard API supports agents=false filtering.');
   assert(visualAudit.includes('auditAgentVisibilityDefaults') && visualAudit.includes('keeps seeded test agents hidden by default') && visualAudit.includes('shows seeded test agents only after the setting is enabled'), 'Visual audit covers seeded agent visibility defaults and opt-in ranking mode.');
+  assert(layout.includes("import './critical.css'") && layout.includes('data-iqwars-critical') && layout.includes('theme-color') && layout.includes('background:#060708'), 'Root layout inlines dark first-paint CSS before external resources.');
+  assert(packageJson.includes('"audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app"') && foucTrace.includes('Network.emulateNetworkConditions') && foucTrace.includes('Page.captureScreenshot') && foucTrace.includes('__iqwarsFoucSamples'), 'Package scripts expose a throttled FOUC trace with screenshots and first-paint samples.');
   assert(apiDays.includes('BOARD_DAY_SKEW_DAYS = 1') && apiDays.includes('sanitizeBoardDay') && leaderboard.includes('sanitizeBoardDay'), 'Leaderboard API rejects arbitrary stale/future board days while allowing timezone skew.');
   assert(apiScoring.includes('canonicalOfficialScore') && leaderboard.includes('canonicalOfficialScore') && leaderboard.includes('safeCorrect > safeTotal'), 'Leaderboard API derives canonical score/rank server-side and rejects impossible totals.');
   assert(leaderboard.includes('beatAi > correct') && leaderboard.includes('safeBeatAi > safeCorrect'), 'Leaderboard API rejects impossible AI-beat counts.');
