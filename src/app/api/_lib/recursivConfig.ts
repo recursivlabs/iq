@@ -22,6 +22,10 @@ async function readErrorCode(response: Response) {
   return (data?.error?.code || data?.error?.type || `http_${response.status}`).slice(0, 80);
 }
 
+function isRateLimitError(error: string | null) {
+  return error === 'rate_limit_exceeded' || error === 'http_429';
+}
+
 async function fetchRecursivProjectAuth(): Promise<RecursivProjectAuthStatus> {
   const configured = Boolean(IQWARS_PROJECT_ID && IQWARS_PROJECT_API_KEY);
   if (!configured) {
@@ -44,12 +48,22 @@ async function fetchRecursivProjectAuth(): Promise<RecursivProjectAuthStatus> {
     });
 
     if (!userResponse.ok) {
+      const error = await readErrorCode(userResponse);
+      if (isRateLimitError(error)) {
+        return {
+          origin: RECURSIV_AUTH_ORIGIN,
+          configured,
+          verified: true,
+          projectAccess: true,
+          error: 'rate_limit_deferred',
+        };
+      }
       return {
         origin: RECURSIV_AUTH_ORIGIN,
         configured,
         verified: false,
         projectAccess: false,
-        error: await readErrorCode(userResponse),
+        error,
       };
     }
 
@@ -63,12 +77,23 @@ async function fetchRecursivProjectAuth(): Promise<RecursivProjectAuthStatus> {
       cache: 'no-store',
     });
 
+    const projectError = projectResponse.ok ? null : await readErrorCode(projectResponse);
+    if (isRateLimitError(projectError)) {
+      return {
+        origin: RECURSIV_AUTH_ORIGIN,
+        configured,
+        verified: true,
+        projectAccess: true,
+        error: 'rate_limit_deferred',
+      };
+    }
+
     return {
       origin: RECURSIV_AUTH_ORIGIN,
       configured,
       verified: true,
       projectAccess: projectResponse.ok,
-      error: projectResponse.ok ? null : await readErrorCode(projectResponse),
+      error: projectError,
     };
   } catch (error) {
     return {
@@ -104,7 +129,7 @@ export async function verifyRecursivProjectAuth(): Promise<RecursivProjectAuthSt
   const status = await recursivCache.__iqwarsRecursivProjectAuthPromise;
   if (!status.verified || !status.projectAccess) {
     const stale = recursivCache.__iqwarsRecursivProjectAuth?.status;
-    if (stale && status.error === 'rate_limit_exceeded') {
+    if (stale && (status.error === 'rate_limit_exceeded' || status.error === 'rate_limit_deferred')) {
       return stale;
     }
   }
