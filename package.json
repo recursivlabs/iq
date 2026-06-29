@@ -15,6 +15,7 @@
     "audit:fouc": "node scripts/audit-fouc-trace.mjs --origin https://iqwars.app",
     "auth:proof": "node scripts/prove-email-auth.mjs --origin https://iqwars.app",
     "checkout:proof": "node scripts/prove-checkout-flow.mjs --origin https://iqwars.app",
+    "checkout:completion-proof": "node scripts/prove-checkout-completion.mjs --origin https://iqwars.app",
     "legal:proof": "node scripts/prove-legal-pages.mjs --origin https://iqwars.app",
     "reminder:proof": "node scripts/prove-reminder-email.mjs --origin https://iqwars.app",
     "backup:export": "node scripts/export-iqwars-store.mjs",

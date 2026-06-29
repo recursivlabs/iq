@@ -47,6 +47,7 @@ const visualAuditPath = path.join(root, 'scripts/audit-visual-ux.mjs');
 const foucTracePath = path.join(root, 'scripts/audit-fouc-trace.mjs');
 const authenticatedLaunchAuditPath = path.join(root, 'scripts/run-authenticated-launch-audit.mjs');
 const checkoutProofPath = path.join(root, 'scripts/prove-checkout-flow.mjs');
+const checkoutCompletionProofPath = path.join(root, 'scripts/prove-checkout-completion.mjs');
 const reminderProofPath = path.join(root, 'scripts/prove-reminder-email.mjs');
 const legalProofPath = path.join(root, 'scripts/prove-legal-pages.mjs');
 const backupScriptPath = path.join(root, 'scripts/export-iqwars-store.mjs');
@@ -348,6 +349,7 @@ async function sourceAudit() {
   const foucTrace = source(foucTracePath);
   const authenticatedLaunchAudit = source(authenticatedLaunchAuditPath);
   const checkoutProof = source(checkoutProofPath);
+  const checkoutCompletionProof = source(checkoutCompletionProofPath);
   const legalProof = source(legalProofPath);
   const backupScript = source(backupScriptPath);
   const prodSmoke = source(prodSmokePath);
@@ -389,6 +391,7 @@ async function sourceAudit() {
   assert(existsSync(initialSocialBoardsPath), 'Server initial social-board loader exists.');
   assert(existsSync(visualAuditPath), 'Visual UX audit harness exists.');
   assert(existsSync(foucTracePath), 'FOUC trace audit harness exists.');
+  assert(existsSync(checkoutCompletionProofPath), 'Checkout completion proof harness exists.');
   assert(existsSync(legalProofPath), 'Legal page proof harness exists.');
   assert(existsSync(backupScriptPath), 'Storage backup/export operator script exists.');
   assert(existsSync(prodSmokePath), 'Production readiness smoke script exists.');
@@ -617,6 +620,9 @@ async function sourceAudit() {
   assert(checkoutProof.includes('createAuditPlayerKey') && checkoutProof.includes('billing:read') && checkoutProof.includes('billing:write'), 'Checkout proof mints or accepts a project-scoped IQ WARS player key with billing scopes.');
   assert(checkoutProof.includes('maliciousReturnUrl') && checkoutProof.includes("checkoutSummary.host !== 'evil.example'") && checkoutProof.includes('checkout.stripe.com'), 'Checkout proof verifies unsafe return URLs are not reflected and checkout goes to Recursiv or Stripe.');
   assert(checkoutProof.includes('paymentLinkUrl') && checkoutProof.includes('Billing config leaks a checkout URL') && checkoutProof.includes('world_iq_paid='), 'Checkout proof verifies public config URL non-disclosure and paid-access cookie status sync.');
+  assert(packageConfig.scripts?.['checkout:completion-proof'] === 'node scripts/prove-checkout-completion.mjs --origin https://iqwars.app', 'Package exposes a production checkout-completion proof command.');
+  assert(checkoutCompletionProof.includes('IQWARS_PAID_PLAYER_API_KEY') && checkoutCompletionProof.includes('requires a paid IQ WARS player API key') && checkoutCompletionProof.includes('this proof never creates fake paid state'), 'Checkout completion proof refuses to fake paid access and requires a real paid player key.');
+  assert(checkoutCompletionProof.includes('/api/checkout-status') && checkoutCompletionProof.includes('/api/access') && checkoutCompletionProof.includes('active === true') && checkoutCompletionProof.includes('world_iq_paid=active'), 'Checkout completion proof verifies active checkout status, active access status, and active paid cookies.');
   assert(authSend.includes('IQWARS_PROJECT_API_KEY') && authSend.includes('Host: IQWARS_APP_HOST'), 'Email-code send route uses the IQ WARS project key and branded host.');
   assert(authVerify.includes('IQWARS_PROJECT_ID') && authVerify.includes('projectId: IQWARS_PROJECT_ID') && authVerify.includes("'projects:read'"), 'Email-code verify route creates project-scoped IQ WARS player keys with project-read validation scope.');
   assert(authVerify.includes('world-iq:account-links:v1') && authVerify.includes('resolveLinkedPlayerId') && authVerify.includes('playerId: linkedPlayerId || requestedPlayerId'), 'Email-code verify route persists a stable account-to-player link for cross-device room score continuity.');

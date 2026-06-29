@@ -54,6 +54,19 @@ until a real payment completes:
 pnpm checkout:proof
 ```
 
+Run the checkout-completion proof only after a real IQ WARS player account has
+completed paid checkout. This proof requires the resulting project-scoped player
+API key and verifies `/api/checkout-status` plus `/api/access` both return active
+paid access and write the active `world_iq_paid` cookie. It intentionally fails
+without a real paid key; do not use it to simulate or force paid state:
+
+```bash
+IQWARS_PAID_PLAYER_API_KEY=... \
+pnpm checkout:completion-proof
+```
+
+This is the release gate for upgrading `IQWARS-027` to A+.
+
 Run the reminder/streak proof when the daily re-engagement loop needs full
 production verification. This creates a controlled proof room and reminder,
 triggers the cron endpoint for only that generated recipient, retrieves the
