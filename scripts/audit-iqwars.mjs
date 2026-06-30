@@ -433,9 +433,13 @@ async function sourceAudit() {
   assert(proofChecks.includes('ids.has') && proofChecks.includes('matrix.length !== 9') && proofChecks.includes('filter((item) => item === null).length !== 1'), 'Puzzle proof checks reject duplicate ids and malformed matrices.');
   assert(proofChecks.includes('answerIndex') && proofChecks.includes('options.length < 4') && proofChecks.includes('new Set(puzzle.options.map(tileSignature)).size !== puzzle.options.length'), 'Puzzle proof checks reject invalid answer indexes and duplicate answer options.');
   assert(app.includes('function isValidTile') && proofChecks.includes('isValidTile') && proofChecks.includes('solutionProof.lay.trim()') && proofChecks.includes('solutionProof.formal.trim()'), 'Puzzle proof checks require valid tiles and non-empty proof text.');
+  assert(app.includes('function visualOptionCollision') && proofChecks.includes('visualOptionCollision(puzzle.options)'), 'Puzzle proof checks reject visually confusable dot-over-bar option pairs.');
+  const generatedOptionsText = functionText(findFunction(ts, tree, 'generatedOptions'), app);
+  const withSixOptionsText = functionText(findFunction(ts, tree, 'withSixOptions'), app);
+  assert(generatedOptionsText.includes('canUseOption(options, candidate)') && withSixOptionsText.includes('canUseOption(options, decoy)'), 'Generated and six-option decoys cannot introduce visually confusable option pairs.');
   assert(app.includes("title: 'Weighted rows'") && app.includes("tile(6, 3, false, 90, 'blue')") && app.includes("tile(4, 3, false, 0, 'blue')"), 'Weighted Rows keeps the six-dot correct answer and avoids a duplicate horizontal three-bar distractor.');
   const patternTileView = functionText(findFunction(ts, tree, 'PatternTileView'), app);
-  assert(patternTileView.includes('with-bars') && app.includes('.dots.with-bars.dots-6') && criticalCss.includes('.dots.with-bars.dots-6'), 'Six-dot tiles with bars render as a distinct non-scrunched dot cluster in app and critical CSS.');
+  assert(patternTileView.includes('with-bars') && [4, 5, 6].every((count) => app.includes(`.dots.with-bars.dots-${count}`) && criticalCss.includes(`.dots.with-bars.dots-${count}`)), 'Dense dot tiles with bars render as distinct non-scrunched clusters in app and critical CSS.');
 
   const getQuestions = functionText(findFunction(ts, tree, 'getQuestions'), app);
   const officialStarterPuzzles = initializerText(findVariable(ts, tree, 'officialStarterPuzzles'), app);

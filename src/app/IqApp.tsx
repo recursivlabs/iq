@@ -453,6 +453,10 @@ function withProofChecks(puzzles: Puzzle[]): Puzzle[] {
     if (new Set(puzzle.options.map(tileSignature)).size !== puzzle.options.length) {
       throw new Error(`Puzzle options must be unique: ${puzzle.id}`);
     }
+    const visualCollision = visualOptionCollision(puzzle.options);
+    if (visualCollision) {
+      throw new Error(`Puzzle options are visually confusable: ${puzzle.id} ${proofTileSignature(visualCollision.a)} ~= ${proofTileSignature(visualCollision.b)}`);
+    }
     if (!puzzle.solutionProof.lay.trim() || !puzzle.solutionProof.formal.trim()) {
       throw new Error(`Puzzle proof text is missing: ${puzzle.id}`);
     }
@@ -475,6 +479,34 @@ function tileFromCell(cell: PatternTile) {
   return tile(cell.dots, cell.bars, cell.ring, cell.tilt, cell.tone);
 }
 
+function visualOptionCollision(options: PatternTile[]) {
+  for (let left = 0; left < options.length; left += 1) {
+    for (let right = left + 1; right < options.length; right += 1) {
+      const a = options[left];
+      const b = options[right];
+      const sameBarFrame = a.bars > 0
+        && b.bars > 0
+        && a.bars === b.bars
+        && a.ring === b.ring
+        && a.tilt === b.tilt
+        && a.tone === b.tone;
+      if (sameBarFrame && a.dots !== b.dots) {
+        return {
+          left,
+          right,
+          a,
+          b,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function canUseOption(existing: PatternTile[], candidate: PatternTile) {
+  return !visualOptionCollision([...existing, candidate]);
+}
+
 function generatedOptions(expected: PatternTile, seed: number) {
   const options = [tileFromCell(expected)];
   const used = new Set(options.map(tileSignature));
@@ -491,6 +523,7 @@ function generatedOptions(expected: PatternTile, seed: number) {
     if (options.length >= 4) break;
     const signature = tileSignature(candidate);
     if (used.has(signature)) continue;
+    if (!canUseOption(options, candidate)) continue;
     used.add(signature);
     options.push(candidate);
   }
@@ -500,6 +533,7 @@ function generatedOptions(expected: PatternTile, seed: number) {
       const candidate = tile(dots, bars, (dots + bars + seed) % 2 === 0, tiltOrder[(dots + bars + seed) % tiltOrder.length], expected.tone);
       const signature = tileSignature(candidate);
       if (used.has(signature)) continue;
+      if (!canUseOption(options, candidate)) continue;
       used.add(signature);
       options.push(candidate);
     }
@@ -614,7 +648,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'Dots increase by one across each row and down each column, so the missing tile has five dots.',
     solutionProof: proof('Read either the last row or the last column: 3, 4, then 5. No other attribute changes.', 'With zero-indexed row r and column c, dots = r + c + 1, bars = 0, ring = false, tilt = 0. Missing cell (2,2) gives dots = 5.', tile(5, 0, false, 0, 'ink')),
     matrix: [tile(1, 0, false, 0, 'ink'), tile(2, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(2, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(4, 0, false, 0, 'ink'), tile(3, 0, false, 0, 'ink'), tile(4, 0, false, 0, 'ink'), null],
-    options: [tile(2, 1, false, 0, 'ink'), tile(5, 0, false, 0, 'ink'), tile(4, 1, false, 0, 'ink'), tile(1, 2, false, 0, 'ink')],
+    options: [tile(2, 1, false, 0, 'ink'), tile(5, 0, false, 0, 'ink'), tile(4, 1, false, 45, 'ink'), tile(1, 2, false, 0, 'ink')],
     answerIndex: 1,
     aiSolved: true,
   },
@@ -640,7 +674,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The ring alternates across the grid. The final position returns to ring-on with three dots and two bars.',
     solutionProof: proof('Dots come from the column, bars come from the row, and the ring switches on every other square like a checkerboard.', 'dots = c + 1, bars = r, ring = (r + c) % 2 === 0, tilt = 0. Missing cell (2,2) gives dots = 3, bars = 2, ring = true.', tile(3, 2, true, 0, 'green')),
     matrix: [tile(1, 0, true, 0, 'green'), tile(2, 0, false, 0, 'green'), tile(3, 0, true, 0, 'green'), tile(1, 1, false, 0, 'green'), tile(2, 1, true, 0, 'green'), tile(3, 1, false, 0, 'green'), tile(1, 2, true, 0, 'green'), tile(2, 2, false, 0, 'green'), null],
-    options: [tile(3, 2, true, 0, 'green'), tile(2, 2, true, 0, 'green'), tile(3, 1, true, 0, 'green'), tile(1, 2, false, 0, 'green')],
+    options: [tile(3, 2, true, 0, 'green'), tile(2, 2, true, 45, 'green'), tile(3, 1, true, 0, 'green'), tile(1, 2, false, 0, 'green')],
     answerIndex: 0,
     aiSolved: true,
   },
@@ -666,7 +700,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The final cell adds the dot and bar structure from the two cells above, producing three dots, three bars, and the ring.',
     solutionProof: proof('In each column, the bottom tile is the sum of the two tiles above it. In the last column, 1 + 2 dots and 2 + 1 bars both make 3.', 'bottom.dots = top.dots + middle.dots, bottom.bars = top.bars + middle.bars, bottom.ring = true, tilt = 0. Last column gives dots = 1 + 2 = 3 and bars = 2 + 1 = 3.', tile(3, 3, true, 0, 'amber')),
     matrix: [tile(1, 1, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(1, 2, false, 0, 'amber'), tile(2, 0, false, 0, 'amber'), tile(1, 1, false, 0, 'amber'), tile(2, 1, false, 0, 'amber'), tile(3, 1, true, 0, 'amber'), tile(3, 1, true, 0, 'amber'), null],
-    options: [tile(3, 3, true, 0, 'amber'), tile(2, 3, false, 0, 'amber'), tile(4, 1, true, 0, 'amber'), tile(1, 3, true, 0, 'amber')],
+    options: [tile(3, 3, true, 0, 'amber'), tile(2, 3, false, 0, 'amber'), tile(4, 1, true, 0, 'amber'), tile(1, 3, true, 45, 'amber')],
     answerIndex: 0,
     aiSolved: true,
   },
@@ -705,7 +739,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The right column mirrors the left column after the central transform, so the last tile returns to the left pattern at 90 degrees.',
     solutionProof: proof('The right column repeats the left column count pattern, but rotated to 90 degrees. The bottom left tile has 3 dots and 1 bar, so the bottom right mirrors it.', 'For every row r, right.dots = left.dots, right.bars = left.bars, right.ring = left.ring, right.tilt = 90. Missing cell mirrors row 3 left: dots = 3, bars = 1, ring = false, tilt = 90.', tile(3, 1, false, 90, 'rose')),
     matrix: [tile(1, 1, false, 0, 'rose'), tile(2, 1, true, 45, 'rose'), tile(1, 1, false, 90, 'rose'), tile(2, 2, false, 0, 'rose'), tile(3, 2, true, 45, 'rose'), tile(2, 2, false, 90, 'rose'), tile(3, 1, false, 0, 'rose'), tile(4, 1, true, 45, 'rose'), null],
-    options: [tile(3, 1, false, 90, 'rose'), tile(4, 1, false, 90, 'rose'), tile(3, 2, true, 90, 'rose'), tile(2, 1, false, 45, 'rose')],
+    options: [tile(3, 1, false, 90, 'rose'), tile(4, 1, true, 90, 'rose'), tile(3, 2, true, 90, 'rose'), tile(2, 1, false, 45, 'rose')],
     answerIndex: 0,
     aiSolved: true,
   },
@@ -744,7 +778,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'Each step advances count, bar state, and tilt together while ring state alternates. The missing tile is the next rose-family synthesis.',
     solutionProof: proof('Every diagonal step advances dots, bars, ring, and rotation together. The bottom row stays rose, so the missing tile is the next rose-family step.', 'dots = r + c + 1, bars = (r + c + 1) % 3, ring = (r + c) % 2 === 0, tilt = [0,45,90][(r + c) % 3], tone = rowTone[r]. Missing cell (2,2) gives dots = 5, bars = 2, ring = true, tilt = 45, tone = rose.', tile(5, 2, true, 45, 'rose')),
     matrix: [tile(1, 1, true, 0, 'blue'), tile(2, 2, false, 45, 'blue'), tile(3, 0, true, 90, 'blue'), tile(2, 2, false, 45, 'green'), tile(3, 0, true, 90, 'green'), tile(4, 1, false, 0, 'green'), tile(3, 0, true, 90, 'rose'), tile(4, 1, false, 0, 'rose'), null],
-    options: [tile(5, 2, true, 45, 'rose'), tile(4, 2, true, 45, 'rose'), tile(5, 1, false, 45, 'rose'), tile(3, 2, true, 0, 'rose')],
+    options: [tile(5, 2, true, 45, 'rose'), tile(4, 2, true, 90, 'rose'), tile(5, 1, false, 45, 'rose'), tile(3, 2, true, 0, 'rose')],
     answerIndex: 0,
     aiSolved: false,
   },
@@ -757,7 +791,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The final cell synthesizes the row and column transformations: maximum count, three bars, ring-on, and the diagonal tilt.',
     solutionProof: proof('In the last column, dots and bars rise by one each row: 3/1, 4/2, then 5/3. The ring alternates back on, and the rotation sequence 90, 0, 45 completes the diagonal.', 'Column 3 uses dots = r + 3 and bars = r + 1; ring = (r + c) % 2 === 0; tilt = [0,45,90][(r + c) % 3]; tone follows green, rose, amber. Missing cell (2,2) gives dots = 5, bars = 3, ring = true, tilt = 45, tone = amber.', tile(5, 3, true, 45, 'amber')),
     matrix: [tile(2, 0, true, 0, 'amber'), tile(1, 1, false, 45, 'blue'), tile(3, 1, true, 90, 'green'), tile(3, 1, false, 45, 'blue'), tile(2, 2, true, 90, 'green'), tile(4, 2, false, 0, 'rose'), tile(4, 2, true, 90, 'green'), tile(3, 3, false, 0, 'rose'), null],
-    options: [tile(5, 3, true, 45, 'amber'), tile(4, 3, true, 45, 'amber'), tile(5, 2, false, 45, 'amber'), tile(6, 3, true, 90, 'amber')],
+    options: [tile(5, 3, true, 45, 'amber'), tile(4, 3, true, 90, 'amber'), tile(5, 2, false, 45, 'amber'), tile(6, 3, false, 90, 'amber')],
     answerIndex: 0,
     aiSolved: false,
   },
@@ -809,7 +843,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The missing corner is on the main diagonal, so the ring is active. Its column gives one dot and its row gives two bars.',
     solutionProof: proof('Columns reduce dots from 3 to 1. Rows add bars from 0 to 2. The main diagonal has rings and the rotation cycles by row plus column.', 'dots = 3 - c, bars = r, ring = r === c, tilt = [0,45,90][(r+c)%3]. Missing cell (2,2) gives dots = 1, bars = 2, ring = true, tilt = 45.', tile(1, 2, true, 45, 'rose')),
     matrix: [tile(3, 0, true, 0, 'rose'), tile(2, 0, false, 45, 'rose'), tile(1, 0, false, 90, 'rose'), tile(3, 1, false, 45, 'rose'), tile(2, 1, true, 90, 'rose'), tile(1, 1, false, 0, 'rose'), tile(3, 2, false, 90, 'rose'), tile(2, 2, false, 0, 'rose'), null],
-    options: [tile(1, 2, true, 45, 'rose'), tile(2, 2, true, 45, 'rose'), tile(1, 1, false, 45, 'rose'), tile(3, 2, true, 90, 'rose')],
+    options: [tile(1, 2, true, 45, 'rose'), tile(2, 2, true, 0, 'rose'), tile(1, 1, false, 45, 'rose'), tile(3, 2, true, 90, 'rose')],
     answerIndex: 0,
     aiSolved: false,
   },
@@ -822,7 +856,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The right side returns the left-side counts with a 90-degree rotation. The bottom-left tile therefore reappears at bottom-right with the ring intact.',
     solutionProof: proof('For each row, the right tile mirrors the left tile while rotating to 90 degrees. The bottom left has 2 dots, 2 bars, and a ring.', 'right.dots = left.dots, right.bars = left.bars, right.ring = left.ring, right.tilt = 90. Missing cell mirrors row 3 left: dots = 2, bars = 2, ring = true, tilt = 90.', tile(2, 2, true, 90, 'ink')),
     matrix: [tile(1, 1, false, 0, 'ink'), tile(2, 2, true, 45, 'ink'), tile(1, 1, false, 90, 'ink'), tile(2, 0, true, 0, 'ink'), tile(3, 1, false, 45, 'ink'), tile(2, 0, true, 90, 'ink'), tile(2, 2, true, 0, 'ink'), tile(3, 3, false, 45, 'ink'), null],
-    options: [tile(2, 2, true, 90, 'ink'), tile(3, 2, true, 90, 'ink'), tile(2, 3, false, 90, 'ink'), tile(1, 2, true, 45, 'ink')],
+    options: [tile(2, 2, true, 90, 'ink'), tile(3, 2, false, 90, 'ink'), tile(2, 3, false, 90, 'ink'), tile(1, 2, true, 45, 'ink')],
     answerIndex: 0,
     aiSolved: true,
   },
@@ -835,7 +869,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'Subtract dots and bars across each row. The final row subtracts 3 dots and 2 bars from 6 dots and 3 bars.',
     solutionProof: proof('Within each row, tile three equals tile one minus tile two. In the final row, 6 - 3 dots gives 3, and 3 - 2 bars gives 1. The ring follows first-on, second-off.', 'third.dots = first.dots - second.dots, third.bars = first.bars - second.bars, third.ring = first.ring && !second.ring. Missing cell gives dots = 3, bars = 1, ring = true, tilt = 90.', tile(3, 1, true, 90, 'amber')),
     matrix: [tile(5, 3, true, 0, 'amber'), tile(2, 1, false, 0, 'amber'), tile(3, 2, true, 0, 'amber'), tile(4, 2, false, 45, 'amber'), tile(1, 1, true, 45, 'amber'), tile(3, 1, false, 45, 'amber'), tile(6, 3, true, 90, 'amber'), tile(3, 2, false, 90, 'amber'), null],
-    options: [tile(3, 1, true, 90, 'amber'), tile(2, 1, true, 90, 'amber'), tile(3, 2, false, 90, 'amber'), tile(4, 1, true, 45, 'amber')],
+    options: [tile(3, 1, true, 90, 'amber'), tile(2, 1, true, 45, 'amber'), tile(3, 2, false, 90, 'amber'), tile(4, 1, false, 45, 'amber')],
     answerIndex: 0,
     aiSolved: false,
   },
@@ -874,7 +908,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The final cell wraps dots back to two and bars to two, with no middle-column ring.',
     solutionProof: proof('Dots follow a four-step cycle from row plus column. Bars use twice the row plus the column. Only the middle column has rings.', 'dots = ((r+c)%4)+2, bars = (2r+c)%4, ring = c === 1, tilt = 45c. Missing cell (2,2) gives dots = 2, bars = 2, ring = false, tilt = 90.', tile(2, 2, false, 90, 'green')),
     matrix: [tile(2, 0, false, 0, 'green'), tile(3, 1, true, 45, 'green'), tile(4, 2, false, 90, 'green'), tile(3, 2, false, 0, 'green'), tile(4, 3, true, 45, 'green'), tile(5, 0, false, 90, 'green'), tile(4, 0, false, 0, 'green'), tile(5, 1, true, 45, 'green'), null],
-    options: [tile(2, 2, false, 90, 'green'), tile(6, 2, false, 90, 'green'), tile(2, 1, true, 90, 'green'), tile(4, 2, false, 45, 'green')],
+    options: [tile(2, 2, false, 90, 'green'), tile(6, 2, true, 90, 'green'), tile(2, 1, true, 90, 'green'), tile(4, 2, false, 45, 'green')],
     answerIndex: 0,
     aiSolved: false,
   },
@@ -1650,6 +1684,7 @@ function withSixOptions(puzzle: Puzzle): Puzzle {
     if (options.length >= 6) break;
     const signature = tileSignature(decoy);
     if (used.has(signature)) continue;
+    if (!canUseOption(options, decoy)) continue;
     used.add(signature);
     options.push(decoy);
   }
@@ -7240,11 +7275,22 @@ export default function Home({
           width: 84%;
           gap: 3px;
         }
+        .dots.with-bars.dots-4 {
+          width: 58%;
+          grid-template-columns: repeat(2, auto);
+          gap: 6px 9px;
+        }
+        .dots.with-bars.dots-5,
         .dots.with-bars.dots-6 {
           width: 70%;
           grid-template-columns: repeat(3, auto);
           gap: 6px 8px;
         }
+        .option .dots.with-bars.dots-4 {
+          width: 64%;
+          gap: 5px 8px;
+        }
+        .option .dots.with-bars.dots-5,
         .option .dots.with-bars.dots-6 {
           width: 76%;
           gap: 5px 7px;
@@ -9254,6 +9300,11 @@ export default function Home({
             width: 88%;
             gap: 2px;
           }
+          .option .dots.with-bars.dots-4 {
+            width: 62%;
+            gap: 4px 6px;
+          }
+          .option .dots.with-bars.dots-5,
           .option .dots.with-bars.dots-6 {
             width: 72%;
             gap: 4px 6px;
