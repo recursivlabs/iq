@@ -103,14 +103,16 @@ function extractOtp(message) {
   return subjectMatch?.[1] || anyMatch?.[1] || '';
 }
 
-async function waitForOtpEmail({ resendApiKey, recipient, minCreatedAt, timeoutMs, pollMs }) {
+async function waitForOtpEmail({ resendApiKey, recipient, minCreatedAt, timeoutMs, pollMs, excludeEmailIds = [] }) {
   const started = Date.now();
   let lastSeen = [];
+  const excluded = new Set(excludeEmailIds);
   while (Date.now() - started < timeoutMs) {
     const list = await resendRequest(resendApiKey, '/emails?limit=100');
     const candidates = sentEmailRows(list)
       .filter((email) => sentTo(email, recipient))
       .filter((email) => /verification code/i.test(String(email.subject || '')))
+      .filter((email) => !excluded.has(email.id))
       .filter((email) => emailCreatedAt(email) >= minCreatedAt - 30_000)
       .sort((a, b) => emailCreatedAt(b) - emailCreatedAt(a));
     lastSeen = candidates.map((email) => ({
@@ -210,7 +212,7 @@ async function proveProfileWrite(origin, cookie, playerId, nonce) {
   return { slug };
 }
 
-async function otpRound({ origin, resendApiKey, email, requestedPlayerId, timeoutMs, pollMs }) {
+async function otpRound({ origin, resendApiKey, email, requestedPlayerId, timeoutMs, pollMs, excludeEmailIds = [] }) {
   const minCreatedAt = Date.now();
   await sendOtp(origin, email);
   const { email: sentEmail, otp } = await waitForOtpEmail({
@@ -219,6 +221,7 @@ async function otpRound({ origin, resendApiKey, email, requestedPlayerId, timeou
     minCreatedAt,
     timeoutMs,
     pollMs,
+    excludeEmailIds,
   });
   const subject = String(sentEmail.subject || '');
   const text = String(sentEmail.text || '');
@@ -277,6 +280,7 @@ async function main() {
     requestedPlayerId: secondRequestedPlayerId,
     timeoutMs,
     pollMs,
+    excludeEmailIds: [first.sentEmail.id],
   });
   assert(second.verified.data.playerId === firstPlayerId, 'Second email-code verification did not return the stable linked playerId.', {
     expected: firstPlayerId,
