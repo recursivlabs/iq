@@ -29,6 +29,7 @@ type AttemptStore = {
 const STORE_KEY = 'world-iq:official-attempts:v1';
 const STORE_FILE = 'world-iq-official-attempts.json';
 const MAX_ATTEMPTS = 50_000;
+const MAX_PLAYER_HISTORY = 60;
 
 function emptyStore(): AttemptStore {
   return { attempts: [] };
@@ -104,16 +105,32 @@ function publicAttempt(attempt: OfficialAttempt) {
 }
 
 export async function GET(request: NextRequest) {
-  const day = sanitizeBoardDay(request.nextUrl.searchParams.get('day'));
-  if (!day) {
-    return NextResponse.json({ error: 'Invalid attempt day.' }, { status: 400 });
-  }
+  const historyRequested = request.nextUrl.searchParams.get('history') === 'true' || request.nextUrl.searchParams.get('history') === '1';
   const playerId = sanitizePlayerId(request.nextUrl.searchParams.get('playerId'));
   if (!playerId) {
     return NextResponse.json({ error: 'Missing player.' }, { status: 400 });
   }
 
   const store = await readStore();
+  if (historyRequested) {
+    const attempts = store.attempts
+      .filter((item) => item.playerId === playerId)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, MAX_PLAYER_HISTORY)
+      .map(publicAttempt);
+    return NextResponse.json({
+      playerId,
+      attempts,
+    }, {
+      headers: { 'cache-control': 'no-store' },
+    });
+  }
+
+  const day = sanitizeBoardDay(request.nextUrl.searchParams.get('day'));
+  if (!day) {
+    return NextResponse.json({ error: 'Invalid attempt day.' }, { status: 400 });
+  }
+
   const attempt = store.attempts.find((item) => item.day === day && item.playerId === playerId);
   return NextResponse.json({
     day,

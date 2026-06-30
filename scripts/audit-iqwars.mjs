@@ -515,6 +515,9 @@ async function sourceAudit() {
   const runner = app.slice(app.indexOf('function Runner('), app.indexOf('export default function Home'));
   const resultView = functionText(findFunction(ts, tree, 'Result'), app);
   assert(runner.includes('readServerOfficialAttempt') && runner.includes('onServerAttemptLocked'), 'Runner syncs server-side daily attempt locks.');
+  assert(attempts.includes('MAX_PLAYER_HISTORY') && attempts.includes('historyRequested') && attempts.includes("request.nextUrl.searchParams.get('history')") && attempts.includes('.filter((item) => item.playerId === playerId)'), 'Attempt API exposes bounded player official-history reads for account score hydration.');
+  assert(app.includes('async function readServerOfficialHistory') && app.includes("history: 'true'") && app.includes('function mergeOfficialHistory') && app.includes('setOfficialHistory(history)'), 'Client can hydrate rolling score history from server official attempts.');
+  assert(app.includes('await hydrateOfficialHistoryFromServer(linkedPlayerId)') && app.includes('recursivAccount?.playerId'), 'Email account connection and account-linked player loads refresh server score history.');
   assert(runner.includes('locked-score-grid') && runner.includes("copy(groupCode ? 'View room rankings' : 'View rankings')") && runner.includes("copy('Unlock profile')"), 'Locked daily state shows the saved score and routes players to rankings before upgrade.');
   assert(resultView.indexOf('className="actions result-actions"') > -1 && resultView.indexOf('className="actions result-actions"') < resultView.indexOf('className="share-card"'), 'Result challenge actions render before the scorecard details so the friend loop is visible immediately after finish.');
 
@@ -1199,6 +1202,13 @@ async function liveAudit() {
 
   const attemptGet = await requestJson(`${origin}/api/attempts?day=${day}&playerId=${encodeURIComponent(playerId)}`);
   assert(attemptGet.response.ok && attemptGet.data.locked === true && attemptGet.data.attempt?.playerId === playerId, 'Live attempt API reads back the server-side daily lock.');
+  const attemptHistoryGet = await requestJson(`${origin}/api/attempts?playerId=${encodeURIComponent(playerId)}&history=true`);
+  assert(
+    attemptHistoryGet.response.ok
+      && Array.isArray(attemptHistoryGet.data.attempts)
+      && attemptHistoryGet.data.attempts.some((row) => row.playerId === playerId && row.day === day && row.score === 137),
+    'Live attempt API returns bounded player history for account score hydration.'
+  );
 
   const lateRoomPlayerId = `audit-late-room-${randomUUID()}`;
   const lateRoomAttempt = {

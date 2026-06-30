@@ -2068,6 +2068,28 @@ function syncLocalOfficialLock(record: OfficialRankRecord) {
   }
 }
 
+function mergeOfficialHistory(records: OfficialRankRecord[]) {
+  if (!records.length) return readOfficialHistory();
+  const byDay = new Map<string, OfficialRankRecord>();
+  for (const record of readOfficialHistory()) {
+    byDay.set(record.day, record);
+  }
+  for (const record of records.filter(isOfficialRankRecord)) {
+    const existing = byDay.get(record.day);
+    if (!existing || record.timestamp >= existing.timestamp) {
+      byDay.set(record.day, record);
+    }
+  }
+  const merged = sortOfficialHistory([...byDay.values()]).slice(0, OFFICIAL_HISTORY_LIMIT);
+  writeOfficialHistory(merged);
+  const today = merged.find((record) => record.day === localDayKey());
+  if (today) {
+    writeOfficialRank(today);
+    writePlayUsage({ day: today.day, count: DAILY_PLAY_LIMIT });
+  }
+  return readOfficialHistory();
+}
+
 function normalizeServerAttempt(value: unknown): ServerAttemptRecord | null {
   if (!value || typeof value !== 'object') return null;
   const attempt = value as Partial<ServerAttemptRecord>;
@@ -2082,6 +2104,25 @@ async function readServerOfficialAttempt(playerId: string): Promise<ServerAttemp
   const data = await response.json().catch(() => null) as { locked?: unknown; attempt?: unknown } | null;
   if (!response.ok || !data?.locked) return null;
   return normalizeServerAttempt(data.attempt);
+}
+
+async function readServerOfficialHistory(playerIds: string[]): Promise<ServerAttemptRecord[]> {
+  const records: ServerAttemptRecord[] = [];
+  for (const candidateId of [...new Set(playerIds.map(cleanPlayerId).filter(Boolean))]) {
+    try {
+      const params = new URLSearchParams({ playerId: candidateId, history: 'true' });
+      const response = await fetch(`/api/attempts?${params.toString()}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => null) as { attempts?: unknown } | null;
+      if (!response.ok || !Array.isArray(data?.attempts)) continue;
+      for (const attempt of data.attempts) {
+        const normalized = normalizeServerAttempt(attempt);
+        if (normalized) records.push(normalized);
+      }
+    } catch {
+      // Account score hydration is additive; local history remains the fallback.
+    }
+  }
+  return records.sort((a, b) => b.timestamp - a.timestamp);
 }
 
 async function claimServerOfficialAttempt(playerId: string, record: OfficialRankRecord): Promise<{ accepted: boolean; attempt: ServerAttemptRecord | null }> {
@@ -4759,12 +4800,51 @@ export default function Home({
     setUsageSnapshot(usage);
   }, []);
 
+  const hydrateOfficialHistoryFromServer = React.useCallback(async (preferredPlayerId?: string) => {
+    const ids = playerIdCandidates(preferredPlayerId || playerId || readPlayerId());
+    if (!ids.length) return;
+    const serverHistory = await readServerOfficialHistory(ids);
+    if (!serverHistory.length) return;
+    for (const attempt of serverHistory) {
+      if (attempt.playerId !== readStoredPlayerId()) rememberPlayerId(attempt.playerId);
+    }
+    const history = mergeOfficialHistory(serverHistory);
+    setOfficialSnapshot(readOfficialRank());
+    setOfficialHistory(history);
+    setUsageSnapshot(readPlayUsage());
+  }, [playerId]);
+
   const handleServerAttemptLocked = React.useCallback((record: OfficialRankRecord) => {
     syncLocalOfficialLock(record);
     setOfficialSnapshot(readOfficialRank());
     setOfficialHistory(readOfficialHistory());
     setUsageSnapshot(readPlayUsage());
   }, []);
+
+  React.useEffect(() => {
+    if (!playerId) return undefined;
+    let cancelled = false;
+    async function hydrate() {
+      try {
+        const ids = playerIdCandidates(playerId);
+        const serverHistory = await readServerOfficialHistory(ids);
+        if (cancelled || !serverHistory.length) return;
+        for (const attempt of serverHistory) {
+          if (attempt.playerId !== readStoredPlayerId()) rememberPlayerId(attempt.playerId);
+        }
+        const history = mergeOfficialHistory(serverHistory);
+        setOfficialSnapshot(readOfficialRank());
+        setOfficialHistory(history);
+        setUsageSnapshot(readPlayUsage());
+      } catch {
+        // The local score remains visible if server history hydration is temporarily unavailable.
+      }
+    }
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId, recursivAccount?.playerId]);
 
   function handlePlayerNameChange(name: string) {
     const next = name.slice(0, 32);
@@ -5129,6 +5209,7 @@ export default function Home({
             // The room sync retry path still has the local official result.
           }
         }
+        await hydrateOfficialHistoryFromServer(linkedPlayerId);
       }
       setAuthState('verified');
       setCheckoutState('idle');
