@@ -770,7 +770,7 @@ const worldPuzzles: Puzzle[] = withProofChecks([
     explanation: 'The row contributes two dots at a time, the column contributes one dot and rotation, and the bottom-right completes the six-dot three-bar tile.',
     solutionProof: proof('Rows set the weight: 0, 2, 4. Columns add 0, 1, 2 dots and rotate 0, 45, 90 degrees. The last row also carries three bars.', 'dots = 2r + c, bars = r + 1, ring = r === 1, tilt = [0,45,90][c]. Missing cell (2,2) gives dots = 6, bars = 3, ring = false, tilt = 90.', tile(6, 3, false, 90, 'blue')),
     matrix: [tile(0, 1, false, 0, 'blue'), tile(1, 1, false, 45, 'blue'), tile(2, 1, false, 90, 'blue'), tile(2, 2, true, 0, 'blue'), tile(3, 2, true, 45, 'blue'), tile(4, 2, true, 90, 'blue'), tile(4, 3, false, 0, 'blue'), tile(5, 3, false, 45, 'blue'), null],
-    options: [tile(6, 3, false, 90, 'blue'), tile(5, 3, true, 90, 'blue'), tile(6, 2, false, 45, 'blue'), tile(4, 3, false, 90, 'blue')],
+    options: [tile(6, 3, false, 90, 'blue'), tile(5, 3, true, 90, 'blue'), tile(6, 2, false, 45, 'blue'), tile(4, 3, false, 0, 'blue')],
     answerIndex: 0,
     aiSolved: true,
   },
@@ -2224,6 +2224,7 @@ function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTil
 
   const tone = tones[pattern.tone];
   const dotCount = Math.max(0, Math.min(pattern.dots, 6));
+  const dotsClass = ['dots', `dots-${dotCount}`, pattern.bars > 0 ? 'with-bars' : ''].filter(Boolean).join(' ');
   return (
     <div className={`tile ${selected ? 'selected' : ''}`} style={{ borderColor: selected ? tone : undefined }}>
       {pattern.ring ? <div className="ring" style={{ borderColor: tone }} /> : null}
@@ -2232,7 +2233,7 @@ function PatternTileView({ tile: pattern, selected = false }: { tile: PatternTil
           <span key={index} style={{ background: tone }} />
         ))}
       </div>
-      <div className={`dots dots-${dotCount}`}>
+      <div className={dotsClass}>
         {Array.from({ length: dotCount }).map((_, index) => (
           <span key={index} style={{ background: tone }} />
         ))}
@@ -7232,10 +7233,21 @@ export default function Home({
           justify-content: center;
           justify-items: center;
           gap: 4px;
+          position: relative;
+          z-index: 2;
         }
         .option .dots {
           width: 84%;
           gap: 3px;
+        }
+        .dots.with-bars.dots-6 {
+          width: 70%;
+          grid-template-columns: repeat(3, auto);
+          gap: 6px 8px;
+        }
+        .option .dots.with-bars.dots-6 {
+          width: 76%;
+          gap: 5px 7px;
         }
         .dots-0 {
           display: none;
@@ -7260,7 +7272,9 @@ export default function Home({
         }
         .dots span {
           width: 5px;
-          box-shadow: 0 0 12px rgba(255,255,255,.18);
+          position: relative;
+          z-index: 2;
+          box-shadow: 0 0 0 2px rgba(7,8,9,.92), 0 0 12px rgba(255,255,255,.18);
         }
         .options {
           display: grid;
@@ -9239,6 +9253,10 @@ export default function Home({
           .option .dots {
             width: 88%;
             gap: 2px;
+          }
+          .option .dots.with-bars.dots-6 {
+            width: 72%;
+            gap: 4px 6px;
           }
           .dots span {
             width: 4px;

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appPath = path.join(root, 'src/app/IqApp.tsx');
+const criticalCssPath = path.join(root, 'src/app/critical.css');
 const layoutPath = path.join(root, 'src/app/layout.tsx');
 const openGraphImagePath = path.join(root, 'src/app/opengraph-image.tsx');
 const i18nPath = path.join(root, 'src/app/i18n.ts');
@@ -309,6 +310,7 @@ function simulateOfficialQuestionRotation({ ids, starterIds, difficultyRanks, qu
 
 async function sourceAudit() {
   const app = source(appPath);
+  const criticalCss = source(criticalCssPath);
   const layout = source(layoutPath);
   const openGraphImage = source(openGraphImagePath);
   const audit = source(fileURLToPath(import.meta.url));
@@ -431,6 +433,9 @@ async function sourceAudit() {
   assert(proofChecks.includes('ids.has') && proofChecks.includes('matrix.length !== 9') && proofChecks.includes('filter((item) => item === null).length !== 1'), 'Puzzle proof checks reject duplicate ids and malformed matrices.');
   assert(proofChecks.includes('answerIndex') && proofChecks.includes('options.length < 4') && proofChecks.includes('new Set(puzzle.options.map(tileSignature)).size !== puzzle.options.length'), 'Puzzle proof checks reject invalid answer indexes and duplicate answer options.');
   assert(app.includes('function isValidTile') && proofChecks.includes('isValidTile') && proofChecks.includes('solutionProof.lay.trim()') && proofChecks.includes('solutionProof.formal.trim()'), 'Puzzle proof checks require valid tiles and non-empty proof text.');
+  assert(app.includes("title: 'Weighted rows'") && app.includes("tile(6, 3, false, 90, 'blue')") && app.includes("tile(4, 3, false, 0, 'blue')"), 'Weighted Rows keeps the six-dot correct answer and avoids a duplicate horizontal three-bar distractor.');
+  const patternTileView = functionText(findFunction(ts, tree, 'PatternTileView'), app);
+  assert(patternTileView.includes('with-bars') && app.includes('.dots.with-bars.dots-6') && criticalCss.includes('.dots.with-bars.dots-6'), 'Six-dot tiles with bars render as a distinct non-scrunched dot cluster in app and critical CSS.');
 
   const getQuestions = functionText(findFunction(ts, tree, 'getQuestions'), app);
   const officialStarterPuzzles = initializerText(findVariable(ts, tree, 'officialStarterPuzzles'), app);
