@@ -2595,6 +2595,7 @@ async function groupSidebarState(send) {
           return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height) };
         };
         const list = document.querySelector('.command-group-list');
+        const panel = document.querySelector('.command-panel');
         const rows = [...document.querySelectorAll('.command-group-item')].map((item) => {
           const buttons = [...item.querySelectorAll('.command-group-actions button')].map((button) => ({
             text: clean(button.textContent),
@@ -2614,13 +2615,17 @@ async function groupSidebarState(send) {
           activeCode: clean(window.localStorage.getItem('world-iq-group-code')),
           activeName: clean(window.localStorage.getItem('world-iq-group-name')),
           copiedText: clean(window.localStorage.getItem('iqwars-audit-copied-text') || window.__iqwarsCopiedText),
-          panelVisible: Boolean(document.querySelector('.command-panel')),
-          panelText: clean(document.querySelector('.command-panel')?.textContent).slice(0, 2200),
+          panelVisible: Boolean(panel),
+          panelText: clean(panel?.textContent).slice(0, 2200),
           roomCardText: clean(document.querySelector('.command-room-card')?.textContent).slice(0, 900),
+          panelScrollHeight: panel ? Math.round(panel.scrollHeight) : 0,
+          panelClientHeight: panel ? Math.round(panel.clientHeight) : 0,
           listRect: rect(list),
           listScrollHeight: list ? Math.round(list.scrollHeight) : 0,
           listClientHeight: list ? Math.round(list.clientHeight) : 0,
           listScrollTop: list ? Math.round(list.scrollTop) : 0,
+          listOverflowY: list ? getComputedStyle(list).overflowY : '',
+          listMaxHeight: list ? getComputedStyle(list).maxHeight : '',
           rows,
         });
       })()
@@ -2708,8 +2713,26 @@ function assertGroupSidebarState(state, viewportId) {
   else fail(`${prefix} listed room action targets are touchable`, { smallestTouchTarget, rects: touchTargetRects });
 
   if (viewportId === 'mobile') {
-    if (state.listScrollHeight > state.listClientHeight + 120 && state.listClientHeight >= 120) pass(`${prefix} many saved rooms stay in a scrollable list`, { scrollHeight: state.listScrollHeight, clientHeight: state.listClientHeight });
-    else fail(`${prefix} many saved rooms stay in a scrollable list`, { scrollHeight: state.listScrollHeight, clientHeight: state.listClientHeight, listRect: state.listRect });
+    const listIsNotScrollTrap = state.listOverflowY === 'visible' && state.listMaxHeight === 'none' && state.listScrollHeight <= state.listClientHeight + 4;
+    const drawerScrolls = state.panelScrollHeight > state.panelClientHeight + 120 && state.panelClientHeight >= 320;
+    if (listIsNotScrollTrap && drawerScrolls) {
+      pass(`${prefix} many saved rooms use the drawer scroll instead of a nested list`, {
+        panelScrollHeight: state.panelScrollHeight,
+        panelClientHeight: state.panelClientHeight,
+        listOverflowY: state.listOverflowY,
+        listMaxHeight: state.listMaxHeight,
+      });
+    } else {
+      fail(`${prefix} many saved rooms use the drawer scroll instead of a nested list`, {
+        panelScrollHeight: state.panelScrollHeight,
+        panelClientHeight: state.panelClientHeight,
+        listScrollHeight: state.listScrollHeight,
+        listClientHeight: state.listClientHeight,
+        listOverflowY: state.listOverflowY,
+        listMaxHeight: state.listMaxHeight,
+        listRect: state.listRect,
+      });
+    }
   }
 
   if (state.roomCardText.includes(expectedActiveUrl.replace(/^https?:\/\//, '')) || state.panelText.includes('/g/room-audit-07')) pass(`${prefix} active card exposes the durable invite URL`, { expectedActiveUrl });

@@ -5461,7 +5461,7 @@ export default function Home({
             <div className="command-panel-head">
               <div>
                 <strong>IQ WARS</strong>
-                <span>{copy('Left sidebar')}</span>
+                <span>{navStatus}</span>
               </div>
               <button ref={closeCommandRef} className="close-command" onClick={closeNavMenu} aria-label={copy('Close command center')}>X</button>
             </div>
@@ -6664,9 +6664,10 @@ export default function Home({
           background: rgba(7,8,10,.98);
           box-shadow: 34px 0 100px rgba(0,0,0,.68), inset 1px 0 0 rgba(255,255,255,.06);
           backdrop-filter: blur(22px);
-          display: grid;
-          grid-template-rows: auto minmax(0, 1fr) auto;
-          overflow: hidden;
+          display: block;
+          overflow-x: hidden;
+          overflow-y: auto;
+          overscroll-behavior: contain;
         }
         .command-backdrop {
           position: fixed;
@@ -6723,11 +6724,11 @@ export default function Home({
           padding: 0;
         }
         .command-scroll {
-          min-height: 0;
-          overflow-y: auto;
+          min-height: auto;
+          overflow: visible;
           display: grid;
-          grid-template-rows: auto auto minmax(340px, 1fr);
-          align-content: stretch;
+          grid-template-rows: none;
+          align-content: start;
           gap: 18px;
           padding: 18px;
         }
@@ -6864,9 +6865,9 @@ export default function Home({
           text-transform: uppercase;
         }
         .command-groups {
-          min-height: min(560px, 64vh);
+          min-height: 0;
           display: grid;
-          grid-template-rows: auto auto minmax(180px, 1fr);
+          grid-template-rows: none;
           gap: 14px;
         }
         .command-section-head {
@@ -6946,14 +6947,14 @@ export default function Home({
           text-align: center;
         }
         .command-group-list {
-          min-height: 180px;
-          max-height: 380px;
+          min-height: 0;
+          max-height: none;
           display: grid;
           align-content: start;
           gap: 10px;
           border: 0;
           border-radius: 0;
-          overflow-y: auto;
+          overflow: visible;
           background: transparent;
         }
         .command-group-item {
@@ -9197,12 +9198,8 @@ export default function Home({
             min-height: 54px;
           }
           .command-scroll {
-            grid-template-rows: auto auto minmax(360px, 1fr);
             padding: 14px;
             gap: 15px;
-          }
-          .command-groups {
-            min-height: min(540px, 70vh);
           }
           .command-room-card {
             gap: 10px;
@@ -9211,10 +9208,6 @@ export default function Home({
           .command-room-card p {
             font-size: 10px;
             line-height: 1.35;
-          }
-          .command-group-list {
-            min-height: 210px;
-            max-height: 420px;
           }
           .command-group-item {
             min-height: 156px;

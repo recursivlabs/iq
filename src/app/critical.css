@@ -258,9 +258,10 @@ nav .nav-cta,
   background: rgba(7, 8, 10, .98);
   box-shadow: 34px 0 100px rgba(0, 0, 0, .68), inset 1px 0 0 rgba(255, 255, 255, .06);
   backdrop-filter: blur(22px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .command-panel-head {
@@ -299,11 +300,11 @@ nav .nav-cta,
 }
 
 .command-scroll {
-  min-height: 0;
-  overflow-y: auto;
+  min-height: auto;
+  overflow: visible;
   display: grid;
-  grid-template-rows: auto auto minmax(340px, 1fr);
-  align-content: stretch;
+  grid-template-rows: none;
+  align-content: start;
   gap: 18px;
   padding: 18px;
 }
@@ -529,9 +530,9 @@ nav .command-grid button::after {
 }
 
 .command-groups {
-  min-height: min(560px, 64vh);
+  min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(180px, 1fr);
+  grid-template-rows: none;
   gap: 14px;
 }
 
@@ -620,14 +621,14 @@ nav .command-grid button::after {
 }
 
 .command-group-list {
-  min-height: 180px;
-  max-height: 380px;
+  min-height: 0;
+  max-height: none;
   display: grid;
   align-content: start;
   gap: 10px;
   border: 0;
   border-radius: 0;
-  overflow-y: auto;
+  overflow: visible;
   background: transparent;
 }
 
@@ -1603,13 +1604,8 @@ nav .command-grid button::after {
   }
 
   .command-scroll {
-    grid-template-rows: auto auto minmax(360px, 1fr);
     gap: 14px;
     padding: 14px;
-  }
-
-  .command-groups {
-    min-height: min(540px, 70vh);
   }
 
   .command-room-card {
@@ -1629,11 +1625,6 @@ nav .command-grid button::after {
 
   .geo-rows .leaderboard-row {
     grid-template-columns: 34px minmax(0, 1fr) 54px;
-  }
-
-  .command-group-list {
-    min-height: 210px;
-    max-height: 420px;
   }
 
   .command-group-item {
